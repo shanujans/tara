@@ -1,4 +1,5 @@
 'use client';
+import { useState } from 'react'; // ← added
 import ProductCard from './ProductCard';
 import { Product } from '@/context/CartContext';
 import { STRINGS, Lang } from '@/lib/strings';
@@ -7,9 +8,10 @@ interface ProductPanelProps {
   products: Product[];
   lang: Lang;
   loading: boolean;
+  quantum?: boolean;   // ← new
 }
 
-export default function ProductPanel({ products, lang, loading }: ProductPanelProps) {
+export default function ProductPanel({ products, lang, loading, quantum }: ProductPanelProps) {
   const s = STRINGS[lang];
 
   return (
@@ -22,6 +24,12 @@ export default function ProductPanel({ products, lang, loading }: ProductPanelPr
         {products.length > 0 && (
           <span className="bg-amber-400/20 text-amber-400 text-xs font-bold px-2 py-0.5 rounded-full">
             {products.length}
+          </span>
+        )}
+        {/* Quantum badge — added */}
+        {quantum && products.length > 0 && (
+          <span className="flex items-center gap-1 bg-purple-500/20 text-purple-300 border border-purple-500/30 text-xs font-bold px-2 py-0.5 rounded-full animate-pulse">
+            ✦ Quantum search active
           </span>
         )}
       </div>

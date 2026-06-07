@@ -9,10 +9,16 @@ import { STRINGS, Lang } from '@/lib/strings';
 function AppContent() {
   const [lang, setLang] = useState<Lang>('en');
   const [products, setProducts] = useState<Product[]>([]);
+  const [quantum, setQuantum] = useState(false);
   const [searching, setSearching] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const { totalQty } = useCart();
   const s = STRINGS[lang];
+
+  const handleProducts = (p: Product[], q = false) => {
+    setProducts(p);
+    setQuantum(q);
+  };
 
   return (
     <div className="flex flex-col h-screen bg-slate-950 overflow-hidden font-[family-name:var(--font-geist-sans)]">
@@ -68,7 +74,7 @@ function AppContent() {
           <ChatPanel
             lang={lang}
             onLangChange={setLang}
-            onProductsFound={setProducts}
+            onProductsFound={handleProducts}
             onSearching={setSearching}
           />
         </div>
@@ -79,6 +85,7 @@ function AppContent() {
             products={products}
             lang={lang}
             loading={searching}
+            quantum={quantum}
           />
         </div>
       </div>

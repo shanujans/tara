@@ -11,12 +11,13 @@ interface Message {
 interface ChatPanelProps {
   lang: Lang;
   onLangChange: (l: Lang) => void;
-  onProductsFound: (products: Product[]) => void;
+  onProductsFound: (products: Product[], quantum?: boolean) => void; // updated
   onSearching: (loading: boolean) => void;
 }
 
 const MCP_URL = process.env.NEXT_PUBLIC_MCP_URL || 'https://mcp.kapruka.com/mcp';
 
+// Keep original search function for search_query tag (non‑quantum)
 async function searchProducts(query: string): Promise<Product[]> {
   try {
     const r = await fetch(MCP_URL, {
@@ -61,8 +62,9 @@ function extractSearchQuery(text: string): string | null {
   return match ? match[1].trim() : null;
 }
 
-function cleanMessage(text: string): string {
-  return text.replace(/<search_query>[\s\S]*?<\/search_query>/g, '').trim();
+// Remove both search_query and quantum_search tags from displayed message
+function cleanAllTags(text: string): string {
+  return text.replace(/<(search_query|quantum_search)[^>]*>[^]*?<\/\1>/g, '').trim();
 }
 
 export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearching }: ChatPanelProps) {
@@ -76,7 +78,6 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  // 🔔 Language badge state (driven by server response header)
   const [detectedLang, setDetectedLang] = useState<'si' | 'ta' | 'tl' | 'en'>('en');
 
   useEffect(() => {
@@ -87,7 +88,6 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
     const text = input.trim();
     if (!text || isStreaming) return;
 
-    // Instant local detection for UI language change (kept for now)
     const localDetected = detectLang(text);
     if (localDetected !== lang) onLangChange(localDetected);
 
@@ -111,7 +111,6 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
 
       if (!res.ok) throw new Error('API error');
 
-      // 🏷️ Read the language detected by the server
       const responseLang = res.headers.get('X-Detected-Lang') as 'si' | 'ta' | 'tl' | 'en' | null;
       if (responseLang) setDetectedLang(responseLang);
 
@@ -133,17 +132,46 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
         });
       }
 
-      // Extract search query and fetch products
+      // --- Handle regular search_query (existing behaviour) ---
       const query = extractSearchQuery(fullText);
       if (query) {
         setMessages(prev => {
           const copy = [...prev];
-          copy[copy.length - 1] = { role: 'assistant', content: cleanMessage(fullText) };
+          copy[copy.length - 1] = { role: 'assistant', content: cleanAllTags(fullText) };
           return copy;
         });
         onSearching(true);
         const products = await searchProducts(query);
-        onProductsFound(products);
+        onProductsFound(products); // no quantum flag
+        onSearching(false);
+      }
+
+      // --- Handle quantum_search tag (new) ---
+      const qMatch = fullText.match(
+        /<quantum_search primary="([^"]+)" alt="([^"]+)" creative="([^"]+)"(?:\s+budget="(\d+)")?/
+      );
+      if (qMatch) {
+        // Clean both tag types from the displayed message
+        setMessages(prev => {
+          const copy = [...prev];
+          copy[copy.length - 1] = { role: 'assistant', content: cleanAllTags(fullText) };
+          return copy;
+        });
+
+        const [, primary, alternative, creative, budget] = qMatch;
+        onSearching(true);
+        const res2 = await fetch('/api/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            primary,
+            alternative,
+            creative,
+            budget: budget ? Number(budget) : undefined,
+          }),
+        });
+        const { products, quantum } = await res2.json();
+        onProductsFound(products, quantum); // pass quantum flag
         onSearching(false);
       }
     } catch (err: unknown) {
@@ -165,7 +193,6 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
     }
   };
 
-  // 🎨 Badge styling map
   const LANG_BADGE = {
     si: { label: '🇱🇰 සිං', color: 'bg-green-600 text-white' },
     ta: { label: '🇱🇰 த', color: 'bg-orange-500 text-white' },
@@ -205,7 +232,6 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
           </div>
         ))}
 
-        {/* Typing indicator (while waiting for first chunk) */}
         {isStreaming && messages[messages.length - 1]?.role !== 'assistant' && (
           <div className="flex gap-2.5 justify-start">
             <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center flex-shrink-0 shadow-md shadow-amber-400/20">
@@ -224,7 +250,7 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
         <div ref={bottomRef} />
       </div>
 
-      {/* 🏷️ Detected language badge */}
+      {/* Detected language badge */}
       <div className="px-4 pt-2 flex justify-end">
         <span
           className={`text-xs font-bold px-2 py-0.5 rounded-full transition-all duration-500 ${LANG_BADGE[detectedLang].color}`}

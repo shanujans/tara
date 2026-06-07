@@ -12,10 +12,16 @@ export default function ProductCard({ product, lang }: ProductCardProps) {
   const { addItem, items } = useCart();
   const s = STRINGS[lang];
   const [added, setAdded] = useState(false);
+  const [loaded, setLoaded] = useState(false); // for lazy image fade-in
   const inCart = items.some(i => i.id === product.id);
 
   const handleAdd = () => {
-    addItem(product);
+    addItem({
+      id: product.id,
+      name: product.name,
+      price: product.price,
+      image: product.image,
+    });
     setAdded(true);
     setTimeout(() => setAdded(false), 1500);
   };
@@ -24,13 +30,14 @@ export default function ProductCard({ product, lang }: ProductCardProps) {
 
   return (
     <div className="group flex flex-col bg-slate-800 rounded-xl overflow-hidden border border-slate-700 hover:border-amber-400/50 transition-all duration-300 hover:shadow-lg hover:shadow-amber-400/10 hover:-translate-y-0.5">
-      {/* Image */}
+      {/* Image with fade-in */}
       <div className="aspect-square overflow-hidden bg-slate-700 relative">
         <img
           src={product.image}
           alt={product.name}
           loading="lazy"
-          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+          onLoad={() => setLoaded(true)}
+          className={`w-full h-full object-cover transition-opacity duration-500 ${loaded ? 'opacity-100' : 'opacity-0'}`}
           onError={e => {
             (e.target as HTMLImageElement).src =
               `https://placehold.co/300x300/1e293b/94a3b8?text=${encodeURIComponent(product.name.slice(0, 10))}`;
