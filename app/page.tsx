@@ -7,11 +7,12 @@ import { CartProvider, useCart, Product } from '@/context/CartContext';
 import { STRINGS, Lang } from '@/lib/strings';
 
 function AppContent() {
-  const [lang, setLang] = useState<Lang>('en');
-  const [products, setProducts] = useState<Product[]>([]);
-  const [quantum, setQuantum] = useState(false);
+  const [lang, setLang]           = useState<Lang>('en');
+  const [products, setProducts]   = useState<Product[]>([]);
   const [searching, setSearching] = useState(false);
-  const [cartOpen, setCartOpen] = useState(false);
+  const [quantum, setQuantum]     = useState(false);
+  const [cartOpen, setCartOpen]   = useState(false);
+  const [speakerOn, setSpeakerOn] = useState(false);
   const { totalQty } = useCart();
   const s = STRINGS[lang];
 
@@ -21,7 +22,8 @@ function AppContent() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-slate-950 overflow-hidden font-[family-name:var(--font-geist-sans)]">
+    <div className="flex flex-col h-screen bg-slate-950 overflow-hidden">
+
       {/* ── Header ── */}
       <header className="bg-slate-900 border-b border-slate-800 px-5 py-3 flex items-center justify-between flex-shrink-0 z-10">
         <div className="flex items-center gap-3">
@@ -33,17 +35,37 @@ function AppContent() {
           </span>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {/* Language badge */}
           <div className="bg-slate-800 border border-slate-700 px-3 py-1 rounded-full">
             <span className="text-amber-400 text-xs font-bold">{s.langBadge}</span>
           </div>
 
           {/* Kapruka powered badge */}
-          <span className="hidden md:block text-slate-500 text-xs">
-            Powered by{' '}
-            <span className="text-slate-400 font-semibold">Kapruka</span>
+          <span className="hidden md:block text-slate-500 text-xs px-1">
+            Powered by <span className="text-slate-400 font-semibold">Kapruka</span>
           </span>
+
+          {/* Speaker toggle */}
+          <button
+            onClick={() => setSpeakerOn(v => !v)}
+            title={speakerOn ? 'Mute TARA' : 'Unmute TARA'}
+            className="flex items-center justify-center w-8 h-8 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-amber-400/50 rounded-full transition-all duration-200"
+          >
+            {speakerOn ? (
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+                <path d="M2 5h3l4-3v11l-4-3H2V5z" fill="#f59e0b"/>
+                <path d="M11 4.5a4 4 0 010 6" stroke="#f59e0b" strokeWidth="1.5" strokeLinecap="round"/>
+                <path d="M12.5 3a6.5 6.5 0 010 9" stroke="#f59e0b" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+            ) : (
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+                <path d="M2 5h3l4-3v11l-4-3H2V5z" stroke="#64748b" strokeWidth="1.5" strokeLinejoin="round"/>
+                <line x1="11" y1="5" x2="14" y2="10" stroke="#64748b" strokeWidth="1.5" strokeLinecap="round"/>
+                <line x1="14" y1="5" x2="11" y2="10" stroke="#64748b" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+            )}
+          </button>
 
           {/* Cart button */}
           <button
@@ -69,17 +91,20 @@ function AppContent() {
 
       {/* ── Split layout ── */}
       <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
-        {/* Chat — 40% on desktop, full on mobile */}
+
+        {/* Chat — 40% desktop, 50vh mobile */}
         <div className="w-full md:w-[40%] flex-shrink-0 h-[50vh] md:h-full overflow-hidden">
           <ChatPanel
             lang={lang}
             onLangChange={setLang}
             onProductsFound={handleProducts}
             onSearching={setSearching}
+            speakerOn={speakerOn}
+            onSpeakerToggle={() => setSpeakerOn(v => !v)}
           />
         </div>
 
-        {/* Products — 60% on desktop, full on mobile */}
+        {/* Products — 60% desktop */}
         <div className="w-full md:w-[60%] flex-1 overflow-hidden">
           <ProductPanel
             products={products}
