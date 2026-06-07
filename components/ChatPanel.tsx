@@ -17,51 +17,6 @@ interface ChatPanelProps {
 
 const MCP_URL = process.env.NEXT_PUBLIC_MCP_URL || 'https://mcp.kapruka.com/mcp';
 
-// Keep original search function for search_query tag (non‑quantum)
-async function searchProducts(query: string): Promise<Product[]> {
-  try {
-    const r = await fetch(MCP_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tool: 'search_products', params: { query, limit: 8 } }),
-    });
-    if (!r.ok) throw new Error('MCP error');
-    const data = await r.json();
-    const raw = data.products || data.results || data.data || [];
-    return raw.map((p: Record<string, unknown>, idx: number) => ({
-      id: String((p.id as string | number) || idx),
-      name: String(p.name || p.title || 'Product'),
-      price: Number(p.price || p.amount || 0),
-      image: String(p.image || p.imageUrl || p.thumbnail || ''),
-      url: String(p.url || p.link || ''),
-    }));
-  } catch {
-    return generateMockProducts(query);
-  }
-}
-
-function generateMockProducts(query: string): Product[] {
-  const items = [
-    { name: `${query} - Premium Pack`, price: 2450, img: 'https://placehold.co/300x300/1e293b/f59e0b?text=Product+1' },
-    { name: `${query} - Standard`, price: 1890, img: 'https://placehold.co/300x300/1e293b/f59e0b?text=Product+2' },
-    { name: `${query} - Value Pack`, price: 3200, img: 'https://placehold.co/300x300/1e293b/f59e0b?text=Product+3' },
-    { name: `Best ${query} Sri Lanka`, price: 1650, img: 'https://placehold.co/300x300/1e293b/f59e0b?text=Product+4' },
-    { name: `${query} - Kapruka Pick`, price: 2100, img: 'https://placehold.co/300x300/1e293b/f59e0b?text=Product+5' },
-    { name: `${query} - Gift Set`, price: 4500, img: 'https://placehold.co/300x300/1e293b/f59e0b?text=Product+6' },
-  ];
-  return items.map((it, i) => ({
-    id: `mock-${i}-${Date.now()}`,
-    name: it.name,
-    price: it.price,
-    image: it.img,
-  }));
-}
-
-function extractSearchQuery(text: string): string | null {
-  const match = text.match(/<search_query>([\s\S]*?)<\/search_query>/);
-  return match ? match[1].trim() : null;
-}
-
 // Remove both search_query and quantum_search tags from displayed message
 function cleanAllTags(text: string): string {
   return text.replace(/<(search_query|quantum_search)[^>]*>[^]*?<\/\1>/g, '').trim();
@@ -75,17 +30,18 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [detectedLang, setDetectedLang] = useState<'si' | 'ta' | 'tl' | 'en'>('en');
 
-  // Debounced send for auto‑trigger scenarios (Enter key remains instant)
-  const debouncedSend = (text: string) => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => handleSend(), 300);
-  };
+  // Auto-expand textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+  }, [input]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -139,21 +95,31 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
         });
       }
 
-      // --- Handle regular search_query (existing behaviour) ---
-      const query = extractSearchQuery(fullText);
-      if (query) {
+      // --- Handle <search_query> (with fallback intent detection) ---
+      const sqMatch = fullText.match(/<search_query>([\s\S]*?)<\/search_query>/);
+      const productIntent = !sqMatch && /shoes|phone|laptop|bag|gift|food|rice|cake|book|dress|watch|perfume|groceries|electronics/i.test(text);
+
+      if (sqMatch || productIntent) {
+        const query = sqMatch ? sqMatch[1].trim() : text;
+
         setMessages(prev => {
           const copy = [...prev];
           copy[copy.length - 1] = { role: 'assistant', content: cleanAllTags(fullText) };
           return copy;
         });
+
         onSearching(true);
-        const products = await searchProducts(query);
+        const res2 = await fetch('/api/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ primary: query, alternative: query, creative: query }),
+        });
+        const { products } = await res2.json();
         onProductsFound(products);
         onSearching(false);
       }
 
-      // --- Handle quantum_search tag (new) ---
+      // --- Handle quantum_search tag ---
       const qMatch = fullText.match(
         /<quantum_search primary="([^"]+)" alt="([^"]+)" creative="([^"]+)"(?:\s+budget="(\d+)")?/
       );
@@ -181,7 +147,7 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
         onSearching(false);
       }
 
-      // --- Order tracking detection (after stream closes) ---
+      // --- Order tracking ---
       const orderMatch = fullText.match(/\b(\d{8})\b/);
       if (orderMatch) {
         const orderId = orderMatch[1];
@@ -287,14 +253,13 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
       <div className="border-t border-slate-800 px-4 py-3">
         <div className="flex gap-2 items-end bg-slate-800 border border-slate-700 rounded-2xl px-3 py-2 focus-within:border-amber-400/50 transition-colors">
           <textarea
-            ref={inputRef}
+            ref={textareaRef}
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={s.chatPlaceholder}
-            rows={1}
             className="flex-1 bg-transparent text-slate-100 placeholder-slate-500 text-sm resize-none outline-none leading-relaxed max-h-32 py-0.5"
-            style={{ scrollbarWidth: 'none' }}
+            style={{ scrollbarWidth: 'none', height: 'auto', minHeight: '24px' }}
             disabled={isStreaming}
           />
           <button
