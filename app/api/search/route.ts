@@ -1,60 +1,80 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { cacheGet, cacheSet } from '@/lib/cache';
 
-async function mcpSearch(query: string) {
-  const cached = cacheGet<Record<string, unknown>[]>(query);
-  if (cached) return cached;
+export const dynamic = 'force-dynamic';
 
-  try {
-    const r = await fetch(process.env.MCP_URL!, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tool: 'search_products', params: { query, limit: 8 } }),
-    });
-    const data = await r.json();
-    const results = (data.products || data.results || data.data || []) as Record<string, unknown>[];
-    cacheSet(query, results);
-    return results;
-  } catch {
-    return [];
-  }
+const MCP = process.env.MCP_URL!;
+const HEADERS = { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' };
+
+async function getSession(): Promise<string> {
+  const r = await fetch(MCP, {
+    method: 'POST',
+    headers: HEADERS,
+    body: JSON.stringify({
+      jsonrpc: '2.0', id: '1', method: 'initialize',
+      params: { protocolVersion: '2024-11-05', clientInfo: { name: 'tara', version: '1.0' }, capabilities: {} },
+    }),
+  });
+  const sessionId = r.headers.get('mcp-session-id');
+  if (!sessionId) throw new Error('No session ID');
+  return sessionId;
 }
 
-function scoreProduct(p: Record<string, unknown>, budget?: number) {
-  const relevance = Number(p.relevance ?? 0.7);
-  const rating    = Math.min(Number(p.rating ?? 3.5) / 5, 1);
-  const speed     = Number(p.delivery_days ?? 3) <= 2 ? 1 : 0.5;
-  const price     = Number(p.price ?? 0);
-  const budgetFit = budget ? Math.max(0, 1 - Math.abs(price - budget) / budget) : 0.7;
-  return (relevance * 0.4) + (budgetFit * 0.3) + (rating * 0.2) + (speed * 0.1);
+async function mcpSearch(q: string, sessionId: string, maxPrice?: number) {
+  try {
+    const args: Record<string, unknown> = { q, limit: 8, currency: 'LKR', response_format: 'json' };
+    if (maxPrice) args.max_price = maxPrice;
+
+    const r = await fetch(MCP, {
+      method: 'POST',
+      headers: { ...HEADERS, 'mcp-session-id': sessionId },
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: '2', method: 'tools/call',
+        params: { name: 'kapruka_search_products', arguments: { params: args } },
+      }),
+    });
+    const text = await r.text();
+    const match = text.match(/^data:\s*(.+)$/m);
+    if (!match) return [];
+    const data = JSON.parse(match[1]);
+    const raw = data?.result?.content?.[0]?.text;
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return (parsed.results || []) as Record<string, unknown>[];
+  } catch { return []; }
 }
 
 export async function POST(req: NextRequest) {
   const { primary, alternative, creative, budget } = await req.json();
 
-  const [r1, r2, r3] = await Promise.all([
-    mcpSearch(primary), mcpSearch(alternative), mcpSearch(creative),
-  ]);
+  try {
+    const sessionId = await getSession();
 
-  const seen = new Set<string>();
-  const merged = [...r1, ...r2, ...r3].filter(p => {
-    const id = String(p.id ?? p.product_id ?? '');
-    if (seen.has(id)) return false;
-    seen.add(id);
-    return true;
-  });
+    const [r1, r2, r3] = await Promise.all([
+      mcpSearch(primary, sessionId, budget),
+      mcpSearch(alternative, sessionId),
+      mcpSearch(creative, sessionId),
+    ]);
 
-  const scored = merged
-    .map(p => ({
-      id:    String(p.id ?? p.product_id ?? Math.random()),
-      name:  String(p.name ?? p.title ?? ''),
-      price: Number(p.price ?? 0),
-      image: String(p.image ?? p.imageUrl ?? ''),
-      url:   String(p.url ?? ''),
-      _score: scoreProduct(p, budget),
-    }))
-    .sort((a, b) => b._score - a._score)
-    .slice(0, 8);
+    const seen = new Set<string>();
+    const products = [...r1, ...r2, ...r3]
+      .filter(p => {
+        const id = String(p.id ?? '');
+        if (!id || seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      })
+      .slice(0, 8)
+      .map(p => ({
+        id: String(p.id ?? Math.random()),
+        name: String(p.name ?? ''),
+        price: Number((p.price as Record<string,unknown>)?.amount ?? p.price ?? 0),
+        image: String(p.image_url ?? ''),
+        url: String(p.url ?? ''),
+      }));
 
-  return NextResponse.json({ products: scored, quantum: true });
+    return NextResponse.json({ products, quantum: true });
+  } catch (e) {
+    console.error('MCP error:', e);
+    return NextResponse.json({ products: [], quantum: false });
+  }
 }
