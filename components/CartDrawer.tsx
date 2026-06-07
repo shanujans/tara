@@ -27,7 +27,10 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
   const [genLoading, setGenLoading]   = useState(false);
   const [checkLoading, setCheckLoading] = useState(false);
   const [orderId, setOrderId]         = useState('');
+  const [checkoutUrl, setCheckoutUrl] = useState('');
   const [error, setError]             = useState('');
+  const [recipientName, setRecipientName] = useState('');
+  const [recipientPhone, setRecipientPhone] = useState('');
 
   // Min = tomorrow, max = +30 days
   const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
@@ -49,18 +52,35 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
 
   const handleCheckout = async () => {
     setError('');
-    if (!district)      { setError('Please select a district.'); return; }
-    if (!deliveryDate)  { setError('Please select a delivery date.'); return; }
+    if (!district)        { setError('Please select a district.'); return; }
+    if (!deliveryDate)    { setError('Please select a delivery date.'); return; }
+    if (!recipientName.trim())  { setError('Please enter recipient name.'); return; }
+    if (!recipientPhone.trim()) { setError('Please enter recipient phone.'); return; }
     setCheckLoading(true);
     try {
       const r = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items, giftMessage, deliveryDate, district, total }),
+        body: JSON.stringify({
+          items,
+          giftMessage,
+          deliveryDate,
+          district,
+          total,
+          recipient: { name: recipientName.trim(), phone: recipientPhone.trim() },
+          sender: { name: 'TARA Customer' },
+        }),
       });
       const data = await r.json();
-      if (data.success) { setOrderId(data.orderId); clearCart(); }
-      else setError(data.error ?? 'Checkout failed.');
+      if (data.success) {
+        setOrderId(data.orderId);
+        setCheckoutUrl(data.checkoutUrl);
+        setRecipientName('');
+        setRecipientPhone('');
+        clearCart();
+      } else {
+        setError(data.error ?? 'Checkout failed.');
+      }
     } finally { setCheckLoading(false); }
   };
 
@@ -86,8 +106,19 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
           <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6 text-center">
             <div className="w-16 h-16 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center text-3xl">✓</div>
             <p className="text-green-400 font-bold text-lg">Order Placed!</p>
-            <p className="text-slate-400 text-sm">Order ID: <span className="text-white font-mono">{orderId}</span></p>
-            <button onClick={() => { setOrderId(''); onClose(); }} className="mt-2 bg-amber-400 text-slate-900 font-bold px-6 py-2 rounded-xl text-sm">
+            <p className="text-slate-400 text-sm">Ref: <span className="text-white font-mono">{orderId}</span></p>
+            <a
+              href={checkoutUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 bg-amber-400 text-slate-900 font-bold px-6 py-2 rounded-xl text-sm inline-block"
+            >
+              Complete Payment →
+            </a>
+            <button
+              onClick={() => { setOrderId(''); setCheckoutUrl(''); onClose(); }}
+              className="mt-2 bg-amber-400 text-slate-900 font-bold px-6 py-2 rounded-xl text-sm"
+            >
               Continue Shopping
             </button>
           </div>
@@ -169,6 +200,25 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
                     placeholder={GIFT_PLACEHOLDERS[lang]}
                     rows={3}
                     className="w-full bg-slate-800 border border-slate-700 focus:border-amber-400/50 rounded-xl px-3 py-2 text-slate-100 placeholder-slate-500 text-xs resize-none outline-none transition-colors"
+                  />
+                </div>
+
+                {/* Recipient info */}
+                <div>
+                  <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1.5">Recipient</p>
+                  <input
+                    type="text"
+                    value={recipientName}
+                    onChange={e => setRecipientName(e.target.value)}
+                    placeholder="Full name"
+                    className="w-full bg-slate-800 border border-slate-700 focus:border-amber-400/50 rounded-xl px-3 py-2 text-slate-100 placeholder-slate-500 text-xs outline-none mb-2 transition-colors"
+                  />
+                  <input
+                    type="tel"
+                    value={recipientPhone}
+                    onChange={e => setRecipientPhone(e.target.value)}
+                    placeholder="077XXXXXXX"
+                    className="w-full bg-slate-800 border border-slate-700 focus:border-amber-400/50 rounded-xl px-3 py-2 text-slate-100 placeholder-slate-500 text-xs outline-none transition-colors"
                   />
                 </div>
 
