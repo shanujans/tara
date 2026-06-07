@@ -1,7 +1,8 @@
 import OpenAI from 'openai';
 import { NextRequest, NextResponse } from 'next/server';
 
-const ai = new OpenAI({ baseURL: 'https://api.aimlapi.com/v1', apiKey: process.env.AIML_API_KEY });
+export async function POST(req: NextRequest) {
+  const ai = new OpenAI({ baseURL: 'https://api.aimlapi.com/v1', apiKey: process.env.AIML_API_KEY });
 
 export async function POST(req: NextRequest) {
   const { occasion, lang, items } = await req.json();

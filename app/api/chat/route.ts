@@ -1,12 +1,12 @@
 import OpenAI from 'openai';
 import { NextRequest } from 'next/server';
 
-const ai = new OpenAI({
-  baseURL: 'https://api.aimlapi.com/v1',
-  apiKey: process.env.AIML_API_KEY,
-});
-
-const MODEL = 'anthropic/claude-sonnet-4';
+export async function POST(req: NextRequest) {
+  const ai = new OpenAI({
+    baseURL: 'https://api.aimlapi.com/v1',
+    apiKey: process.env.AIML_API_KEY,
+  });
+  const MODEL = 'anthropic/claude-sonnet-4';
 
 function detectLang(text: string): 'si'|'ta'|'tl'|'en' {
   if (/[\u0D80-\u0DFF]/.test(text)) return 'si';
