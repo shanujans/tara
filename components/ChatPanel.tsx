@@ -26,7 +26,6 @@ async function searchProducts(query: string): Promise<Product[]> {
     });
     if (!r.ok) throw new Error('MCP error');
     const data = await r.json();
-    // Map Kapruka MCP response to Product shape
     const raw = data.products || data.results || data.data || [];
     return raw.map((p: Record<string, unknown>, idx: number) => ({
       id: String((p.id as string | number) || idx),
@@ -36,7 +35,6 @@ async function searchProducts(query: string): Promise<Product[]> {
       url: String(p.url || p.link || ''),
     }));
   } catch {
-    // Fallback mock products for demo / MCP unavailable
     return generateMockProducts(query);
   }
 }
@@ -78,6 +76,9 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
+  // 🔔 Language badge state (driven by server response header)
+  const [detectedLang, setDetectedLang] = useState<'si' | 'ta' | 'tl' | 'en'>('en');
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isStreaming]);
@@ -86,9 +87,9 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
     const text = input.trim();
     if (!text || isStreaming) return;
 
-    // Detect language from user input
-    const detectedLang = detectLang(text);
-    if (detectedLang !== lang) onLangChange(detectedLang);
+    // Instant local detection for UI language change (kept for now)
+    const localDetected = detectLang(text);
+    if (localDetected !== lang) onLangChange(localDetected);
 
     const userMsg: Message = { role: 'user', content: text };
     const newMessages = [...messages, userMsg];
@@ -109,6 +110,10 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
       });
 
       if (!res.ok) throw new Error('API error');
+
+      // 🏷️ Read the language detected by the server
+      const responseLang = res.headers.get('X-Detected-Lang') as 'si' | 'ta' | 'tl' | 'en' | null;
+      if (responseLang) setDetectedLang(responseLang);
 
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
@@ -131,7 +136,6 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
       // Extract search query and fetch products
       const query = extractSearchQuery(fullText);
       if (query) {
-        // Clean the displayed message
         setMessages(prev => {
           const copy = [...prev];
           copy[copy.length - 1] = { role: 'assistant', content: cleanMessage(fullText) };
@@ -159,6 +163,14 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
       e.preventDefault();
       handleSend();
     }
+  };
+
+  // 🎨 Badge styling map
+  const LANG_BADGE = {
+    si: { label: '🇱🇰 සිං', color: 'bg-green-600 text-white' },
+    ta: { label: '🇱🇰 த', color: 'bg-orange-500 text-white' },
+    tl: { label: '🇱🇰 TL', color: 'bg-amber-400 text-slate-900' },
+    en: { label: '🇱🇰 EN', color: 'bg-blue-600 text-white' },
   };
 
   return (
@@ -210,6 +222,15 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
         )}
 
         <div ref={bottomRef} />
+      </div>
+
+      {/* 🏷️ Detected language badge */}
+      <div className="px-4 pt-2 flex justify-end">
+        <span
+          className={`text-xs font-bold px-2 py-0.5 rounded-full transition-all duration-500 ${LANG_BADGE[detectedLang].color}`}
+        >
+          {LANG_BADGE[detectedLang].label}
+        </span>
       </div>
 
       {/* Input area */}

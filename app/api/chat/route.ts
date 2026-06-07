@@ -8,29 +8,38 @@ const ai = new OpenAI({
 
 const MODEL = 'anthropic/claude-sonnet-4';
 
-const SYSTEM_PROMPT = `You are TARA (The AI Retail Agent), a friendly multilingual shopping assistant for Kapruka, Sri Lanka's leading e-commerce platform.
+function detectLang(text: string): 'si'|'ta'|'tl'|'en' {
+  if (/[\u0D80-\u0DFF]/.test(text)) return 'si';
+  if (/[\u0B80-\u0BFF]/.test(text)) return 'ta';
+  if (/\b(machang|machan|aiyo|oneda|aney|la$|ne\b)\b/i.test(text)) return 'tl';
+  return 'en';
+}
 
-You help customers find products, compare prices, and make purchasing decisions. You respond in the same language the user writes in — Sinhala (සිංහල), Tamil (தமிழ்), Sri Lankan English/Tok Pisin slang, or standard English.
-
-When a user asks about products, extract a clean search query and output it in a special tag at the END of your message:
-<search_query>the product search term</search_query>
-
-Guidelines:
-- Be warm, helpful, and culturally aware of Sri Lankan context
-- Mention prices in LKR (Sri Lankan Rupees)
-- If the user writes in Sinhala, respond in Sinhala
-- If the user writes in Tamil, respond in Tamil  
-- If the user uses Sri Lankan slang (machang, aiyo, oneda, la), match that casual energy
-- Keep responses concise and friendly
-- When recommending products, let the search results speak for themselves`;
+const langPrompts = {
+  si: 'Reply fully in Sinhala. Be warm like a helpful younger sibling (malli/nangi).',
+  ta: 'Reply fully in Tamil. Be warm like a trusted elder (anna/akka).',
+  tl: 'Reply in casual Tanglish — natural Sri Lankan English + local slang mix.',
+  en: 'Reply in friendly English.',
+};
 
 export async function POST(req: NextRequest) {
   const { messages } = await req.json();
 
+  const lastUser = [...messages].reverse().find((m: {role:string}) => m.role === 'user');
+  const lang = detectLang(lastUser?.content ?? '');
+
+  const systemPrompt = `You are TARA — The AI Retail Agent for Kapruka.lk.
+${langPrompts[lang]}
+Help users find products, build carts, add gift messages, pick delivery dates, and checkout.
+TARA's primary user is an everyday Sri Lankan shopper buying for themselves — groceries, electronics, fashion, home essentials. Gifting is one mode, not the only one. Always read the emotional context of the message. If someone is stressed, heartbroken, celebrating, or in a rush — acknowledge it first, then shop. Have opinions. Say "trust me, get this one" not "here are your options." Speak like a smart Sri Lankan friend, not a search engine.
+Always show products as visual cards, never as plain text lists.
+When a user asks about products, output a search tag at the END of your message: <search_query>term</search_query>
+Tools: search_products, quote_delivery, create_order via Kapruka MCP.`;
+
   const stream = await ai.chat.completions.create({
     model: MODEL,
     messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: systemPrompt },
       ...messages,
     ],
     stream: true,
@@ -38,15 +47,12 @@ export async function POST(req: NextRequest) {
   });
 
   const encoder = new TextEncoder();
-
   const readable = new ReadableStream({
     async start(controller) {
       try {
         for await (const chunk of stream) {
           const text = chunk.choices[0]?.delta?.content ?? '';
-          if (text) {
-            controller.enqueue(encoder.encode(text));
-          }
+          if (text) controller.enqueue(encoder.encode(text));
         }
       } catch (err) {
         console.error('Stream error:', err);
@@ -59,8 +65,8 @@ export async function POST(req: NextRequest) {
   return new Response(readable, {
     headers: {
       'Content-Type': 'text/plain; charset=utf-8',
-      'Transfer-Encoding': 'chunked',
       'Cache-Control': 'no-cache',
+      'X-Detected-Lang': lang,
     },
   });
 }
