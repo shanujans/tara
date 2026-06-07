@@ -1,4 +1,13 @@
 'use client';
+
+export interface Product {
+  id: string;
+  name: string;
+  price: number;
+  image: string;
+  url?: string;
+}
+
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 
 export interface CartItem {
@@ -7,7 +16,7 @@ export interface CartItem {
 
 interface CartCtx {
   items: CartItem[];
-  addItem: (p: Omit<CartItem,'qty'>) => void;
+  addItem: (p: Product) => void;
   removeItem: (id: string) => void;
   updateQty: (id: string, qty: number) => void;
   clearCart: () => void;
@@ -29,11 +38,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [deliveryDate, setDeliveryDate] = useState('');
   const [district, setDistrict]         = useState('');
 
-  const addItem = useCallback((p: Omit<CartItem,'qty'>) => {
+  const addItem = useCallback((p: Product) => {
     setItems(prev => {
       const ex = prev.find(i => i.id === p.id);
       if (ex) return prev.map(i => i.id === p.id ? { ...i, qty: i.qty + 1 } : i);
-      return [...prev, { ...p, qty: 1 }];
+      return [...prev, { id: p.id, name: p.name, price: p.price, image: p.image, qty: 1 }];
     });
   }, []);
 
