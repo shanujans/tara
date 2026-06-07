@@ -56,6 +56,11 @@ const langPrompts = {
 };
 
 export async function POST(req: NextRequest) {
+  // Temporary debug check
+  if (!process.env.AIML_API_KEY) {
+    return new Response('AIML_API_KEY not set', { status: 500 });
+  }
+
   const ai = new OpenAI({ baseURL: 'https://api.aimlapi.com/v1', apiKey: process.env.AIML_API_KEY });
   const MODEL = 'anthropic/claude-sonnet-4';
 
