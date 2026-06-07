@@ -1,5 +1,5 @@
 'use client';
-import { useState, useRef, useEffect, KeyboardEvent } from 'react';
+import { useState, useRef, useEffect, useCallback, KeyboardEvent } from 'react';
 import { STRINGS, Lang, detectLang } from '@/lib/strings';
 import { Product } from '@/context/CartContext';
 
@@ -13,28 +13,57 @@ interface ChatPanelProps {
   onLangChange: (l: Lang) => void;
   onProductsFound: (products: Product[], quantum?: boolean) => void;
   onSearching: (loading: boolean) => void;
+  speakerOn: boolean;
+  onSpeakerToggle: () => void;
 }
-
-const MCP_URL = process.env.NEXT_PUBLIC_MCP_URL || 'https://mcp.kapruka.com/mcp';
 
 function cleanAllTags(text: string): string {
-  return text.replace(/<(search_query|quantum_search)[^>]*>[^]*?<\/\1>/g, '').trim();
+  return text.replace(/<(search_query|quantum_search)[^>]*>[\s\S]*?<\/\1>/g, '').trim();
 }
 
-export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearching }: ChatPanelProps) {
+const SPEECH_LANG: Record<Lang, string> = {
+  si: 'si-LK', ta: 'ta-IN', tl: 'en-US', en: 'en-US',
+};
+
+const LANG_BADGE = {
+  si: { label: '🇱🇰 සිං', color: 'bg-green-600 text-white' },
+  ta: { label: '🇱🇰 த',   color: 'bg-orange-500 text-white' },
+  tl: { label: '🇱🇰 TL',  color: 'bg-amber-400 text-slate-900' },
+  en: { label: '🇱🇰 EN',  color: 'bg-blue-600 text-white' },
+};
+
+export default function ChatPanel({
+  lang,
+  onLangChange,
+  onProductsFound,
+  onSearching,
+  speakerOn,
+}: ChatPanelProps) {
   const s = STRINGS[lang];
+
   const [messages, setMessages] = useState<Message[]>([
     { role: 'assistant', content: s.welcomeMsg },
   ]);
-  const [input, setInput] = useState('');
+  const [input, setInput]           = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const [detectedLang, setDetectedLang] = useState<Lang>('en');
+  const [listening, setListening]   = useState(false);
+
+  const bottomRef   = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  const abortRef    = useRef<AbortController | null>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
 
-  const [detectedLang, setDetectedLang] = useState<'si' | 'ta' | 'tl' | 'en'>('en');
+  const voiceSupported =
+    typeof window !== 'undefined' &&
+    ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
 
-  // Auto-expand textarea
+  // Auto-scroll
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isStreaming]);
+
+  // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -42,13 +71,55 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
     }
   }, [input]);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isStreaming]);
+  // Speak TARA response
+  const speak = useCallback((text: string) => {
+    if (!speakerOn || !('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+    const clean = text.replace(/<[^>]*>/g, '').replace(/[✦*#]/g, '').trim();
+    if (!clean) return;
+    const utt = new SpeechSynthesisUtterance(clean);
+    const voices = window.speechSynthesis.getVoices();
+    const preferred = SPEECH_LANG[lang] ?? 'en-US';
+    const match = voices.find(v => v.lang.startsWith(preferred.split('-')[0]));
+    if (match) utt.voice = match;
+    utt.rate = 1.05;
+    window.speechSynthesis.speak(utt);
+  }, [speakerOn, lang]);
 
-  const handleSend = async () => {
-    const text = input.trim();
-    if (!text || isStreaming) return;
+  // Voice input
+  const startListening = () => {
+    if (!voiceSupported) return;
+    const SR =
+      (window as typeof window & { webkitSpeechRecognition: typeof SpeechRecognition })
+        .SpeechRecognition ?? window.webkitSpeechRecognition;
+    const recognition = new SR();
+    recognition.lang = SPEECH_LANG[lang] ?? 'en-US';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (e: SpeechRecognitionEvent) => {
+      const transcript = e.results[0][0].transcript;
+      setInput(transcript);
+      setListening(false);
+      setTimeout(() => {
+        handleSendWithText(transcript);
+      }, 150);
+    };
+    recognition.onerror = () => setListening(false);
+    recognition.onend   = () => setListening(false);
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setListening(true);
+  };
+
+  const stopListening = () => {
+    recognitionRef.current?.stop();
+    setListening(false);
+  };
+
+  const handleSendWithText = async (text: string) => {
+    if (!text.trim() || isStreaming) return;
 
     const localDetected = detectLang(text);
     if (localDetected !== lang) onLangChange(localDetected);
@@ -73,12 +144,12 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
 
       if (!res.ok) throw new Error('API error');
 
-      const responseLang = res.headers.get('X-Detected-Lang') as 'si' | 'ta' | 'tl' | 'en' | null;
+      const responseLang = res.headers.get('X-Detected-Lang') as Lang | null;
       if (responseLang) setDetectedLang(responseLang);
 
-      const reader = res.body!.getReader();
+      const reader  = res.body!.getReader();
       const decoder = new TextDecoder();
-      let fullText = '';
+      let fullText  = '';
 
       setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
 
@@ -86,7 +157,6 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
         const { done, value } = await reader.read();
         if (done) break;
         fullText += decoder.decode(value, { stream: true });
-
         setMessages(prev => {
           const copy = [...prev];
           copy[copy.length - 1] = { role: 'assistant', content: fullText };
@@ -94,15 +164,20 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
         });
       }
 
-      // --- Always search after AI responds, using the user's message as query ---
-      const sqMatch = fullText.match(/<search_query>([\s\S]*?)<\/search_query>/);
-      const query = sqMatch ? sqMatch[1].trim() : text;
-
+      // Clean tags from display
+      const visibleText = cleanAllTags(fullText);
       setMessages(prev => {
         const copy = [...prev];
-        copy[copy.length - 1] = { role: 'assistant', content: cleanAllTags(fullText) };
+        copy[copy.length - 1] = { role: 'assistant', content: visibleText };
         return copy;
       });
+
+      // Speak response
+      speak(visibleText);
+
+      // Search products
+      const sqMatch = fullText.match(/<search_query>([\s\S]*?)<\/search_query>/);
+      const query   = sqMatch ? sqMatch[1].trim() : text;
 
       onSearching(true);
       try {
@@ -113,56 +188,32 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
         });
         const { products } = await res2.json();
         onProductsFound(products);
-      } catch {
-        /* silent */
-      } finally {
-        onSearching(false);
-      }
+      } catch { /* silent */ }
+      finally { onSearching(false); }
 
-      // --- Handle quantum_search tag ---
-      const qMatch = fullText.match(
-        /<quantum_search primary="([^"]+)" alt="([^"]+)" creative="([^"]+)"(?:\s+budget="(\d+)")?/
-      );
-      if (qMatch) {
-        const [, primary, alternative, creative, budget] = qMatch;
-        onSearching(true);
-        try {
-          const res3 = await fetch('/api/search', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              primary,
-              alternative,
-              creative,
-              budget: budget ? Number(budget) : undefined,
-            }),
-          });
-          const { products, quantum } = await res3.json();
-          onProductsFound(products, quantum);
-        } catch {
-          /* silent */
-        } finally {
-          onSearching(false);
-        }
-      }
-
-      // --- Order tracking ---
-      const orderMatch = fullText.match(/\b(\d{8})\b/);
+      // Order tracking — detect order number pattern
+      const orderMatch = fullText.match(/\b([A-Z]{2,6}\d{4,}[A-Z0-9]*)\b/);
       if (orderMatch) {
-        const orderId = orderMatch[1];
+        // silently attempt track — fail safe
         try {
-          const r = await fetch(MCP_URL, {
+          const MCP = process.env.NEXT_PUBLIC_MCP_URL ?? 'https://mcp.kapruka.com/mcp';
+          const r = await fetch(MCP, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tool: 'track_order', params: { order_id: orderId } }),
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' },
+            body: JSON.stringify({ tool: 'track_order', params: { order_number: orderMatch[1] } }),
           });
-          const { status, timeline } = await r.json();
-          const statusMsg = `📦 Order ${orderId}: **${status}**\n${(timeline as string[]).map((s, i) => `${i + 1}. ${s}`).join('\n')}`;
-          setMessages(prev => [...prev, { role: 'assistant', content: statusMsg }]);
-        } catch {
-          /* silent fail */
-        }
+          if (r.ok) {
+            const { status } = await r.json();
+            if (status) {
+              setMessages(prev => [...prev, {
+                role: 'assistant',
+                content: `📦 Order ${orderMatch[1]}: ${status}`,
+              }]);
+            }
+          }
+        } catch { /* silent */ }
       }
+
     } catch (err: unknown) {
       if ((err as Error).name !== 'AbortError') {
         setMessages(prev => [
@@ -175,6 +226,8 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
     }
   };
 
+  const handleSend = () => handleSendWithText(input.trim());
+
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -182,15 +235,9 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
     }
   };
 
-  const LANG_BADGE = {
-    si: { label: '🇱🇰 සිං', color: 'bg-green-600 text-white' },
-    ta: { label: '🇱🇰 த', color: 'bg-orange-500 text-white' },
-    tl: { label: '🇱🇰 TL', color: 'bg-amber-400 text-slate-900' },
-    en: { label: '🇱🇰 EN', color: 'bg-blue-600 text-white' },
-  };
-
   return (
     <div className="flex flex-col h-full bg-slate-900 border-r border-slate-800">
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
         {messages.map((msg, i) => (
@@ -221,6 +268,7 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
           </div>
         ))}
 
+        {/* Typing indicator when waiting for first chunk */}
         {isStreaming && messages[messages.length - 1]?.role !== 'assistant' && (
           <div className="flex gap-2.5 justify-start">
             <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center flex-shrink-0 shadow-md shadow-amber-400/20">
@@ -239,11 +287,9 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
         <div ref={bottomRef} />
       </div>
 
-      {/* Detected language badge */}
-      <div className="px-4 pt-2 flex justify-end">
-        <span
-          className={`text-xs font-bold px-2 py-0.5 rounded-full transition-all duration-500 ${LANG_BADGE[detectedLang].color}`}
-        >
+      {/* Language badge */}
+      <div className="px-4 pt-1 flex justify-end">
+        <span className={`text-xs font-bold px-2 py-0.5 rounded-full transition-all duration-500 ${LANG_BADGE[detectedLang].color}`}>
           {LANG_BADGE[detectedLang].label}
         </span>
       </div>
@@ -258,9 +304,11 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
             onKeyDown={handleKeyDown}
             placeholder={s.chatPlaceholder}
             className="flex-1 bg-transparent text-slate-100 placeholder-slate-500 text-sm resize-none outline-none leading-relaxed max-h-32 py-0.5"
-            style={{ scrollbarWidth: 'none', height: 'auto', minHeight: '24px' }}
+            style={{ scrollbarWidth: 'none', minHeight: '24px' }}
             disabled={isStreaming}
           />
+
+          {/* Send button */}
           <button
             onClick={handleSend}
             disabled={!input.trim() || isStreaming}
@@ -271,9 +319,37 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
               <path d="M1 7h12M7 1l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </button>
+
+          {/* Mic button */}
+          {voiceSupported && (
+            <button
+              onClick={listening ? stopListening : startListening}
+              disabled={isStreaming}
+              className={`flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-200 mb-0.5 relative ${
+                listening
+                  ? 'bg-red-500 text-white'
+                  : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+              }`}
+              aria-label={listening ? 'Stop listening' : 'Voice input'}
+            >
+              {listening && (
+                <span className="absolute inset-0 rounded-xl bg-red-500 animate-ping opacity-60" />
+              )}
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                <rect x="4" y="0.5" width="5" height="7" rx="2.5" fill="currentColor"/>
+                <path d="M1.5 6.5a5 5 0 0010 0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                <line x1="6.5" y1="11.5" x2="6.5" y2="13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+            </button>
+          )}
         </div>
-        <p className="text-slate-600 text-xs text-center mt-2">
-          {s.typing} · Shift+Enter for new line
+
+        {/* Hint text */}
+        <p className="text-xs text-center mt-2 transition-all duration-300">
+          {listening
+            ? <span className="text-red-400 font-medium animate-pulse">🎙 TARA is listening...</span>
+            : <span className="text-slate-600">{s.typing} · Shift+Enter for new line</span>
+          }
         </p>
       </div>
     </div>
