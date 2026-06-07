@@ -17,7 +17,6 @@ interface ChatPanelProps {
 
 const MCP_URL = process.env.NEXT_PUBLIC_MCP_URL || 'https://mcp.kapruka.com/mcp';
 
-// Remove both search_query and quantum_search tags from displayed message
 function cleanAllTags(text: string): string {
   return text.replace(/<(search_query|quantum_search)[^>]*>[^]*?<\/\1>/g, '').trim();
 }
@@ -95,20 +94,18 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
         });
       }
 
-      // --- Handle <search_query> (with fallback intent detection) ---
+      // --- Always search after AI responds, using the user's message as query ---
       const sqMatch = fullText.match(/<search_query>([\s\S]*?)<\/search_query>/);
-      const productIntent = !sqMatch && /shoes|phone|laptop|bag|gift|food|rice|cake|book|dress|watch|perfume|groceries|electronics/i.test(text);
+      const query = sqMatch ? sqMatch[1].trim() : text;
 
-      if (sqMatch || productIntent) {
-        const query = sqMatch ? sqMatch[1].trim() : text;
+      setMessages(prev => {
+        const copy = [...prev];
+        copy[copy.length - 1] = { role: 'assistant', content: cleanAllTags(fullText) };
+        return copy;
+      });
 
-        setMessages(prev => {
-          const copy = [...prev];
-          copy[copy.length - 1] = { role: 'assistant', content: cleanAllTags(fullText) };
-          return copy;
-        });
-
-        onSearching(true);
+      onSearching(true);
+      try {
         const res2 = await fetch('/api/search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -116,6 +113,9 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
         });
         const { products } = await res2.json();
         onProductsFound(products);
+      } catch {
+        /* silent */
+      } finally {
         onSearching(false);
       }
 
@@ -124,27 +124,26 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
         /<quantum_search primary="([^"]+)" alt="([^"]+)" creative="([^"]+)"(?:\s+budget="(\d+)")?/
       );
       if (qMatch) {
-        setMessages(prev => {
-          const copy = [...prev];
-          copy[copy.length - 1] = { role: 'assistant', content: cleanAllTags(fullText) };
-          return copy;
-        });
-
         const [, primary, alternative, creative, budget] = qMatch;
         onSearching(true);
-        const res2 = await fetch('/api/search', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            primary,
-            alternative,
-            creative,
-            budget: budget ? Number(budget) : undefined,
-          }),
-        });
-        const { products, quantum } = await res2.json();
-        onProductsFound(products, quantum);
-        onSearching(false);
+        try {
+          const res3 = await fetch('/api/search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              primary,
+              alternative,
+              creative,
+              budget: budget ? Number(budget) : undefined,
+            }),
+          });
+          const { products, quantum } = await res3.json();
+          onProductsFound(products, quantum);
+        } catch {
+          /* silent */
+        } finally {
+          onSearching(false);
+        }
       }
 
       // --- Order tracking ---
