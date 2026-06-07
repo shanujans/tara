@@ -1,6 +1,8 @@
 import OpenAI from 'openai';
 import { NextRequest } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+
 function detectLang(text: string): 'si'|'ta'|'tl'|'en' {
   if (/[\u0D80-\u0DFF]/.test(text)) return 'si';
   if (/[\u0B80-\u0BFF]/.test(text)) return 'ta';
