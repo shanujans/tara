@@ -1,0 +1,12 @@
+{
+  "env": {
+    "AIML_API_KEY": "@aiml_api_key",
+    "MCP_URL": "https://mcp.kapruka.com/mcp",
+    "NEXT_PUBLIC_MCP_URL": "https://mcp.kapruka.com/mcp"
+  },
+  "functions": {
+    "app/api/chat/route.ts": { "maxDuration": 30 },
+    "app/api/search/route.ts": { "maxDuration": 15 },
+    "app/api/checkout/route.ts": { "maxDuration": 15 }
+  }
+}

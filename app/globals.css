@@ -47,3 +47,12 @@ textarea::-webkit-scrollbar {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* Quantum search notification bounce */
+@keyframes bounce-in {
+  0%   { opacity: 0; transform: translate(-50%, 12px); }
+  100% { opacity: 1; transform: translate(-50%, 0); }
+}
+.animate-bounce-in {
+  animation: bounce-in 0.25s ease-out forwards;
+}

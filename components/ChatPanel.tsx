@@ -11,7 +11,7 @@ interface Message {
 interface ChatPanelProps {
   lang: Lang;
   onLangChange: (l: Lang) => void;
-  onProductsFound: (products: Product[], quantum?: boolean) => void; // updated
+  onProductsFound: (products: Product[], quantum?: boolean) => void;
   onSearching: (loading: boolean) => void;
 }
 
@@ -77,8 +77,15 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [detectedLang, setDetectedLang] = useState<'si' | 'ta' | 'tl' | 'en'>('en');
+
+  // Debounced send for auto‑trigger scenarios (Enter key remains instant)
+  const debouncedSend = (text: string) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => handleSend(), 300);
+  };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -142,7 +149,7 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
         });
         onSearching(true);
         const products = await searchProducts(query);
-        onProductsFound(products); // no quantum flag
+        onProductsFound(products);
         onSearching(false);
       }
 
@@ -151,7 +158,6 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
         /<quantum_search primary="([^"]+)" alt="([^"]+)" creative="([^"]+)"(?:\s+budget="(\d+)")?/
       );
       if (qMatch) {
-        // Clean both tag types from the displayed message
         setMessages(prev => {
           const copy = [...prev];
           copy[copy.length - 1] = { role: 'assistant', content: cleanAllTags(fullText) };
@@ -171,8 +177,26 @@ export default function ChatPanel({ lang, onLangChange, onProductsFound, onSearc
           }),
         });
         const { products, quantum } = await res2.json();
-        onProductsFound(products, quantum); // pass quantum flag
+        onProductsFound(products, quantum);
         onSearching(false);
+      }
+
+      // --- Order tracking detection (after stream closes) ---
+      const orderMatch = fullText.match(/\b(\d{8})\b/);
+      if (orderMatch) {
+        const orderId = orderMatch[1];
+        try {
+          const r = await fetch(MCP_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tool: 'track_order', params: { order_id: orderId } }),
+          });
+          const { status, timeline } = await r.json();
+          const statusMsg = `📦 Order ${orderId}: **${status}**\n${(timeline as string[]).map((s, i) => `${i + 1}. ${s}`).join('\n')}`;
+          setMessages(prev => [...prev, { role: 'assistant', content: statusMsg }]);
+        } catch {
+          /* silent fail */
+        }
       }
     } catch (err: unknown) {
       if ((err as Error).name !== 'AbortError') {

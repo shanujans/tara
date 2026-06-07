@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { cacheGet, cacheSet } from '@/lib/cache';
 
 async function mcpSearch(query: string) {
+  const cached = cacheGet<Record<string, unknown>[]>(query);
+  if (cached) return cached;
+
   try {
     const r = await fetch(process.env.MCP_URL!, {
       method: 'POST',
@@ -8,8 +12,12 @@ async function mcpSearch(query: string) {
       body: JSON.stringify({ tool: 'search_products', params: { query, limit: 8 } }),
     });
     const data = await r.json();
-    return (data.products || data.results || data.data || []) as Record<string, unknown>[];
-  } catch { return []; }
+    const results = (data.products || data.results || data.data || []) as Record<string, unknown>[];
+    cacheSet(query, results);
+    return results;
+  } catch {
+    return [];
+  }
 }
 
 function scoreProduct(p: Record<string, unknown>, budget?: number) {
