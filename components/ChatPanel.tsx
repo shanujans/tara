@@ -228,9 +228,17 @@ export default function ChatPanel({
     sendRef.current = handleSendWithText;
   });
 
-  // startListening – uses sendRef to avoid stale closure
-  const startListening = () => {
+  // startListening – with microphone permission check
+  const startListening = async () => {
     if (!voiceSupported) return;
+
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      alert('Please allow microphone access to use voice input.');
+      return;
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const SR: any =
       (window as unknown as Record<string, unknown>).SpeechRecognition ??
