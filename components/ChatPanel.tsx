@@ -52,11 +52,13 @@ export default function ChatPanel({
   const bottomRef   = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef    = useRef<AbortController | null>(null);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  // recognitionRef line (unchanged from the earlier replacement)
+  const recognitionRef = useRef<unknown>(null);
 
+  // voiceSupported (unchanged)
   const voiceSupported =
     typeof window !== 'undefined' &&
-    ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
+    !!(window.SpeechRecognitionEvent || (window as unknown as Record<string, unknown>).webkitSpeechRecognition);
 
   // Auto-scroll
   useEffect(() => {
@@ -86,38 +88,14 @@ export default function ChatPanel({
     window.speechSynthesis.speak(utt);
   }, [speakerOn, lang]);
 
-  // Voice input
-  const startListening = () => {
-    if (!voiceSupported) return;
-    const SR =
-      (window as typeof window & { webkitSpeechRecognition: typeof SpeechRecognition })
-        .SpeechRecognition ?? window.webkitSpeechRecognition;
-    const recognition = new SR();
-    recognition.lang = SPEECH_LANG[lang] ?? 'en-US';
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-
-    recognition.onresult = (e: SpeechRecognitionEvent) => {
-      const transcript = e.results[0][0].transcript;
-      setInput(transcript);
-      setListening(false);
-      setTimeout(() => {
-        handleSendWithText(transcript);
-      }, 150);
-    };
-    recognition.onerror = () => setListening(false);
-    recognition.onend   = () => setListening(false);
-
-    recognitionRef.current = recognition;
-    recognition.start();
-    setListening(true);
-  };
-
+  // stopListening – FIXED: type assertion on recognitionRef.current
   const stopListening = () => {
-    recognitionRef.current?.stop();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (recognitionRef.current as any)?.stop();
     setListening(false);
   };
 
+  // handleSendWithText – now defined BEFORE startListening
   const handleSendWithText = async (text: string) => {
     if (!text.trim() || isStreaming) return;
 
@@ -224,6 +202,36 @@ export default function ChatPanel({
     } finally {
       setIsStreaming(false);
     }
+  };
+
+  // startListening – MOVED after handleSendWithText to avoid closure issue
+  const startListening = () => {
+    if (!voiceSupported) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const SR: any =
+      (window as unknown as Record<string, unknown>).SpeechRecognition ??
+      (window as unknown as Record<string, unknown>).webkitSpeechRecognition;
+    if (!SR) return;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const recognition: any = new SR();
+    recognition.lang = SPEECH_LANG[lang] ?? 'en-US';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    recognition.onresult = (e: any) => {
+      const transcript = e.results[0][0].transcript as string;
+      setInput(transcript);
+      setListening(false);
+      setTimeout(() => handleSendWithText(transcript), 150);
+    };
+    recognition.onerror = () => setListening(false);
+    recognition.onend   = () => setListening(false);
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setListening(true);
   };
 
   const handleSend = () => handleSendWithText(input.trim());
