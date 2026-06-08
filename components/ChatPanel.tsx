@@ -65,18 +65,21 @@ export default function ChatPanel({
   const [isStreaming, setIsStreaming] = useState(false);
   const [detectedLang, setDetectedLang] = useState<Lang>('en');
   const [listening, setListening]   = useState(false);
+  const [voiceSupported, setVoiceSupported] = useState(false);
 
   const bottomRef   = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef    = useRef<AbortController | null>(null);
   const recognitionRef = useRef<unknown>(null);
-  // Ref to hold latest handleSendWithText to avoid mic stale closure
   const sendRef = useRef<(text: string) => void>(() => {});
 
-  const voiceSupported =
-    typeof window !== 'undefined' &&
-    !!((window as unknown as Record<string, unknown>).SpeechRecognition ||
-       (window as unknown as Record<string, unknown>).webkitSpeechRecognition);
+  // Detect voice support on client only
+  useEffect(() => {
+    setVoiceSupported(
+      !!((window as unknown as Record<string, unknown>).SpeechRecognition ||
+         (window as unknown as Record<string, unknown>).webkitSpeechRecognition)
+    );
+  }, []);
 
   // Auto-scroll
   useEffect(() => {
@@ -243,7 +246,7 @@ export default function ChatPanel({
     recognition.onresult = (e: any) => {
       const transcript = e.results[0][0].transcript as string;
       setListening(false);
-      sendRef.current(transcript); // use ref to access latest function
+      sendRef.current(transcript);
     };
     recognition.onerror = () => setListening(false);
     recognition.onend   = () => setListening(false);
