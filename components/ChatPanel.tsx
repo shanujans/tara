@@ -55,10 +55,11 @@ export default function ChatPanel({
   // recognitionRef line (unchanged from the earlier replacement)
   const recognitionRef = useRef<unknown>(null);
 
-  // voiceSupported (unchanged)
+  // voiceSupported
   const voiceSupported =
     typeof window !== 'undefined' &&
-    !!(window.SpeechRecognitionEvent || (window as unknown as Record<string, unknown>).webkitSpeechRecognition);
+    !!((window as unknown as Record<string, unknown>).SpeechRecognition ||
+       (window as unknown as Record<string, unknown>).webkitSpeechRecognition);
 
   // Auto-scroll
   useEffect(() => {
