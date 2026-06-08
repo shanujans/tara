@@ -27,7 +27,14 @@ async function getSession(): Promise<string> {
 }
 
 async function mcpSearch(q: string, sid: string, maxPrice?: number): Promise<Record<string, unknown>[]> {
-  const args: Record<string, unknown> = { q: q.slice(0, 100), limit: 8, currency: 'LKR', response_format: 'json' };
+  const args: Record<string, unknown> = {
+    q: q.slice(0, 100),
+    limit: 8,
+    currency: 'LKR',
+    response_format: 'json',
+    in_stock_only: true,   // ← filter out out‑of‑stock items
+    sort: 'relevance',     // ← order by relevance
+  };
   if (maxPrice) args.max_price = maxPrice;
 
   const r = await fetch(MCP, {
@@ -53,29 +60,41 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ products: [] }, { status: 429 });
   }
 
-  let body: { primary?: string; alternative?: string; creative?: string; budget?: number };
+  let body: { primary?: string; alternative?: string; creative?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ products: [] }, { status: 400 });
   }
 
-  const { primary, alternative, creative, budget } = body;
+  const { primary, alternative, creative } = body;
   if (!primary || primary.length < 2) {
     return NextResponse.json({ products: [] }, { status: 400 });
   }
 
+  // Parse budget from pipe-separated format: "query | max_price:10000"
+  const parseBudget = (q: string): { query: string; maxPrice?: number } => {
+    const parts = q.split('|');
+    const query = parts[0].trim();
+    const budgetMatch = parts[1]?.match(/max_price:(\d+)/);
+    return { query, maxPrice: budgetMatch ? Number(budgetMatch[1]) : undefined };
+  };
+
+  const { query: q1, maxPrice } = parseBudget(primary);
+  const { query: q2 } = parseBudget(alternative ?? primary);
+  const { query: q3 } = parseBudget(creative ?? primary);
+
   try {
     const sid = await getSession();
     const [r1, r2, r3] = await Promise.all([
-      mcpSearch(primary, sid, budget),
-      mcpSearch(alternative ?? primary, sid),
-      mcpSearch(creative ?? primary, sid),
+      mcpSearch(q1, sid, maxPrice),   // budget only on primary search
+      mcpSearch(q2, sid),
+      mcpSearch(q3, sid),
     ]);
 
     const seen = new Set<string>();
     const products = [...r1, ...r2, ...r3]
-      .map(sanitizeProduct)              // sanitize ALL MCP data
+      .map(sanitizeProduct)
       .filter(p => {
         if (!p.id || seen.has(p.id)) return false;
         seen.add(p.id);
