@@ -30,8 +30,9 @@ function cleanAllTags(text: string): string {
     .trim();
 }
 
+// extractQuery now keeps the pipe for the search API
 function extractQuery(text: string): string | null {
-  // <search_query> tag
+  // <search_query> tag — keep pipe, passed to /api/search as-is
   const sq = text.match(/<search_query>([\s\S]*?)<\/search_query>/);
   if (sq) return sq[1].trim();
   // tool_code with search_products call
@@ -181,18 +182,18 @@ export default function ChatPanel({
         });
       }
 
-      // Clean tags from display
-      const visibleText = cleanAllTags(fullText);
+      // Clean tags, then remove any pipe characters from the displayed text
+      const visibleText = cleanAllTags(fullText).replace(/\|/g, '');
       setMessages(prev => {
         const copy = [...prev];
         copy[copy.length - 1] = { role: 'assistant', content: visibleText };
         return copy;
       });
 
-      // Speak response
+      // Speak response (pipe already removed)
       speak(visibleText);
 
-      // Search products – extract query from tool_code or search_query
+      // Search products – extract query from tool_code or search_query (pipes kept)
       const query = extractQuery(fullText) ?? text;
 
       onSearching(true);
