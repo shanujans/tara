@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'TARA ✦ — The AI Retail Agent',
+  title: 'TARA ✦ The AI Retail Agent',
   description: 'Your multilingual AI shopping assistant for Kapruka Sri Lanka',
 };
 

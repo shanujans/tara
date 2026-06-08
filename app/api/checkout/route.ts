@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { rateLimit, validateCheckout } from '@/lib/security';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,37 +27,59 @@ async function getSession(): Promise<string> {
 }
 
 export async function POST(req: NextRequest) {
-  const { items, giftMessage, deliveryDate, district, recipient, sender } = await req.json();
+  // Rate limiting
+  const ip = req.headers.get('x-forwarded-for') ?? 'unknown';
+  if (!rateLimit(ip, 5, 60_000)) {
+    return NextResponse.json({ error: 'Too many checkout attempts' }, { status: 429 });
+  }
 
-  if (!items?.length)   return NextResponse.json({ error: 'Empty cart' }, { status: 400 });
-  if (!district)        return NextResponse.json({ error: 'Select district' }, { status: 400 });
-  if (!deliveryDate)    return NextResponse.json({ error: 'Select delivery date' }, { status: 400 });
-  if (!recipient?.name) return NextResponse.json({ error: 'Recipient name required' }, { status: 400 });
-  if (!recipient?.phone)return NextResponse.json({ error: 'Recipient phone required' }, { status: 400 });
+  // Parse JSON safely
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+  }
+
+  // Centralised validation (implemented in @/lib/security)
+  const validationError = validateCheckout(body);
+  if (validationError) {
+    return NextResponse.json({ error: validationError }, { status: 400 });
+  }
+
+  const { items, giftMessage, deliveryDate, district, recipient, sender } = body as {
+    items: { id: string; qty: number }[];
+    giftMessage?: string;
+    deliveryDate: string;
+    district: string;
+    recipient: { name: string; phone: string; address?: string };
+    sender?: { name: string };
+  };
 
   try {
     const sid = await getSession();
 
+    // Sanitise inputs before sending to MCP
     const orderParams = {
-      cart: items.map((i: { id: string; qty: number }) => ({
-        product_id: i.id,
-        quantity: i.qty ?? 1,
+      cart: items.map(i => ({
+        product_id: String(i.id).replace(/[^a-zA-Z0-9_\-]/g, '').slice(0, 80),
+        quantity: Math.min(Math.max(1, Math.floor(Number(i.qty ?? 1))), 99),
       })),
       recipient: {
-        name: recipient.name,
-        phone: recipient.phone,
+        name: String(recipient.name).slice(0, 80),
+        phone: String(recipient.phone).replace(/\s/g, '').slice(0, 20),
       },
       delivery: {
-        address: recipient.address ?? district,
-        city: district,
+        address: String(recipient.address ?? district).slice(0, 250),
+        city: String(district).slice(0, 100),
         date: deliveryDate,
         location_type: 'house',
       },
       sender: {
-        name: sender?.name ?? 'TARA Customer',
+        name: String(sender?.name ?? 'TARA Customer').slice(0, 80),
         anonymous: false,
       },
-      gift_message: giftMessage || null,
+      gift_message: giftMessage ? String(giftMessage).slice(0, 300) : null,
       currency: 'LKR',
       response_format: 'json',
     };
@@ -73,10 +96,12 @@ export async function POST(req: NextRequest) {
     const text = await r.text();
     const data = parseSSE(text) as { result?: { content?: { text?: string }[] } };
     const raw = data?.result?.content?.[0]?.text;
-    if (!raw) throw new Error('Empty MCP response');
+    if (!raw) throw new Error('Empty response');
 
     const parsed = JSON.parse(raw);
-    if (parsed.error) throw new Error(parsed.error);
+    if (parsed.error || (typeof parsed === 'string' && parsed.startsWith('Error'))) {
+      return NextResponse.json({ error: 'Order failed. Please check your details.' }, { status: 400 });
+    }
 
     return NextResponse.json({
       success: true,
@@ -84,8 +109,8 @@ export async function POST(req: NextRequest) {
       checkoutUrl: parsed.checkout_url,
       total: parsed.summary?.grand_total,
     });
-  } catch (e) {
-    console.error('Checkout error:', e);
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+  } catch {
+    // Generic error – don't leak internal details
+    return NextResponse.json({ error: 'Checkout unavailable. Please try again.' }, { status: 500 });
   }
 }
