@@ -31,6 +31,7 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
   const [error, setError]             = useState('');
   const [recipientName, setRecipientName] = useState('');
   const [recipientPhone, setRecipientPhone] = useState('');
+  const [voiceNoteUrl, setVoiceNoteUrl] = useState('');
 
   // Min = tomorrow, max = +30 days
   const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
@@ -58,12 +59,16 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
     if (!recipientPhone.trim()) { setError('Please enter recipient phone.'); return; }
     setCheckLoading(true);
     try {
+      const fullGiftMessage = voiceNoteUrl
+        ? `${giftMessage}\n\n🎙 Voice note: ${voiceNoteUrl}`
+        : giftMessage;
+
       const r = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           items,
-          giftMessage,
+          giftMessage: fullGiftMessage,
           deliveryDate,
           district,
           total,
@@ -201,6 +206,17 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
                     rows={3}
                     className="w-full bg-slate-800 border border-slate-700 focus:border-amber-400/50 rounded-xl px-3 py-2 text-slate-100 placeholder-slate-500 text-xs resize-none outline-none transition-colors"
                   />
+                  {/* Voice note link */}
+                  <div className="mt-2">
+                    <p className="text-slate-500 text-xs mb-1">🎙 Voice note link (optional)</p>
+                    <input
+                      type="url"
+                      value={voiceNoteUrl}
+                      onChange={e => setVoiceNoteUrl(e.target.value)}
+                      placeholder="Paste WhatsApp voice note link..."
+                      className="w-full bg-slate-800 border border-slate-700 focus:border-blue-400/50 rounded-xl px-3 py-2 text-slate-100 placeholder-slate-500 text-xs outline-none transition-colors"
+                    />
+                  </div>
                 </div>
 
                 {/* Recipient info */}

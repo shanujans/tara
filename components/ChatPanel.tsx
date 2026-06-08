@@ -2,6 +2,8 @@
 import { useState, useRef, useEffect, useCallback, KeyboardEvent } from 'react';
 import { STRINGS, Lang, detectLang } from '@/lib/strings';
 import { Product } from '@/context/CartContext';
+import { detectExpat, detectExpatCountry } from '@/lib/expat';
+import ExpatBanner from './ExpatBanner';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -70,6 +72,10 @@ export default function ChatPanel({
   const [listening, setListening]   = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(false);
 
+  const [expatMode, setExpatMode]       = useState(false);
+  const [expatCountry, setExpatCountry] = useState('');
+  const [showExpat, setShowExpat]       = useState(false);
+
   const bottomRef   = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef    = useRef<AbortController | null>(null);
@@ -126,6 +132,14 @@ export default function ChatPanel({
     const localDetected = detectLang(text);
     if (localDetected !== lang) onLangChange(localDetected);
 
+    // Expat detection
+    if (!expatMode && detectExpat(text)) {
+      const country = detectExpatCountry(text);
+      setExpatMode(true);
+      setExpatCountry(country);
+      setShowExpat(true);
+    }
+
     const userMsg: Message = { role: 'user', content: text };
     const newMessages = [...messages, userMsg];
     setMessages(newMessages);
@@ -140,6 +154,7 @@ export default function ChatPanel({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: newMessages.map(m => ({ role: m.role, content: m.content })),
+          expatMode,
         }),
         signal: abortRef.current.signal,
       });
@@ -281,6 +296,14 @@ export default function ChatPanel({
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+        {/* Expat Banner */}
+        {showExpat && (
+          <ExpatBanner
+            country={expatCountry}
+            onDismiss={() => setShowExpat(false)}
+          />
+        )}
+
         {messages.map((msg, i) => (
           <div
             key={i}

@@ -32,27 +32,38 @@ export async function POST(req: NextRequest) {
   }
 
   // ---------- Parse body safely ----------
-  let body: { messages?: { role: string; content: string }[] };
+  let body: { messages?: { role: string; content: string }[]; expatMode?: boolean };
   try {
     body = await req.json();
   } catch {
     return new Response('Invalid request', { status: 400 });
   }
 
-  const messages = (body.messages ?? []).slice(-20); // limit history
+  const { messages = [], expatMode = false } = body;
   const lastUser = [...messages].reverse().find(m => m.role === 'user');
   const rawText = lastUser?.content ?? '';
   const lang = detectLang(rawText);
 
   // ---------- Injection guard: sanitize all user messages ----------
-  // FIX: properly typed as ChatCompletionMessageParam[]
   const safeMessages: ChatCompletionMessageParam[] = messages.map(m => ({
     role: m.role as 'user' | 'assistant',
     content: m.role === 'user' ? sanitizeInput(m.content) : m.content.slice(0, 4000),
   }));
 
+  // ---------- Expat mode prompt ----------
+  const expatPrompt = expatMode ? `
+EXPAT MODE ACTIVE: This user is living abroad and shopping for family back home in Sri Lanka.
+- Tone: "I'll take care of your family back home" — warm, reassuring, trustworthy
+- Always mention delivery to Sri Lanka addresses
+- Highlight same-day delivery in Colombo when relevant
+- Mention gift wrapping and personal message options
+- Suggest adding a voice note link (e.g. WhatsApp voice message URL) to the gift message
+- Make them feel connected to home despite the distance
+` : '';
+
   const systemPrompt = `You are TARA — The AI Retail Agent for Kapruka.lk.
 ${langPrompts[lang]}
+${expatPrompt}
 Help users find products, build carts, add gift messages, pick delivery dates, and checkout.
 TARA's primary user is an everyday Sri Lankan shopper buying for themselves — groceries, electronics, fashion, home essentials. Gifting is one mode, not the only one. Always read the emotional context of the message. If someone is stressed, heartbroken, celebrating, or in a rush — acknowledge it first, then shop. Have opinions. Say "trust me, get this one" not "here are your options." Speak like a smart Sri Lankan friend, not a search engine.
 Always show products as visual cards, never as plain text lists.
