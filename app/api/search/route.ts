@@ -14,10 +14,17 @@ function parseSSE(text: string): Record<string, unknown> {
 
 async function getSession(): Promise<string> {
   const r = await fetch(MCP, {
-    method: 'POST', headers: H,
+    method: 'POST',
+    headers: H,
     body: JSON.stringify({
-      jsonrpc: '2.0', id: '1', method: 'initialize',
-      params: { protocolVersion: '2024-11-05', clientInfo: { name: 'tara', version: '1.0' }, capabilities: {} },
+      jsonrpc: '2.0',
+      id: '1',
+      method: 'initialize',
+      params: {
+        protocolVersion: '2024-11-05',
+        clientInfo: { name: 'tara', version: '1.0' },
+        capabilities: {},
+      },
     }),
   });
   const sid = r.headers.get('mcp-session-id');
@@ -26,14 +33,18 @@ async function getSession(): Promise<string> {
   return sid;
 }
 
-async function mcpSearch(q: string, sid: string, maxPrice?: number): Promise<Record<string, unknown>[]> {
+async function mcpSearch(
+  q: string,
+  sid: string,
+  maxPrice?: number
+): Promise<Record<string, unknown>[]> {
   const args: Record<string, unknown> = {
     q: q.slice(0, 100),
-    limit: 8,
+    limit: 12,               // increased from 8 to 12
     currency: 'LKR',
     response_format: 'json',
-    in_stock_only: true,   // ← filter out out‑of‑stock items
-    sort: 'relevance',     // ← order by relevance
+    in_stock_only: true,     // filter out out-of-stock items
+    sort: 'relevance',       // order by relevance
   };
   if (maxPrice) args.max_price = maxPrice;
 
@@ -41,8 +52,13 @@ async function mcpSearch(q: string, sid: string, maxPrice?: number): Promise<Rec
     method: 'POST',
     headers: { ...H, 'mcp-session-id': sid },
     body: JSON.stringify({
-      jsonrpc: '2.0', id: String(Date.now()), method: 'tools/call',
-      params: { name: 'kapruka_search_products', arguments: { params: args } },
+      jsonrpc: '2.0',
+      id: String(Date.now()),
+      method: 'tools/call',
+      params: {
+        name: 'kapruka_search_products',
+        arguments: { params: args },
+      },
     }),
   });
 
@@ -60,7 +76,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ products: [] }, { status: 429 });
   }
 
-  let body: { primary?: string; alternative?: string; creative?: string };
+  let body: { primary?: string; alternative?: string; creative?: string; budget?: number };
   try {
     body = await req.json();
   } catch {
@@ -73,11 +89,11 @@ export async function POST(req: NextRequest) {
   }
 
   // Parse budget from pipe-separated format: "query | max_price:10000"
-  const parseBudget = (q: string): { query: string; maxPrice?: number } => {
+  const parseBudget = (q: string) => {
     const parts = q.split('|');
     const query = parts[0].trim();
-    const budgetMatch = parts[1]?.match(/max_price:(\d+)/);
-    return { query, maxPrice: budgetMatch ? Number(budgetMatch[1]) : undefined };
+    const m = parts[1]?.match(/max_price:(\d+)/);
+    return { query, maxPrice: m ? Number(m[1]) : undefined };
   };
 
   const { query: q1, maxPrice } = parseBudget(primary);
@@ -86,24 +102,39 @@ export async function POST(req: NextRequest) {
 
   try {
     const sid = await getSession();
+
+    // Run three searches, now all using the same budget constraint
     const [r1, r2, r3] = await Promise.all([
-      mcpSearch(q1, sid, maxPrice),   // budget only on primary search
-      mcpSearch(q2, sid),
-      mcpSearch(q3, sid),
+      mcpSearch(q1, sid, maxPrice),
+      mcpSearch(q2, sid, maxPrice),
+      mcpSearch(q3, sid, maxPrice),
     ]);
 
     const seen = new Set<string>();
+
+    // Extract key product words from the primary query for relevance filtering
+    const queryWords = q1
+      .toLowerCase()
+      .replace(/size \d+/g, '')
+      .split(/\s+/)
+      .filter(w => w.length > 3);
+
     const products = [...r1, ...r2, ...r3]
       .map(sanitizeProduct)
       .filter(p => {
         if (!p.id || seen.has(p.id)) return false;
         seen.add(p.id);
-        return true;
+
+        // Filter out clearly irrelevant products
+        const nameLower = p.name.toLowerCase();
+        const hasRelevantWord = queryWords.some(w => nameLower.includes(w));
+        return hasRelevantWord;
       })
       .slice(0, 8);
 
     return NextResponse.json({ products, quantum: true });
-  } catch {
+  } catch (e) {
+    console.error('MCP search error:', e);
     return NextResponse.json({ products: [], quantum: false });
   }
 }
