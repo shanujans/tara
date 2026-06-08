@@ -21,6 +21,9 @@ function cleanAllTags(text: string): string {
   return text
     .replace(/<(search_query|quantum_search)[^>]*>[\s\S]*?<\/\1>/g, '')
     .replace(/<tool_code>[\s\S]*?<\/tool_code>/g, '')
+    .replace(/<products>[\s\S]*?<\/products>/g, '')
+    .replace(/<product_card>[\s\S]*?<\/product_card>/g, '')
+    .replace(/<product>[\s\S]*?<\/product>/g, '')
     .replace(/```[\s\S]*?```/g, '')
     .trim();
 }
