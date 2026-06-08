@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { NextRequest } from 'next/server';
 import { rateLimit, sanitizeInput } from '@/lib/security';
 
@@ -44,8 +45,9 @@ export async function POST(req: NextRequest) {
   const lang = detectLang(rawText);
 
   // ---------- Injection guard: sanitize all user messages ----------
-  const safeMessages = messages.map(m => ({
-    role: m.role,
+  // FIX: properly typed as ChatCompletionMessageParam[]
+  const safeMessages: ChatCompletionMessageParam[] = messages.map(m => ({
+    role: m.role as 'user' | 'assistant',
     content: m.role === 'user' ? sanitizeInput(m.content) : m.content.slice(0, 4000),
   }));
 
