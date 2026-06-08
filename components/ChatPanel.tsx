@@ -18,7 +18,24 @@ interface ChatPanelProps {
 }
 
 function cleanAllTags(text: string): string {
-  return text.replace(/<(search_query|quantum_search)[^>]*>[\s\S]*?<\/\1>/g, '').trim();
+  return text
+    .replace(/<(search_query|quantum_search)[^>]*>[\s\S]*?<\/\1>/g, '')
+    .replace(/<tool_code>[\s\S]*?<\/tool_code>/g, '')
+    .replace(/```[\s\S]*?```/g, '')
+    .trim();
+}
+
+function extractQuery(text: string): string | null {
+  // <search_query> tag
+  const sq = text.match(/<search_query>([\s\S]*?)<\/search_query>/);
+  if (sq) return sq[1].trim();
+  // tool_code with search_products call
+  const tc = text.match(/search_products\(query="([^"]+)"\)/);
+  if (tc) return tc[1].trim();
+  // print(search_products(...))
+  const tc2 = text.match(/query=["']([^"']+)["']/);
+  if (tc2) return tc2[1].trim();
+  return null;
 }
 
 const SPEECH_LANG: Record<Lang, string> = {
@@ -53,6 +70,8 @@ export default function ChatPanel({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef    = useRef<AbortController | null>(null);
   const recognitionRef = useRef<unknown>(null);
+  // Ref to hold latest handleSendWithText to avoid mic stale closure
+  const sendRef = useRef<(text: string) => void>(() => {});
 
   const voiceSupported =
     typeof window !== 'undefined' &&
@@ -152,9 +171,8 @@ export default function ChatPanel({
       // Speak response
       speak(visibleText);
 
-      // Search products – FIX 1: check for products length
-      const sqMatch = fullText.match(/<search_query>([\s\S]*?)<\/search_query>/);
-      const query   = sqMatch ? sqMatch[1].trim() : text;
+      // Search products – extract query from tool_code or search_query
+      const query = extractQuery(fullText) ?? text;
 
       onSearching(true);
       try {
@@ -202,7 +220,12 @@ export default function ChatPanel({
     }
   };
 
-  // startListening – FIX 2: simulate click to avoid stale closure
+  // Keep sendRef in sync with latest handleSendWithText
+  useEffect(() => {
+    sendRef.current = handleSendWithText;
+  });
+
+  // startListening – uses sendRef to avoid stale closure
   const startListening = () => {
     if (!voiceSupported) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -220,11 +243,7 @@ export default function ChatPanel({
     recognition.onresult = (e: any) => {
       const transcript = e.results[0][0].transcript as string;
       setListening(false);
-      setTimeout(() => {
-        setInput(transcript);
-        const btn = document.querySelector('[aria-label="Send"]') as HTMLButtonElement;
-        if (btn) btn.click();
-      }, 200);
+      sendRef.current(transcript); // use ref to access latest function
     };
     recognition.onerror = () => setListening(false);
     recognition.onend   = () => setListening(false);
