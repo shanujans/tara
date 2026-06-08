@@ -52,10 +52,8 @@ export default function ChatPanel({
   const bottomRef   = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef    = useRef<AbortController | null>(null);
-  // recognitionRef line (unchanged from the earlier replacement)
   const recognitionRef = useRef<unknown>(null);
 
-  // voiceSupported
   const voiceSupported =
     typeof window !== 'undefined' &&
     !!((window as unknown as Record<string, unknown>).SpeechRecognition ||
@@ -89,14 +87,14 @@ export default function ChatPanel({
     window.speechSynthesis.speak(utt);
   }, [speakerOn, lang]);
 
-  // stopListening – FIXED: type assertion on recognitionRef.current
+  // stopListening
   const stopListening = () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (recognitionRef.current as any)?.stop();
     setListening(false);
   };
 
-  // handleSendWithText – now defined BEFORE startListening
+  // handleSendWithText
   const handleSendWithText = async (text: string) => {
     if (!text.trim() || isStreaming) return;
 
@@ -154,7 +152,7 @@ export default function ChatPanel({
       // Speak response
       speak(visibleText);
 
-      // Search products
+      // Search products – FIX 1: check for products length
       const sqMatch = fullText.match(/<search_query>([\s\S]*?)<\/search_query>/);
       const query   = sqMatch ? sqMatch[1].trim() : text;
 
@@ -165,15 +163,14 @@ export default function ChatPanel({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ primary: query, alternative: query, creative: query }),
         });
-        const { products } = await res2.json();
-        onProductsFound(products);
+        const data = await res2.json();
+        if (data.products?.length) onProductsFound(data.products);
       } catch { /* silent */ }
       finally { onSearching(false); }
 
       // Order tracking — detect order number pattern
       const orderMatch = fullText.match(/\b([A-Z]{2,6}\d{4,}[A-Z0-9]*)\b/);
       if (orderMatch) {
-        // silently attempt track — fail safe
         try {
           const MCP = process.env.NEXT_PUBLIC_MCP_URL ?? 'https://mcp.kapruka.com/mcp';
           const r = await fetch(MCP, {
@@ -205,7 +202,7 @@ export default function ChatPanel({
     }
   };
 
-  // startListening – MOVED after handleSendWithText to avoid closure issue
+  // startListening – FIX 2: simulate click to avoid stale closure
   const startListening = () => {
     if (!voiceSupported) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -220,12 +217,14 @@ export default function ChatPanel({
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     recognition.onresult = (e: any) => {
       const transcript = e.results[0][0].transcript as string;
-      setInput(transcript);
       setListening(false);
-      setTimeout(() => handleSendWithText(transcript), 150);
+      setTimeout(() => {
+        setInput(transcript);
+        const btn = document.querySelector('[aria-label="Send"]') as HTMLButtonElement;
+        if (btn) btn.click();
+      }, 200);
     };
     recognition.onerror = () => setListening(false);
     recognition.onend   = () => setListening(false);
