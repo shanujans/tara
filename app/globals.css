@@ -5,9 +5,7 @@
   --foreground: #f1f5f9;
 }
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
 html, body {
   height: 100%;
@@ -21,26 +19,13 @@ body {
 }
 
 /* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 4px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: #334155;
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #475569;
-}
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #475569; }
+textarea::-webkit-scrollbar { display: none; }
 
-/* Hide scrollbar for textarea */
-textarea::-webkit-scrollbar {
-  display: none;
-}
-
-/* Line clamp utility */
+/* Line clamp */
 .line-clamp-2 {
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -48,11 +33,79 @@ textarea::-webkit-scrollbar {
   overflow: hidden;
 }
 
-/* Quantum search notification bounce */
+/* ── FIX 7 Animations ────────────────────────────────────────── */
+
+/* Product card entrance (staggered) */
+@keyframes fade-slide-up {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-slide-up {
+  animation: fade-slide-up 0.38s ease-out both;
+}
+
+/* Chat message — TARA (from left) */
+@keyframes slide-in-left {
+  from { opacity: 0; transform: translateX(-14px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.animate-slide-in-left {
+  animation: slide-in-left 0.22s ease-out both;
+}
+
+/* Chat message — user (from right) */
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(14px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.animate-slide-in-right {
+  animation: slide-in-right 0.22s ease-out both;
+}
+
+/* Product modal — slide up from bottom */
+@keyframes slide-up-modal {
+  from { opacity: 0; transform: translateY(100%); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-up-modal {
+  animation: slide-up-modal 0.38s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+/* Cart drawer — slide in from right */
+@keyframes slide-in-drawer {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+
+/* Quantum pulse */
+@keyframes quantum-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 6px rgba(168,85,247,0.4); }
+  50%       { opacity: 0.7; box-shadow: 0 0 14px rgba(168,85,247,0.7); }
+}
+.animate-quantum {
+  animation: quantum-pulse 2s ease-in-out infinite;
+}
+
+/* Language badge color transition (handled by Tailwind transition-all) */
+
+/* Typing dots bounce */
+@keyframes tara-bounce {
+  0%, 100% { transform: translateY(0); }
+  40%       { transform: translateY(-5px); }
+}
+.dot-bounce { animation: tara-bounce 1.2s ease-in-out infinite; }
+
+/* Bounce-in for notifications */
 @keyframes bounce-in {
   0%   { opacity: 0; transform: translate(-50%, 12px); }
   100% { opacity: 1; transform: translate(-50%, 0); }
 }
 .animate-bounce-in {
   animation: bounce-in 0.25s ease-out forwards;
+}
+
+/* Chip hover pulse */
+@keyframes chip-pulse {
+  0%, 100% { border-color: rgba(251,191,36,0.3); }
+  50%       { border-color: rgba(251,191,36,0.7); }
 }

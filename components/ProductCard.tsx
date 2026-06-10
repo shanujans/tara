@@ -4,53 +4,62 @@ import { STRINGS, Lang } from '@/lib/strings';
 import { useState } from 'react';
 
 interface ProductCardProps {
-  product: Product;
+  product: Product & { url?: string };
   lang: Lang;
+  index?: number;
+  onViewDetail?: (id: string, url: string) => void;
 }
 
-export default function ProductCard({ product, lang }: ProductCardProps) {
+export default function ProductCard({ product, lang, index = 0, onViewDetail }: ProductCardProps) {
   const { addItem, items } = useCart();
   const s = STRINGS[lang];
-  const [added, setAdded] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+  const [added, setAdded]         = useState(false);
+  const [loaded, setLoaded]       = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
   const inCart = items.some(i => i.id === product.id);
 
-  const handleAdd = () => {
-    addItem({
-      id: product.id,
-      name: product.name,
-      price: product.price,
-      image: product.image,
-    });
+  const handleAdd = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    addItem({ id: product.id, name: product.name, price: product.price, image: product.image });
     setAdded(true);
     setTimeout(() => setAdded(false), 1500);
   };
 
-  const formattedPrice = product.price.toLocaleString('si-LK');
+  const handleCardClick = () => {
+    onViewDetail?.(product.id, product.url ?? '');
+  };
 
-  // Fallback image – a generic Kapruka-themed placeholder that looks decent
-  const fallbackImg = 'https://picsum.photos/seed/kapruka/300/300';
+  const fallbackImg = `https://placehold.co/300x300/1e293b/f59e0b?text=${encodeURIComponent(product.name.slice(0, 14))}`;
 
   return (
-    <div className="group flex flex-col bg-slate-800 rounded-xl overflow-hidden border border-slate-700 hover:border-amber-400/50 transition-all duration-300 hover:shadow-lg hover:shadow-amber-400/10 hover:-translate-y-0.5">
-      {/* Image with fade-in */}
+    <div
+      className="group flex flex-col bg-slate-800 rounded-xl overflow-hidden border border-slate-700 hover:border-amber-400/50 transition-all duration-300 hover:shadow-lg hover:shadow-amber-400/10 hover:-translate-y-0.5 cursor-pointer animate-fade-slide-up"
+      style={{ animationDelay: `${index * 50}ms` }}
+      onClick={handleCardClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') handleCardClick(); }}
+      aria-label={`View details for ${product.name}`}
+    >
+      {/* Image */}
       <div className="aspect-square overflow-hidden bg-slate-700 relative">
         <img
-          src={imgFailed ? fallbackImg : product.image}
+          src={imgFailed || !product.image ? fallbackImg : product.image}
           alt={product.name}
           loading="lazy"
           onLoad={() => setLoaded(true)}
+          onError={() => { if (!imgFailed) setImgFailed(true); }}
           className={`w-full h-full object-cover transition-opacity duration-500 ${loaded ? 'opacity-100' : 'opacity-0'}`}
-          onError={() => {
-            if (!imgFailed) {
-              setImgFailed(true);
-            }
-          }}
         />
+        {/* Hover overlay */}
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all duration-300 flex items-center justify-center">
+          <span className="opacity-0 group-hover:opacity-100 transition-all duration-300 translate-y-1 group-hover:translate-y-0 bg-white/10 backdrop-blur-sm text-white text-xs font-bold px-3 py-1.5 rounded-full border border-white/20">
+            View Details
+          </span>
+        </div>
         {inCart && (
-          <div className="absolute top-2 right-2 bg-amber-400 text-slate-900 text-xs font-bold px-2 py-0.5 rounded-full">
-            ✓ In Cart
+          <div className="absolute top-2 right-2 bg-amber-400 text-slate-900 text-xs font-black px-2 py-0.5 rounded-full shadow">
+            ✓ Cart
           </div>
         )}
       </div>
@@ -61,7 +70,7 @@ export default function ProductCard({ product, lang }: ProductCardProps) {
           {product.name}
         </p>
         <p className="text-amber-400 font-bold text-base tracking-tight">
-          {s.lkr} {formattedPrice}
+          {s.lkr} {product.price.toLocaleString('si-LK')}
         </p>
         <button
           onClick={handleAdd}

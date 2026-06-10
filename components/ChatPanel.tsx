@@ -1,102 +1,97 @@
 'use client';
 import { useState, useRef, useEffect, useCallback, KeyboardEvent } from 'react';
-import { STRINGS, Lang, detectLang } from '@/lib/strings';
+import { STRINGS, Lang } from '@/lib/strings';
 import { Product } from '@/context/CartContext';
 import { detectExpat, detectExpatCountry } from '@/lib/expat';
 import ExpatBanner from './ExpatBanner';
 
-interface Message {
-  role: 'user' | 'assistant';
-  content: string;
-}
+interface Message { role: 'user' | 'assistant'; content: string; }
 
 interface ChatPanelProps {
   lang: Lang;
   onLangChange: (l: Lang) => void;
   onProductsFound: (products: Product[], quantum?: boolean) => void;
-  onSearching: (loading: boolean) => void;
+  onSearching: (v: boolean) => void;
   speakerOn: boolean;
   onSpeakerToggle: () => void;
 }
 
-function cleanAllTags(text: string): string {
+type DetectedLang = Lang;
+
+function detectLangClient(text: string): DetectedLang {
+  if (/[\u0D80-\u0DFF]/.test(text)) return 'si';
+  if (/[\u0B80-\u0BFF]/.test(text)) return 'ta';
+  if (/\b(machang|machan|aiyo|oneda|aney|yako|putha)\b/i.test(text)) return 'tl';
+  if (/\b(la|neh|ne|da)\s*[.!?,]?\s*$/im.test(text.trim())) return 'tl';
+  if (/\b(bohoma|hariyata|puluwan|mokada|ekak|apita|oyata)\b/i.test(text)) return 'tl';
+  return 'en';
+}
+
+function cleanResponse(text: string): string {
   return text
-    .replace(/<(search_query|quantum_search)[^>]*>[\s\S]*?<\/\1>/g, '')
-    .replace(/<tool_code>[\s\S]*?<\/tool_code>/g, '')
-    .replace(/<products>[\s\S]*?<\/products>/g, '')
-    .replace(/<product_card>[\s\S]*?<\/product_card>/g, '')
-    .replace(/<product>[\s\S]*?<\/product>/g, '')
+    .replace(/<search_query>[\s\S]*?<\/search_query>/g, '')
+    .replace(/<[^>]+>/g, '')
     .replace(/```[\s\S]*?```/g, '')
+    .replace(/\*\*(.*?)\*\*/g, '$1')   // **bold** → bold
+    .replace(/\*(.*?)\*/g, '$1')        // *italic* → italic
+    .replace(/^#{1,6}\s+/gm, '')        // ## headings
     .trim();
 }
 
-// extractQuery now keeps the pipe for the search API
 function extractQuery(text: string): string | null {
-  // <search_query> tag — keep pipe, passed to /api/search as-is
-  const sq = text.match(/<search_query>([\s\S]*?)<\/search_query>/);
-  if (sq) return sq[1].trim();
-  // tool_code with search_products call
-  const tc = text.match(/search_products\(query="([^"]+)"\)/);
-  if (tc) return tc[1].trim();
-  // print(search_products(...))
-  const tc2 = text.match(/query=["']([^"']+)["']/);
-  if (tc2) return tc2[1].trim();
-  return null;
+  const m = text.match(/<search_query>([\s\S]*?)<\/search_query>/);
+  return m ? m[1].trim() : null;
 }
 
-const SPEECH_LANG: Record<Lang, string> = {
-  si: 'si-LK', ta: 'ta-IN', tl: 'en-US', en: 'en-US',
-};
+const SPEECH_LANG: Record<Lang, string> = { si: 'si-LK', ta: 'ta-IN', tl: 'en-US', en: 'en-US' };
 
-const LANG_BADGE = {
-  si: { label: '🇱🇰 සිං', color: 'bg-green-600 text-white' },
-  ta: { label: '🇱🇰 த',   color: 'bg-orange-500 text-white' },
-  tl: { label: '🇱🇰 TL',  color: 'bg-amber-400 text-slate-900' },
-  en: { label: '🇱🇰 EN',  color: 'bg-blue-600 text-white' },
-};
+const LANG_OPTIONS: { key: Lang; label: string; active: string }[] = [
+  { key: 'si', label: '🇱🇰 සිං', active: 'bg-green-600 text-white' },
+  { key: 'ta', label: '🇱🇰 த',   active: 'bg-orange-500 text-white' },
+  { key: 'tl', label: '🇱🇰 TL',  active: 'bg-amber-400 text-slate-900' },
+  { key: 'en', label: '🇬🇧 EN',  active: 'bg-blue-600 text-white' },
+];
 
 export default function ChatPanel({
-  lang,
-  onLangChange,
-  onProductsFound,
-  onSearching,
-  speakerOn,
+  lang, onLangChange, onProductsFound, onSearching, speakerOn,
 }: ChatPanelProps) {
   const s = STRINGS[lang];
 
-  const [messages, setMessages] = useState<Message[]>([
-    { role: 'assistant', content: s.welcomeMsg },
-  ]);
-  const [input, setInput]           = useState('');
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [detectedLang, setDetectedLang] = useState<Lang>('en');
-  const [listening, setListening]   = useState(false);
-  const [voiceSupported, setVoiceSupported] = useState(false);
-
-  const [expatMode, setExpatMode]       = useState(false);
+  const [messages,   setMessages]   = useState<Message[]>([{ role: 'assistant', content: s.welcomeMsg }]);
+  const [input,      setInput]      = useState('');
+  const [streaming,  setStreaming]  = useState(false);
+  const [convLang,   setConvLang]   = useState<Lang>(lang);   // tracks lang per conversation turn
+  const [listening,  setListening]  = useState(false);
+  const [voiceOk,    setVoiceOk]    = useState(false);
+  const [expatMode,  setExpatMode]  = useState(false);
   const [expatCountry, setExpatCountry] = useState('');
-  const [showExpat, setShowExpat]       = useState(false);
+  const [showExpat,  setShowExpat]  = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
 
   const bottomRef   = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef    = useRef<AbortController | null>(null);
-  const recognitionRef = useRef<unknown>(null);
-  const sendRef = useRef<(text: string) => void>(() => {});
+  const recRef      = useRef<unknown>(null);
 
-  // Detect voice support on client only
+  // Voice support detection
   useEffect(() => {
-    setVoiceSupported(
-      !!((window as unknown as Record<string, unknown>).SpeechRecognition ||
-         (window as unknown as Record<string, unknown>).webkitSpeechRecognition)
-    );
+    setVoiceOk(!!(
+      (window as unknown as Record<string, unknown>).SpeechRecognition ||
+      (window as unknown as Record<string, unknown>).webkitSpeechRecognition
+    ));
   }, []);
 
-  // Auto-scroll
+  // Reset welcome message when header lang changes (only before first user message)
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isStreaming]);
+    setMessages(prev => {
+      if (prev.some(m => m.role === 'user')) return prev;
+      return [{ role: 'assistant', content: STRINGS[lang].welcomeMsg }];
+    });
+    setConvLang(lang);
+  }, [lang]);
 
-  // Auto-resize textarea
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, streaming]);
+
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -104,302 +99,249 @@ export default function ChatPanel({
     }
   }, [input]);
 
-  // Speak TARA response
   const speak = useCallback((text: string) => {
     if (!speakerOn || !('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel();
-    const clean = text.replace(/<[^>]*>/g, '').replace(/[✦*#]/g, '').trim();
-    if (!clean) return;
-    const utt = new SpeechSynthesisUtterance(clean);
-    const voices = window.speechSynthesis.getVoices();
-    const preferred = SPEECH_LANG[lang] ?? 'en-US';
-    const match = voices.find(v => v.lang.startsWith(preferred.split('-')[0]));
+    const utt  = new SpeechSynthesisUtterance(text.replace(/[✦*#<>]/g, '').trim());
+    const voices  = window.speechSynthesis.getVoices();
+    const pref    = SPEECH_LANG[convLang] ?? 'en-US';
+    const match   = voices.find(v => v.lang.startsWith(pref.split('-')[0]));
     if (match) utt.voice = match;
     utt.rate = 1.05;
     window.speechSynthesis.speak(utt);
-  }, [speakerOn, lang]);
+  }, [speakerOn, convLang]);
 
-  // stopListening
-  const stopListening = () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (recognitionRef.current as any)?.stop();
-    setListening(false);
-  };
+  const sendMessage = async (text: string) => {
+    if (!text.trim() || streaming) return;
 
-  // handleSendWithText
-  const handleSendWithText = async (text: string) => {
-    if (!text.trim() || isStreaming) return;
-
-    const localDetected = detectLang(text);
-    if (localDetected !== lang) onLangChange(localDetected);
+    // Detect language from THIS message and update conversation lang
+    const detected = detectLangClient(text);
+    setConvLang(detected);
+    if (detected !== lang) onLangChange(detected);
 
     // Expat detection
     if (!expatMode && detectExpat(text)) {
       const country = detectExpatCountry(text);
-      setExpatMode(true);
-      setExpatCountry(country);
-      setShowExpat(true);
+      setExpatMode(true); setExpatCountry(country); setShowExpat(true);
     }
 
     const userMsg: Message = { role: 'user', content: text };
-    const newMessages = [...messages, userMsg];
-    setMessages(newMessages);
+    const history = [...messages, userMsg];
+    setMessages(history);
     setInput('');
-    setIsStreaming(true);
-
+    setStreaming(true);
     abortRef.current = new AbortController();
 
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: newMessages.map(m => ({ role: m.role, content: m.content })),
-          expatMode,
-        }),
-        signal: abortRef.current.signal,
+        body:    JSON.stringify({ messages: history, expatMode, lang: detected }),
+        signal:  abortRef.current.signal,
       });
-
       if (!res.ok) throw new Error('API error');
-
-      const responseLang = res.headers.get('X-Detected-Lang') as Lang | null;
-      if (responseLang) setDetectedLang(responseLang);
 
       const reader  = res.body!.getReader();
       const decoder = new TextDecoder();
-      let fullText  = '';
+      let full = '';
 
       setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        fullText += decoder.decode(value, { stream: true });
+        full += decoder.decode(value, { stream: true });
         setMessages(prev => {
-          const copy = [...prev];
-          copy[copy.length - 1] = { role: 'assistant', content: fullText };
-          return copy;
+          const c = [...prev];
+          c[c.length - 1] = { role: 'assistant', content: full };
+          return c;
         });
       }
 
-      // Clean tags, then remove any pipe characters from the displayed text
-      const visibleText = cleanAllTags(fullText).replace(/\|/g, '');
+      const visible = cleanResponse(full);
       setMessages(prev => {
-        const copy = [...prev];
-        copy[copy.length - 1] = { role: 'assistant', content: visibleText };
-        return copy;
+        const c = [...prev];
+        c[c.length - 1] = { role: 'assistant', content: visible };
+        return c;
       });
+      speak(visible);
 
-      // Speak response (pipe already removed)
-      speak(visibleText);
+      // ONLY search if AI included a <search_query> tag — no fallback
+      const query = extractQuery(full);
+      if (query) {
+        onSearching(true);
+        try {
+          const r2 = await fetch('/api/search', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ primary: query }),
+          });
+          const d = await r2.json();
+          if (d.products?.length) onProductsFound(d.products, d.quantum);
+        } catch { /* silent */ }
+        finally { onSearching(false); }
+      }
 
-      // Search products – extract query from tool_code or search_query (pipes kept)
-      const query = extractQuery(fullText) ?? text;
-
-      onSearching(true);
-      try {
-        const res2 = await fetch('/api/search', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ primary: query, alternative: query, creative: query }),
-        });
-        const data = await res2.json();
-        if (data.products?.length) onProductsFound(data.products);
-      } catch { /* silent */ }
-      finally { onSearching(false); }
-
-      // Order tracking — detect order number pattern
-      const orderMatch = fullText.match(/\b([A-Z]{2,6}\d{4,}[A-Z0-9]*)\b/);
+      // Order tracking
+      const orderMatch = text.match(/\b([A-Z]{2,6}\d{4,}[A-Z0-9]*)\b/);
       if (orderMatch) {
         try {
-          const MCP = process.env.NEXT_PUBLIC_MCP_URL ?? 'https://mcp.kapruka.com/mcp';
-          const r = await fetch(MCP, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' },
-            body: JSON.stringify({ tool: 'track_order', params: { order_number: orderMatch[1] } }),
+          const r3 = await fetch('/api/track', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ order_number: orderMatch[1] }),
           });
-          if (r.ok) {
-            const { status } = await r.json();
-            if (status) {
-              setMessages(prev => [...prev, {
-                role: 'assistant',
-                content: `📦 Order ${orderMatch[1]}: ${status}`,
-              }]);
-            }
+          if (r3.ok) {
+            const { status } = await r3.json();
+            if (status) setMessages(prev => [...prev, { role: 'assistant', content: `📦 Order ${orderMatch[1]}: ${status}` }]);
           }
         } catch { /* silent */ }
       }
 
     } catch (err: unknown) {
       if ((err as Error).name !== 'AbortError') {
-        setMessages(prev => [
-          ...prev,
-          { role: 'assistant', content: '⚠️ Something went wrong. Please try again.' },
-        ]);
+        setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Something went wrong. Please try again.' }]);
       }
     } finally {
-      setIsStreaming(false);
+      setStreaming(false);
     }
   };
 
-  // Keep sendRef in sync with latest handleSendWithText
-  useEffect(() => {
-    sendRef.current = handleSendWithText;
-  });
-
-  // startListening – with microphone permission check
   const startListening = async () => {
-    if (!voiceSupported) return;
-
-    try {
-      await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch {
-      alert('Please allow microphone access to use voice input.');
-      return;
-    }
-
+    if (!voiceOk) return;
+    try { await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch { alert('Allow microphone access.'); return; }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const SR: any =
-      (window as unknown as Record<string, unknown>).SpeechRecognition ??
-      (window as unknown as Record<string, unknown>).webkitSpeechRecognition;
-    if (!SR) return;
-
+    const SR: any = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const recognition: any = new SR();
-    recognition.lang = SPEECH_LANG[lang] ?? 'en-US';
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-
-    recognition.onresult = (e: any) => {
-      const transcript = e.results[0][0].transcript as string;
-      setListening(false);
-      sendRef.current(transcript);
-    };
-    recognition.onerror = () => setListening(false);
-    recognition.onend   = () => setListening(false);
-
-    recognitionRef.current = recognition;
-    recognition.start();
+    const rec: any = new SR();
+    rec.lang            = SPEECH_LANG[convLang] ?? 'en-US';
+    rec.interimResults  = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    rec.onresult        = (e: any) => { setListening(false); sendMessage(e.results[0][0].transcript); };
+    rec.onerror         = () => setListening(false);
+    rec.onend           = () => setListening(false);
+    recRef.current      = rec;
+    rec.start();
     setListening(true);
   };
 
-  const handleSend = () => handleSendWithText(input.trim());
-
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input.trim()); }
   };
 
+  const hasUserMsgs = messages.some(m => m.role === 'user');
+  const currentOpt  = LANG_OPTIONS.find(o => o.key === convLang) ?? LANG_OPTIONS[3];
+
   return (
-    <div className="flex flex-col h-full bg-slate-900 border-r border-slate-800">
+    <div className="flex flex-col h-full bg-slate-900 relative">
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-        {/* Expat Banner */}
-        {showExpat && (
-          <ExpatBanner
-            country={expatCountry}
-            onDismiss={() => setShowExpat(false)}
-          />
-        )}
+      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+        {showExpat && <ExpatBanner country={expatCountry} onDismiss={() => setShowExpat(false)} />}
 
         {messages.map((msg, i) => (
-          <div
-            key={i}
-            className={`flex gap-2.5 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
+          <div key={i} className={`flex gap-2 ${msg.role === 'user' ? 'justify-end animate-slide-in-right' : 'justify-start animate-slide-in-left'}`}>
             {msg.role === 'assistant' && (
-              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center flex-shrink-0 mt-0.5 shadow-md shadow-amber-400/20">
+              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center flex-shrink-0 mt-0.5 shadow-md">
                 <span className="text-slate-900 text-xs font-black">T</span>
               </div>
             )}
-            <div
-              className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
-                msg.role === 'user'
-                  ? 'bg-amber-400 text-slate-900 font-medium rounded-br-sm'
-                  : 'bg-slate-800 text-slate-100 border border-slate-700/50 rounded-bl-sm'
-              }`}
-            >
-              {msg.content || (isStreaming && i === messages.length - 1 ? (
-                <span className="flex gap-1 items-center h-4">
-                  <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                </span>
-              ) : '')}
+            <div className={`max-w-[82%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words ${
+              msg.role === 'user'
+                ? 'bg-amber-400 text-slate-900 font-medium rounded-br-sm'
+                : 'bg-slate-800 text-slate-100 border border-slate-700/50 rounded-bl-sm'
+            }`}>
+              {msg.content || (streaming && i === messages.length - 1
+                ? <span className="flex gap-1 items-center h-4">
+                    <span className="w-1.5 h-1.5 bg-slate-400 rounded-full dot-bounce" style={{ animationDelay: '0ms' }} />
+                    <span className="w-1.5 h-1.5 bg-slate-400 rounded-full dot-bounce" style={{ animationDelay: '200ms' }} />
+                    <span className="w-1.5 h-1.5 bg-slate-400 rounded-full dot-bounce" style={{ animationDelay: '400ms' }} />
+                  </span>
+                : ''
+              )}
             </div>
           </div>
         ))}
 
-        {/* Typing indicator when waiting for first chunk */}
-        {isStreaming && messages[messages.length - 1]?.role !== 'assistant' && (
-          <div className="flex gap-2.5 justify-start">
-            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center flex-shrink-0 shadow-md shadow-amber-400/20">
+        {/* Typing indicator */}
+        {streaming && messages[messages.length - 1]?.role !== 'assistant' && (
+          <div className="flex gap-2 justify-start animate-slide-in-left">
+            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center flex-shrink-0 shadow-md">
               <span className="text-slate-900 text-xs font-black">T</span>
             </div>
             <div className="bg-slate-800 border border-slate-700/50 px-4 py-3 rounded-2xl rounded-bl-sm">
               <span className="flex gap-1 items-center">
-                <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                <span className="w-1.5 h-1.5 bg-slate-400 rounded-full dot-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-1.5 h-1.5 bg-slate-400 rounded-full dot-bounce" style={{ animationDelay: '200ms' }} />
+                <span className="w-1.5 h-1.5 bg-slate-400 rounded-full dot-bounce" style={{ animationDelay: '400ms' }} />
               </span>
             </div>
+          </div>
+        )}
+
+        {/* Quick chips — before first user message */}
+        {!hasUserMsgs && !streaming && (
+          <div className="flex flex-wrap gap-2 mt-1 animate-slide-in-left" style={{ animationDelay: '300ms' }}>
+            {s.quickChips.map(chip => (
+              <button key={chip} onClick={() => sendMessage(chip)}
+                className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-amber-400 border border-slate-700 hover:border-amber-400/50 px-3 py-1.5 rounded-full transition-all duration-200 active:scale-95">
+                {chip}
+              </button>
+            ))}
           </div>
         )}
 
         <div ref={bottomRef} />
       </div>
 
-      {/* Language badge */}
-      <div className="px-4 pt-1 flex justify-end">
-        <span className={`text-xs font-bold px-2 py-0.5 rounded-full transition-all duration-500 ${LANG_BADGE[detectedLang].color}`}>
-          {LANG_BADGE[detectedLang].label}
-        </span>
+      {/* Lang badge */}
+      <div className="px-3 pt-1 pb-0.5 flex justify-end relative">
+        <button
+          onClick={() => setShowPicker(v => !v)}
+          className={`text-xs font-bold px-2.5 py-0.5 rounded-full transition-all duration-300 flex items-center gap-1 ${currentOpt.active}`}
+        >
+          {currentOpt.label}
+          <svg width="8" height="5" viewBox="0 0 8 5" fill="none"><path d="M1 1l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+        </button>
+        {showPicker && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setShowPicker(false)} />
+            <div className="absolute right-3 bottom-full mb-1 bg-slate-800 border border-slate-700 rounded-xl shadow-xl overflow-hidden z-20">
+              {LANG_OPTIONS.map(o => (
+                <button key={o.key} onClick={() => { onLangChange(o.key); setConvLang(o.key); setShowPicker(false); }}
+                  className={`w-full flex items-center gap-2 px-4 py-2 text-xs font-semibold hover:bg-slate-700 transition-colors text-left ${o.key === convLang ? 'text-amber-400' : 'text-slate-300'}`}>
+                  <span className={`w-2 h-2 rounded-full ${o.key === convLang ? 'bg-amber-400' : 'bg-slate-600'}`} />
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
-      {/* Input area */}
-      <div className="border-t border-slate-800 px-4 py-3">
+      {/* Input */}
+      <div className="border-t border-slate-800 px-3 py-2.5">
         <div className="flex gap-2 items-end bg-slate-800 border border-slate-700 rounded-2xl px-3 py-2 focus-within:border-amber-400/50 transition-colors">
-          <textarea
-            ref={textareaRef}
-            value={input}
+          <textarea ref={textareaRef} value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={s.chatPlaceholder}
-            className="flex-1 bg-transparent text-slate-100 placeholder-slate-500 text-sm resize-none outline-none leading-relaxed max-h-32 py-0.5"
-            style={{ scrollbarWidth: 'none', minHeight: '24px' }}
-            disabled={isStreaming}
+            disabled={streaming}
+            rows={1}
+            className="flex-1 bg-transparent text-slate-100 placeholder-slate-500 text-sm resize-none outline-none leading-relaxed max-h-28 py-0.5"
+            style={{ scrollbarWidth: 'none', minHeight: '22px' }}
           />
-
-          {/* Send button */}
-          <button
-            onClick={handleSend}
-            disabled={!input.trim() || isStreaming}
-            className="flex-shrink-0 w-8 h-8 bg-amber-400 hover:bg-amber-300 disabled:bg-slate-700 disabled:text-slate-500 text-slate-900 rounded-xl flex items-center justify-center transition-all duration-200 hover:shadow-md hover:shadow-amber-400/30 active:scale-90 mb-0.5"
-            aria-label={s.sendBtn}
-          >
+          <button onClick={() => sendMessage(input.trim())} disabled={!input.trim() || streaming}
+            className="flex-shrink-0 w-8 h-8 bg-amber-400 hover:bg-amber-300 disabled:bg-slate-700 disabled:text-slate-500 text-slate-900 rounded-xl flex items-center justify-center transition-all active:scale-90 mb-0.5">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path d="M1 7h12M7 1l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </button>
-
-          {/* Mic button */}
-          {voiceSupported && (
-            <button
-              onClick={listening ? stopListening : startListening}
-              disabled={isStreaming}
-              className={`flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-200 mb-0.5 relative ${
-                listening
-                  ? 'bg-red-500 text-white'
-                  : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
-              }`}
-              aria-label={listening ? 'Stop listening' : 'Voice input'}
-            >
-              {listening && (
-                <span className="absolute inset-0 rounded-xl bg-red-500 animate-ping opacity-60" />
-              )}
+          {voiceOk && (
+            <button onClick={listening ? () => { (recRef.current as { stop: () => void })?.stop(); setListening(false); } : startListening}
+              disabled={streaming}
+              className={`flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center transition-all mb-0.5 relative ${listening ? 'bg-red-500 text-white' : 'bg-slate-700 hover:bg-slate-600 text-slate-300'}`}>
+              {listening && <span className="absolute inset-0 rounded-xl bg-red-500 animate-ping opacity-60" />}
               <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
                 <rect x="4" y="0.5" width="5" height="7" rx="2.5" fill="currentColor"/>
                 <path d="M1.5 6.5a5 5 0 0010 0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
@@ -408,12 +350,10 @@ export default function ChatPanel({
             </button>
           )}
         </div>
-
-        {/* Hint text */}
-        <p className="text-xs text-center mt-2 transition-all duration-300">
+        <p className="text-xs text-center mt-1.5">
           {listening
-            ? <span className="text-red-400 font-medium animate-pulse">🎙 TARA is listening...</span>
-            : <span className="text-slate-600">{s.typing} · Shift+Enter for new line</span>
+            ? <span className="text-red-400 font-medium animate-pulse">🎙 Listening…</span>
+            : <span className="text-slate-600">Shift+Enter for new line</span>
           }
         </p>
       </div>
