@@ -1,11 +1,14 @@
 'use client';
 import { useState, useRef, useEffect, useCallback, KeyboardEvent } from 'react';
 import { STRINGS, Lang } from '@/lib/strings';
-import { Product } from '@/context/CartContext';
+import { useCart, Product } from '@/context/CartContext';
 import { detectExpat, detectExpatCountry } from '@/lib/expat';
 import ExpatBanner from './ExpatBanner';
 
 interface Message { role: 'user' | 'assistant'; content: string; }
+
+interface CartItem { id: string; name: string; price: number; image: string; qty?: number; }
+interface LastOrder  { order_id: string; items: CartItem[]; date: string; }
 
 interface ChatPanelProps {
   lang: Lang;
@@ -32,9 +35,9 @@ function cleanResponse(text: string): string {
     .replace(/<search_query>[\s\S]*?<\/search_query>/g, '')
     .replace(/<[^>]+>/g, '')
     .replace(/```[\s\S]*?```/g, '')
-    .replace(/\*\*(.*?)\*\*/g, '$1')   // **bold** → bold
-    .replace(/\*(.*?)\*/g, '$1')        // *italic* → italic
-    .replace(/^#{1,6}\s+/gm, '')        // ## headings
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
     .trim();
 }
 
@@ -56,22 +59,37 @@ export default function ChatPanel({
   lang, onLangChange, onProductsFound, onSearching, speakerOn,
 }: ChatPanelProps) {
   const s = STRINGS[lang];
+  const { addItem } = useCart();
 
-  const [messages,   setMessages]   = useState<Message[]>([{ role: 'assistant', content: s.welcomeMsg }]);
-  const [input,      setInput]      = useState('');
-  const [streaming,  setStreaming]  = useState(false);
-  const [convLang,   setConvLang]   = useState<Lang>(lang);   // tracks lang per conversation turn
-  const [listening,  setListening]  = useState(false);
-  const [voiceOk,    setVoiceOk]    = useState(false);
-  const [expatMode,  setExpatMode]  = useState(false);
+  // ── Build initial messages (welcome + Father's Day hint in June) ──────────
+  const buildInitial = useCallback((l: Lang): Message[] => {
+    const msgs: Message[] = [{ role: 'assistant', content: STRINGS[l].welcomeMsg }];
+    if (new Date().getMonth() === 5) { // June = month 5
+      msgs.push({ role: 'assistant', content: STRINGS[l].fathersDayHint });
+    }
+    return msgs;
+  }, []);
+
+  const [messages,     setMessages]     = useState<Message[]>(() => buildInitial(lang));
+  const [input,        setInput]        = useState('');
+  const [streaming,    setStreaming]    = useState(false);
+  const [convLang,     setConvLang]     = useState<Lang>(lang);
+  const [listening,    setListening]    = useState(false);
+  const [voiceOk,      setVoiceOk]      = useState(false);
+  const [expatMode,    setExpatMode]    = useState(false);
   const [expatCountry, setExpatCountry] = useState('');
-  const [showExpat,  setShowExpat]  = useState(false);
-  const [showPicker, setShowPicker] = useState(false);
+  const [showExpat,    setShowExpat]    = useState(false);
+  const [showPicker,   setShowPicker]   = useState(false);
+  // Reorder state
+  const [lastOrder,    setLastOrder]    = useState<LastOrder | null>(null);
+  const [reorderDone,  setReorderDone]  = useState(false);
 
   const bottomRef   = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef    = useRef<AbortController | null>(null);
   const recRef      = useRef<unknown>(null);
+  // Session start time — set on first user message
+  const sessionStartRef = useRef<number | null>(null);
 
   // Voice support detection
   useEffect(() => {
@@ -81,14 +99,29 @@ export default function ChatPanel({
     ));
   }, []);
 
-  // Reset welcome message when header lang changes (only before first user message)
+  // ── Check localStorage for previous order (reorder loop) ─────────────────
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('tara_last_order');
+      if (raw) {
+        const order: LastOrder = JSON.parse(raw);
+        // Only show if order was placed in last 90 days
+        const age = Date.now() - new Date(order.date).getTime();
+        if (age < 90 * 24 * 60 * 60 * 1000 && order.items?.length) {
+          setLastOrder(order);
+        }
+      }
+    } catch { /* ignore localStorage errors */ }
+  }, []);
+
+  // ── Reset welcome when lang changes (before first user message) ──────────
   useEffect(() => {
     setMessages(prev => {
       if (prev.some(m => m.role === 'user')) return prev;
-      return [{ role: 'assistant', content: STRINGS[lang].welcomeMsg }];
+      return buildInitial(lang);
     });
     setConvLang(lang);
-  }, [lang]);
+  }, [lang, buildInitial]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, streaming]);
 
@@ -102,24 +135,41 @@ export default function ChatPanel({
   const speak = useCallback((text: string) => {
     if (!speakerOn || !('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel();
-    const utt  = new SpeechSynthesisUtterance(text.replace(/[✦*#<>]/g, '').trim());
-    const voices  = window.speechSynthesis.getVoices();
-    const pref    = SPEECH_LANG[convLang] ?? 'en-US';
-    const match   = voices.find(v => v.lang.startsWith(pref.split('-')[0]));
+    const utt   = new SpeechSynthesisUtterance(text.replace(/[✦*#<>]/g, '').trim());
+    const voices = window.speechSynthesis.getVoices();
+    const pref   = SPEECH_LANG[convLang] ?? 'en-US';
+    const match  = voices.find(v => v.lang.startsWith(pref.split('-')[0]));
     if (match) utt.voice = match;
     utt.rate = 1.05;
     window.speechSynthesis.speak(utt);
   }, [speakerOn, convLang]);
 
+  // ── Reorder: rebuild cart from last order ─────────────────────────────────
+  const handleReorder = () => {
+    if (!lastOrder) return;
+    lastOrder.items.forEach(item => {
+      addItem({ id: item.id, name: item.name, price: item.price, image: item.image });
+    });
+    setReorderDone(true);
+    setMessages(prev => [...prev, {
+      role: 'assistant',
+      content: `${STRINGS[convLang].reorderAdded} 🛒`,
+    }]);
+  };
+
   const sendMessage = async (text: string) => {
     if (!text.trim() || streaming) return;
 
-    // Detect language from THIS message and update conversation lang
+    // Start session timer on FIRST user message
+    if (!messages.some(m => m.role === 'user')) {
+      sessionStartRef.current = Date.now();
+      try { localStorage.setItem('tara_session_start', String(Date.now())); } catch { /* */ }
+    }
+
     const detected = detectLangClient(text);
     setConvLang(detected);
     if (detected !== lang) onLangChange(detected);
 
-    // Expat detection
     if (!expatMode && detectExpat(text)) {
       const country = detectExpatCountry(text);
       setExpatMode(true); setExpatCountry(country); setShowExpat(true);
@@ -166,7 +216,7 @@ export default function ChatPanel({
       });
       speak(visible);
 
-      // ONLY search if AI included a <search_query> tag — no fallback
+      // Search only if AI included a <search_query> tag
       const query = extractQuery(full);
       if (query) {
         onSearching(true);
@@ -214,13 +264,13 @@ export default function ChatPanel({
     const SR: any = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rec: any = new SR();
-    rec.lang            = SPEECH_LANG[convLang] ?? 'en-US';
-    rec.interimResults  = false;
+    rec.lang           = SPEECH_LANG[convLang] ?? 'en-US';
+    rec.interimResults = false;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    rec.onresult        = (e: any) => { setListening(false); sendMessage(e.results[0][0].transcript); };
-    rec.onerror         = () => setListening(false);
-    rec.onend           = () => setListening(false);
-    recRef.current      = rec;
+    rec.onresult       = (e: any) => { setListening(false); sendMessage(e.results[0][0].transcript); };
+    rec.onerror        = () => setListening(false);
+    rec.onend          = () => setListening(false);
+    recRef.current     = rec;
     rec.start();
     setListening(true);
   };
@@ -231,6 +281,10 @@ export default function ChatPanel({
 
   const hasUserMsgs = messages.some(m => m.role === 'user');
   const currentOpt  = LANG_OPTIONS.find(o => o.key === convLang) ?? LANG_OPTIONS[3];
+
+  // Reorder card: show only before user messages, once, if last order exists
+  const showReorder = !hasUserMsgs && !reorderDone && lastOrder && lastOrder.items.length > 0;
+  const reorderItemName = lastOrder?.items[0]?.name ?? '';
 
   return (
     <div className="flex flex-col h-full bg-slate-900 relative">
@@ -279,9 +333,44 @@ export default function ChatPanel({
           </div>
         )}
 
+        {/* ── Reorder card (self-sustaining loop) ─────────────────────────── */}
+        {showReorder && (
+          <div className="flex gap-2 justify-start animate-slide-in-left" style={{ animationDelay: '400ms' }}>
+            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center flex-shrink-0 mt-0.5 shadow-md">
+              <span className="text-slate-900 text-xs font-black">T</span>
+            </div>
+            <div className="max-w-[82%] bg-slate-800 border border-amber-400/30 rounded-2xl rounded-bl-sm overflow-hidden">
+              <div className="px-3.5 pt-2.5 pb-2">
+                <p className="text-slate-100 text-sm leading-relaxed">
+                  {s.reorderPrompt}
+                </p>
+                {reorderItemName && (
+                  <p className="text-amber-400 text-xs font-semibold mt-0.5 line-clamp-1">
+                    {reorderItemName}{lastOrder && lastOrder.items.length > 1 ? ` +${lastOrder.items.length - 1} more` : ''}
+                  </p>
+                )}
+              </div>
+              <div className="flex border-t border-slate-700/50">
+                <button
+                  onClick={handleReorder}
+                  className="flex-1 py-2 text-xs font-bold text-amber-400 hover:bg-amber-400/10 transition-colors"
+                >
+                  🔄 {s.reorderBtn}
+                </button>
+                <button
+                  onClick={() => setReorderDone(true)}
+                  className="px-3 py-2 text-xs text-slate-500 hover:text-slate-300 border-l border-slate-700/50 transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Quick chips — before first user message */}
         {!hasUserMsgs && !streaming && (
-          <div className="flex flex-wrap gap-2 mt-1 animate-slide-in-left" style={{ animationDelay: '300ms' }}>
+          <div className="flex flex-wrap gap-2 mt-1 animate-slide-in-left" style={{ animationDelay: '600ms' }}>
             {s.quickChips.map(chip => (
               <button key={chip} onClick={() => sendMessage(chip)}
                 className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-amber-400 border border-slate-700 hover:border-amber-400/50 px-3 py-1.5 rounded-full transition-all duration-200 active:scale-95">

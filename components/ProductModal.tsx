@@ -76,6 +76,7 @@ export default function ProductModal({ productId, productUrl, lang, onClose }: P
   const imgSrc  = product?.image_url || product?.image || '';
   const images = [imgSrc, ...(product?.images ?? [])]
     .filter(u => u && u.startsWith('http'))
+    .map(u => u.includes('kapruka.com') ? `/api/img?url=${encodeURIComponent(u)}` : u)
     .slice(0, 6);
   const desc    = product?.description || product?.summary || '';
 

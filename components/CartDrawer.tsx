@@ -4,10 +4,10 @@ import { useCart } from '@/context/CartContext';
 import { Lang, STRINGS } from '@/lib/strings';
 
 const OCCASIONS = ['Birthday','Anniversary','Wedding','New Baby','Get Well','Thank You','Festival','Just Because'];
+const PLACEHOLDER = 'https://placehold.co/48x48/1e293b/94a3b8?text=?';
 
 interface CartDrawerProps { open: boolean; onClose: () => void; lang: Lang; }
-
-interface CityOption { name: string; id?: string; }
+interface CityOption   { name: string; id?: string; }
 interface DeliveryInfo { available: boolean; fee?: number; delivery_fee?: number; eta?: string; message?: string; }
 
 const GIFT_PLACEHOLDERS: Record<Lang, string> = {
@@ -16,6 +16,12 @@ const GIFT_PLACEHOLDERS: Record<Lang, string> = {
   ta: 'பரிசு செய்தி எழுதுங்கள்…',
   tl: 'Gift message liyanna machang…',
 };
+
+function formatElapsed(ms: number): string {
+  const mins = Math.floor(ms / 60000);
+  const secs = Math.floor((ms % 60000) / 1000);
+  return `${mins}:${String(secs).padStart(2, '0')}`;
+}
 
 export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
   const {
@@ -45,11 +51,12 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
   const [deliveryChecking,setDeliveryChecking]= useState(false);
 
   // UI state
-  const [genLoading,    setGenLoading]    = useState(false);
-  const [checkLoading,  setCheckLoading]  = useState(false);
-  const [orderId,       setOrderId]       = useState('');
-  const [checkoutUrl,   setCheckoutUrl]   = useState('');
-  const [error,         setError]         = useState('');
+  const [genLoading,   setGenLoading]   = useState(false);
+  const [checkLoading, setCheckLoading] = useState(false);
+  const [orderId,      setOrderId]      = useState('');
+  const [checkoutUrl,  setCheckoutUrl]  = useState('');
+  const [error,        setError]        = useState('');
+  const [orderTime,    setOrderTime]    = useState(''); // speed timer display
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -164,6 +171,34 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
       });
       const data = await r.json();
       if (data.success) {
+        // ── Order speed timer ─────────────────────────────────────────────
+        try {
+          const startRaw = localStorage.getItem('tara_session_start');
+          if (startRaw) {
+            const elapsed = Date.now() - parseInt(startRaw, 10);
+            if (elapsed > 0 && elapsed < 30 * 60 * 1000) { // cap at 30 min
+              setOrderTime(formatElapsed(elapsed));
+            }
+            localStorage.removeItem('tara_session_start');
+          }
+        } catch { /* */ }
+
+        // ── Reorder loop — save order to localStorage ────────────────────
+        try {
+          const orderSummary = {
+            order_id: data.orderId ?? 'ORDER',
+            items: items.map(i => ({
+              id:    i.id,
+              name:  i.name,
+              price: i.price,
+              image: i.image || PLACEHOLDER,
+              qty:   1,
+            })),
+            date: new Date().toISOString(),
+          };
+          localStorage.setItem('tara_last_order', JSON.stringify(orderSummary));
+        } catch { /* ignore localStorage quota */ }
+
         setOrderId(data.orderId);
         setCheckoutUrl(data.checkoutUrl);
         setRecipientName(''); setRecipientPhone('');
@@ -192,7 +227,7 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
             <h2 className="text-white font-bold text-lg">🛒 {s.cartTitle}</h2>
             <button onClick={onClose} className="text-slate-400 hover:text-white text-xl transition-colors">✕</button>
           </div>
-          {/* FIX 8 — Kapruka account link */}
+          {/* Kapruka account link */}
           <div className="px-5 pb-3">
             <a
               href="https://www.kapruka.com/shops/customerAccounts/accountLogin.jsp"
@@ -212,13 +247,23 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
             <div className="w-16 h-16 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center text-3xl">✓</div>
             <p className="text-green-400 font-bold text-lg">Order Placed!</p>
             <p className="text-slate-400 text-sm">Ref: <span className="text-white font-mono">{orderId}</span></p>
+
+            {/* ── Speed timer badge ────────────────────────────────────── */}
+            {orderTime && (
+              <div className="bg-amber-400/10 border border-amber-400/30 rounded-xl px-4 py-2.5 text-center">
+                <p className="text-amber-400 text-sm font-bold">
+                  {s.orderSpeedPrefix} <span className="text-white">{orderTime}</span> {s.orderSpeedSuffix}
+                </p>
+              </div>
+            )}
+
             {checkoutUrl && (
               <a href={checkoutUrl} target="_blank" rel="noopener noreferrer"
                 className="mt-2 bg-amber-400 text-slate-900 font-bold px-6 py-2 rounded-xl text-sm inline-block hover:bg-amber-300 transition-colors">
                 Complete Payment →
               </a>
             )}
-            <button onClick={() => { setOrderId(''); setCheckoutUrl(''); onClose(); }}
+            <button onClick={() => { setOrderId(''); setCheckoutUrl(''); setOrderTime(''); onClose(); }}
               className="text-slate-400 hover:text-slate-200 text-sm transition-colors">
               Continue Shopping
             </button>
@@ -232,10 +277,13 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
                 <p className="text-slate-500 text-sm text-center py-8">{s.cartEmpty}</p>
               ) : items.map(item => (
                 <div key={item.id} className="flex gap-3 bg-slate-800 rounded-xl p-3 border border-slate-700">
+                  {/* FIX 0 — always fallback if src is empty or null */}
                   <img
-                    src={item.image} alt={item.name} loading="lazy"
+                    src={item.image || PLACEHOLDER}
+                    alt={item.name}
+                    loading="lazy"
                     className="w-12 h-12 aspect-square object-cover rounded-lg bg-slate-700 flex-shrink-0"
-                    onError={e => { (e.target as HTMLImageElement).src = 'https://placehold.co/48x48/1e293b/94a3b8?text=IMG'; }}
+                    onError={e => { (e.target as HTMLImageElement).src = PLACEHOLDER; }}
                   />
                   <div className="flex-1 min-w-0">
                     <p className="text-slate-100 text-xs font-medium line-clamp-2 leading-snug">{item.name}</p>
@@ -301,7 +349,7 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
                   </div>
                 </div>
 
-                {/* FIX 5 — Recipient details */}
+                {/* Recipient details */}
                 <div>
                   <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">{s.recipientSection}</p>
                   <div className="space-y-2">
@@ -324,7 +372,7 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
                   </div>
                 </div>
 
-                {/* FIX 5 — Delivery date */}
+                {/* Delivery date */}
                 <div>
                   <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1.5">{s.deliveryDate}</p>
                   <input type="date" value={deliveryDate}
@@ -334,7 +382,7 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
                   />
                 </div>
 
-                {/* FIX 5 — City autocomplete (kapruka_list_delivery_cities) */}
+                {/* City autocomplete */}
                 <div>
                   <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-1.5">{s.deliveryCity}</p>
                   <div className="relative">
@@ -368,7 +416,7 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
                   )}
                 </div>
 
-                {/* FIX 5 — Delivery check result (kapruka_check_delivery) */}
+                {/* Delivery check result */}
                 {(deliveryChecking || deliveryInfo) && district && deliveryDate && (
                   <div className={`rounded-xl px-3 py-2.5 border text-xs flex items-start gap-2 transition-all ${
                     deliveryChecking ? 'bg-slate-800 border-slate-700 text-slate-400' :

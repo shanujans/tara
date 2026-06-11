@@ -40,15 +40,16 @@ export function sanitizeProduct(p: Record<string, unknown>) {
     })(),
     url: (() => {
       const rawUrl = String(p.url ?? p.link ?? p.product_url ?? '');
-      // Reject image URLs — never use them as product page links
-      if (/\.(jpg|jpeg|png|webp|gif|svg)/i.test(rawUrl)) {
-        const id = String(p.id ?? '');
-        return id ? `https://www.kapruka.com/p/${id}` : '';
-      }
+      const name   = String(p.name ?? '').replace(/<[^>]*>/g, '').slice(0, 100);
+      const fallback = name
+        ? `https://www.kapruka.com/products/?q=${encodeURIComponent(name)}`
+        : 'https://www.kapruka.com';
+      // Reject image URLs — they are never product page links
+      const isImage = /productImages|\/images\/|\.(jpg|jpeg|png|webp|gif|svg)(\?|$)/i.test(rawUrl);
+      if (isImage)              return fallback;
       if (rawUrl.startsWith('http')) return rawUrl;
-      if (rawUrl.startsWith('/')) return `https://www.kapruka.com${rawUrl}`;
-      const id = String(p.id ?? '');
-      return id ? `https://www.kapruka.com/p/${id}` : '';
+      if (rawUrl.startsWith('/'))    return `https://www.kapruka.com${rawUrl}`;
+      return fallback;
     })(),
     // pass summary through so modal can use it as description
     summary: String(p.summary ?? p.description ?? '').replace(/<[^>]*>/g, '').slice(0, 400),
