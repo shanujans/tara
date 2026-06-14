@@ -1,15 +1,14 @@
 'use client';
 import { useCart, Product } from '@/context/CartContext';
 import { STRINGS, Lang } from '@/lib/strings';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 /**
- * Route kapruka.com images through our server-side proxy to bypass hotlink protection.
- * Skip partnercentral.kapruka.com — that's the vendor portal and requires auth.
+ * Route all kapruka.com images (any subdomain) through our server-side proxy
+ * to spoof the Referer header and bypass hotlink protection.
  */
 function proxyImg(url: string): string {
   if (!url) return '';
-  if (/partnercentral\.|partner\.|admin\./i.test(url)) return ''; // blocked — use CSS fallback
   if (url.includes('kapruka.com')) return `/api/img?url=${encodeURIComponent(url)}`;
   return url;
 }
@@ -47,7 +46,48 @@ export default function ProductCard({ product, lang, index = 0, onViewDetail }: 
 
   const inCart = items.some(i => i.id === product.id);
   const emoji  = categoryEmoji(product.category, product.name);
-  const imgSrc = proxyImg(product.image); // empty string if blocked/missing
+  const [lazyImg, setLazyImg] = useState('');
+  const imgSrc = proxyImg(product.image || lazyImg);
+
+  // ── Lazy image resolver ────────────────────────────────────────────────
+  // Only fetch when the card is actually visible in the viewport AND has no image.
+  // Uses IntersectionObserver + index-staggered delay so a grid of 13 cards
+  // doesn't fire 13 simultaneous MCP sessions (which hits rate limits).
+  const cardRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (imgSrc || !product.id || lazyImg) return; // already have an image
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const doFetch = () => {
+      // Stagger by card index so at most ~3 fire per second
+      timer = setTimeout(async () => {
+        if (cancelled) return;
+        try {
+          const r = await fetch('/api/product', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ product_id: product.id }),
+          });
+          if (!r.ok || cancelled) return;
+          const data = await r.json();
+          const img = data?.product?.image || data?.product?.image_url || '';
+          if (img && !cancelled) setLazyImg(img);
+        } catch { /* silent — CSS emoji fallback shows */ }
+      }, index * 250); // 250ms gap between cards = ~4 per second max
+    };
+
+    // Only fetch if the card enters the viewport
+    const obs = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) { obs.disconnect(); doFetch(); } },
+      { rootMargin: '100px' },
+    );
+    if (cardRef.current) obs.observe(cardRef.current);
+
+    return () => { cancelled = true; obs.disconnect(); if (timer) clearTimeout(timer); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [product.id, imgSrc, lazyImg]);
 
   const handleAdd = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -58,6 +98,7 @@ export default function ProductCard({ product, lang, index = 0, onViewDetail }: 
 
   return (
     <div
+      ref={cardRef}
       className="group flex flex-col bg-slate-800 rounded-xl overflow-hidden border border-slate-700 hover:border-amber-400/50 transition-all duration-300 hover:shadow-lg hover:shadow-amber-400/10 hover:-translate-y-0.5 cursor-pointer animate-fade-slide-up"
       style={{ animationDelay: `${index * 50}ms` }}
       onClick={() => onViewDetail?.(product.id, product.url ?? '')}

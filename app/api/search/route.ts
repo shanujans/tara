@@ -7,6 +7,12 @@ export const dynamic = 'force-dynamic';
 const MCP = process.env.MCP_URL ?? 'https://mcp.kapruka.com/mcp';
 const H   = { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' };
 
+/** URLs that belong to gated portals requiring authentication — never usable as public images */
+const GATED  = /partnercentral\.|partner\.|admin\.|cms\./i;
+const IS_IMG = (u: string) =>
+  /\.(jpg|jpeg|png|webp|gif|avif)(\?|$)/i.test(u) ||
+  /productImages|\/images\/|\/photos\//i.test(u);
+
 /**
  * Parses Markdown‑formatted search results returned by the MCP.
  * Extracts product blocks that look like:
@@ -22,12 +28,31 @@ function parseMarkdownSearch(md: string): Record<string, unknown>[] {
 
     const name = nameMatch[1].replace(/`/g, '').trim();
 
-    // Collect ALL kapruka.com URLs in this block, then separate them
-    const allUrls = [...block.matchAll(/https?:\/\/(?:www\.)?kapruka\.com[^\s)\]"'\\<>]*/g)]
-      .map(m => m[0]);
+    // ── Collect ALL URLs in this block (any domain) ───────────────────────
+    const rawUrls = new Set<string>();
 
-    const imgUrl     = allUrls.find(u => /productImages|\.jpg|\.jpeg|\.png|\.webp/i.test(u)) ?? '';
-    const productUrl = allUrls.find(u => !/productImages|\.jpg|\.jpeg|\.png|\.webp/i.test(u)) ?? '';
+    // 1. Explicit markdown image syntax  ![alt](url)
+    for (const m of block.matchAll(/!\[.*?\]\((https?:\/\/[^)]+)\)/g)) {
+      rawUrls.add(m[1].trim());
+    }
+    // 2. Any bare URL
+    for (const m of block.matchAll(/https?:\/\/[^\s)"'\]\\<>]+/g)) {
+      rawUrls.add(m[0].replace(/[.,;:!?)\]]+$/, '')); // trim trailing punctuation
+    }
+
+    const allUrls = [...rawUrls];
+
+    // ── Classify ──────────────────────────────────────────────────────────
+    // Prefer public www.kapruka.com image URLs; fall back to vendor CDN (partnercentral)
+    // Both go through /api/img proxy which adds the correct Referer header.
+    const imgUrl = allUrls.find(u => IS_IMG(u) && !GATED.test(u))  // public first
+                ?? allUrls.find(u => IS_IMG(u))                      // vendor CDN fallback
+                ?? '';
+
+    // Product page: kapruka.com URL that isn't an image path
+    const productUrl = allUrls.find(
+      u => !GATED.test(u) && !IS_IMG(u) && u.includes('kapruka.com'),
+    ) ?? '';
 
     const idMatch    = block.match(/[-–*]\s*ID[:\s]+`?([A-Za-z0-9_\-]+)`?/i);
     const priceMatch = block.match(/(?:Price|LKR)[:\s]*(?:LKR\s*)?([\d,]+)/i);
@@ -46,9 +71,9 @@ function parseMarkdownSearch(md: string): Record<string, unknown>[] {
   return products;
 }
 
-async function mcpSearch(q: string, sid: string, maxPrice?: number): Promise<Record<string, unknown>[]> {
+async function mcpSearch(q: string, sid: string, maxPrice?: number, limit = 16): Promise<Record<string, unknown>[]> {
   const args: Record<string, unknown> = {
-    q: q.slice(0, 100), limit: 12, currency: 'LKR',
+    q: q.slice(0, 100), limit, currency: 'LKR',
     sort: 'relevance',
   };
   if (maxPrice) args.max_price = maxPrice;
@@ -63,7 +88,6 @@ async function mcpSearch(q: string, sid: string, maxPrice?: number): Promise<Rec
   });
 
   const text = await r.text();
-  console.log('RAW search:', text.slice(0, 200));
   const m    = text.match(/^data:\s*(.+)$/m);
   const json = m ? m[1] : text;
 
@@ -74,7 +98,6 @@ async function mcpSearch(q: string, sid: string, maxPrice?: number): Promise<Rec
       const parsed = JSON.parse(raw);
       return (parsed.results || parsed.products || []) as Record<string, unknown>[];
     } catch {
-      // MCP returned Markdown — parse it
       return parseMarkdownSearch(raw);
     }
   } catch { return []; }
@@ -90,35 +113,31 @@ export async function POST(req: NextRequest) {
   const { primary } = body;
   if (!primary || primary.length < 2) return NextResponse.json({ products: [] });
 
-  // Parse "query | max_price:N | category:X" format
   const parts     = primary.split('|');
   const baseQuery = parts[0].trim();
-  const maxPrice  = primary.match(/max_price:(\d+)/)?.[1] ? Number(primary.match(/max_price:(\d+)/)![1]) : undefined;
+  const maxPrice  = primary.match(/max_price:(\d+)/)?.[1]
+    ? Number(primary.match(/max_price:(\d+)/)![1]) : undefined;
 
-  // Generate query variations to get more diverse results
+  // Secondary query: first 2 meaningful words (catches "wireless earbuds" from longer phrases)
+  // Never use single-word broadening — returns unrelated products
   const words = baseQuery.split(' ').filter(w => w.length > 2);
-  const q2    = words.length > 2 ? words.slice(0, 2).join(' ') : baseQuery;   // shorter
-  const q1Broader = words[0] ?? baseQuery;                                      // broadest
+  const q2    = words.length >= 3 ? words.slice(0, 2).join(' ') : '';
 
   try {
+    // Sequential — MCP sessions are SSE-based and don't support concurrent requests on the same sid
     const sid = await mcpSession();
-    console.log('Searching:', baseQuery, '|', q2, '|', q1Broader);
-
-    const r1 = await mcpSearch(baseQuery, sid, maxPrice);
-    const r2 = q2 !== baseQuery ? await mcpSearch(q2, sid, maxPrice) : [];
-    const r3 = q1Broader !== q2 && q1Broader !== baseQuery ? await mcpSearch(q1Broader, sid, maxPrice) : [];
-
-    console.log('MCP counts:', r1.length, r2.length, r3.length);
+    const r1  = await mcpSearch(baseQuery, sid, maxPrice, 16);
+    const r2  = q2 && q2 !== baseQuery ? await mcpSearch(q2, sid, maxPrice, 8) : [];
 
     const seen = new Set<string>();
-    const products = [...r1, ...r2, ...r3]
+    const products = [...r1, ...r2]
       .map(sanitizeProduct)
       .filter(p => {
-        if (!p.id || seen.has(p.id)) return false;
+        if (!p.id || !p.name || seen.has(p.id)) return false;
         seen.add(p.id);
-        return true; // trust MCP ranking
+        return true;
       })
-      .slice(0, 8);
+      .slice(0, 20);
 
     return NextResponse.json({ products, quantum: products.length > 0 });
   } catch (e) {

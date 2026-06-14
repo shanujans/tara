@@ -26,7 +26,8 @@ function detectLangClient(text: string): DetectedLang {
   if (/[\u0B80-\u0BFF]/.test(text)) return 'ta';
   if (/\b(machang|machan|aiyo|oneda|aney|yako|putha)\b/i.test(text)) return 'tl';
   if (/\b(la|neh|ne|da)\s*[.!?,]?\s*$/im.test(text.trim())) return 'tl';
-  if (/\b(bohoma|hariyata|puluwan|mokada|ekak|apita|oyata)\b/i.test(text)) return 'tl';
+  // Sihalish — romanized Sinhala
+  if (/\b(mama|api|eka|ekak|ona|nehe|koheda|mokada|puluwan|bohoma|hariyata|hadanna|karanna|balanna|ganna|denna|yanawa|thiyenawa|gedara|amma|thaththa|akka|aiya|nangi|malli|hondai|hari|tika|godak|wage|wela|isthuti|ayubowan)\b/i.test(text)) return 'sl';
   return 'en';
 }
 
@@ -46,13 +47,14 @@ function extractQuery(text: string): string | null {
   return m ? m[1].trim() : null;
 }
 
-const SPEECH_LANG: Record<Lang, string> = { si: 'si-LK', ta: 'ta-IN', tl: 'en-US', en: 'en-US' };
+const SPEECH_LANG: Record<Lang, string> = { si: 'si-LK', sl: 'si-LK', ta: 'ta-IN', tl: 'en-US', en: 'en-US' };
 
 const LANG_OPTIONS: { key: Lang; label: string; active: string }[] = [
-  { key: 'si', label: '🇱🇰 සිං', active: 'bg-green-600 text-white' },
-  { key: 'ta', label: '🇱🇰 த',   active: 'bg-orange-500 text-white' },
-  { key: 'tl', label: '🇱🇰 TL',  active: 'bg-amber-400 text-slate-900' },
-  { key: 'en', label: '🇬🇧 EN',  active: 'bg-blue-600 text-white' },
+  { key: 'si', label: '🇱🇰 සිං',  active: 'bg-green-600 text-white' },
+  { key: 'sl', label: '🇱🇰 SL',   active: 'bg-emerald-500 text-white' },
+  { key: 'ta', label: '🇱🇰 த',    active: 'bg-orange-500 text-white' },
+  { key: 'tl', label: '🇱🇰 TL',   active: 'bg-amber-400 text-slate-900' },
+  { key: 'en', label: '🇬🇧 EN',   active: 'bg-blue-600 text-white' },
 ];
 
 export default function ChatPanel({
@@ -79,7 +81,6 @@ export default function ChatPanel({
   const [expatMode,    setExpatMode]    = useState(false);
   const [expatCountry, setExpatCountry] = useState('');
   const [showExpat,    setShowExpat]    = useState(false);
-  const [showPicker,   setShowPicker]   = useState(false);
   // Reorder state
   const [lastOrder,    setLastOrder]    = useState<LastOrder | null>(null);
   const [reorderDone,  setReorderDone]  = useState(false);
@@ -280,7 +281,6 @@ export default function ChatPanel({
   };
 
   const hasUserMsgs = messages.some(m => m.role === 'user');
-  const currentOpt  = LANG_OPTIONS.find(o => o.key === convLang) ?? LANG_OPTIONS[3];
 
   // Reorder card: show only before user messages, once, if last order exists
   const showReorder = !hasUserMsgs && !reorderDone && lastOrder && lastOrder.items.length > 0;
@@ -383,29 +383,24 @@ export default function ChatPanel({
         <div ref={bottomRef} />
       </div>
 
-      {/* Lang badge */}
-      <div className="px-3 pt-1 pb-0.5 flex justify-end relative">
-        <button
-          onClick={() => setShowPicker(v => !v)}
-          className={`text-xs font-bold px-2.5 py-0.5 rounded-full transition-all duration-300 flex items-center gap-1 ${currentOpt.active}`}
-        >
-          {currentOpt.label}
-          <svg width="8" height="5" viewBox="0 0 8 5" fill="none"><path d="M1 1l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-        </button>
-        {showPicker && (
-          <>
-            <div className="fixed inset-0 z-10" onClick={() => setShowPicker(false)} />
-            <div className="absolute right-3 bottom-full mb-1 bg-slate-800 border border-slate-700 rounded-xl shadow-xl overflow-hidden z-20">
-              {LANG_OPTIONS.map(o => (
-                <button key={o.key} onClick={() => { onLangChange(o.key); setConvLang(o.key); setShowPicker(false); }}
-                  className={`w-full flex items-center gap-2 px-4 py-2 text-xs font-semibold hover:bg-slate-700 transition-colors text-left ${o.key === convLang ? 'text-amber-400' : 'text-slate-300'}`}>
-                  <span className={`w-2 h-2 rounded-full ${o.key === convLang ? 'bg-amber-400' : 'bg-slate-600'}`} />
-                  {o.label}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
+      {/* ── Language bar — always visible, all 5 options ───────────────── */}
+      <div className="flex-shrink-0 border-b border-slate-800/80 bg-slate-900/90 backdrop-blur-sm px-3 py-2">
+        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+          <span className="text-slate-600 text-xs flex-shrink-0 mr-0.5">🌐</span>
+          {LANG_OPTIONS.map(o => (
+            <button
+              key={o.key}
+              onClick={() => { onLangChange(o.key); setConvLang(o.key); }}
+              className={`flex-shrink-0 text-xs font-bold px-3 py-1.5 rounded-full transition-all duration-200 border ${
+                convLang === o.key
+                  ? `${o.active} border-transparent shadow-sm scale-105`
+                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:border-slate-500 hover:text-slate-200'
+              }`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Input */}

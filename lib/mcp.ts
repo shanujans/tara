@@ -88,8 +88,15 @@ export interface MProduct {
 }
 export interface MCategory { id?: string; name: string; slug?: string; }
 export interface MCity     { name: string; id?: string; }
+export interface DeliveryOption {
+  type: 'express' | 'standard';
+  label: string;   // "Deliver on 13 / June"
+  fee:   number;   // 610
+}
 export interface MDelivery {
-  available: boolean; fee?: number; delivery_fee?: number;
+  available: boolean;
+  options?: DeliveryOption[];   // multiple tiers (express / standard)
+  fee?: number; delivery_fee?: number;
   eta?: string; message?: string;
 }
 export interface MOrder {
@@ -102,41 +109,76 @@ export interface MTrack {
 
 // ─── Delivery Markdown parser ─────────────────────────────────────────────────
 // kapruka_check_delivery returns Markdown prose, not JSON.
-function parseDeliveryMarkdown(md: string): MDelivery {
-  const lower = md.toLowerCase();
+function parseFee(s: string): number | null {
+  const n = Number(s.replace(/,/g, ''));
+  return (n >= 0 && n <= 10000) ? n : null; // 0 = explicitly free
+}
 
-  // Availability — check negatives first
+function parseDeliveryMarkdown(md: string): MDelivery {
+  // Availability
   const unavailable = /not\s+available|unavailable|cannot\s+deliver|not\s+serviceable|no\s+delivery|not\s+covered|outside.*service/i.test(md);
   const available   = !unavailable && /\bavailable\b|can\s+be\s+deliver|yes\b|possible|serviceable/i.test(md);
 
-  // Fee — try multiple patterns
-  const feePatterns = [
-    /delivery\s+fee[:\s]*(?:lkr|rs\.?)?\s*([\d,]+)/i,
-    /fee[:\s]*(?:lkr|rs\.?)?\s*([\d,]+)/i,
-    /(?:lkr|rs\.?)\s*([\d,]+)/i,
-    /([\d,]+)\s*(?:lkr|rs)/i,
-  ];
-  let fee: number | undefined;
-  for (const pat of feePatterns) {
-    const m = md.match(pat);
-    if (m) { fee = Number(m[1].replace(/,/g, '')); if (fee > 0) break; }
+  const options: DeliveryOption[] = [];
+
+  // ── Pattern A: "Deliver on DD / Month   Fee: Rs 610"  (Kapruka's exact format)
+  const exprA = md.match(/deliver\s+on\s+([\d]+\s*[\/\-]\s*\w+(?:\s*\/\s*\d+)?)[^\n]*?(?:fee[:\s]+)?(?:rs\.?|lkr)\s*([\d,]+)/i);
+  if (exprA) {
+    const fee = parseFee(exprA[2]);
+    if (fee) options.push({ type: 'express', label: `Deliver on ${exprA[1].trim()}`, fee });
   }
 
-  // ETA
-  const etaMatch = md.match(/(?:eta|estimated\s+(?:delivery|time)|deliver(?:ed|y)\s+(?:by|within|in))[:\s]+([^\n.]+)/i)
-                ?? md.match(/(?:same.day|next.day|tomorrow|today|days?|business\s+days?)[^\n]*/i);
-  const eta = etaMatch?.[0]?.trim().slice(0, 100);
+  // ── Pattern B: "Deliver within 3 to 5 days  Fee: Rs 480"
+  const stdA = md.match(/deliver\s+within\s+([\d\w\s]+?days?)[^\n]*?(?:fee[:\s]+)?(?:rs\.?|lkr)\s*([\d,]+)/i);
+  if (stdA) {
+    const fee = parseFee(stdA[2]);
+    if (fee) options.push({ type: 'standard', label: `Deliver within ${stdA[1].trim()}`, fee });
+  }
 
-  // Message — try to grab a useful line
+  // ── Pattern C: generic express/standard labels with fees on same line
+  if (options.length === 0) {
+    for (const line of md.split('\n')) {
+      const feeM = line.match(/(?:rs\.?|lkr)\s*([\d,]+)/i);
+      if (!feeM) continue;
+      const fee = parseFee(feeM[1]);
+      if (!fee) continue;
+      if (/express|next.?day|same.?day|deliver\s+on/i.test(line) && !options.find(o => o.type === 'express')) {
+        options.push({ type: 'express', label: 'Express delivery', fee });
+      } else if (/standard|regular|within|days?/i.test(line) && !options.find(o => o.type === 'standard')) {
+        options.push({ type: 'standard', label: 'Standard delivery', fee });
+      }
+    }
+  }
+
+  // ── Fallback: single fee when no options found
+  let fee: number | undefined;
+  if (options.length === 0) {
+    const patterns = [
+      /flat\s+rate\s+(?:lkr|rs\.?)\s*([\d,]+)/i,                          // "flat rate LKR 300"  ← Kapruka's most common format
+      /—\s*(?:lkr|rs\.?)\s*([\d,]+)/i,                                     // "Available — LKR 300"
+      /delivery\s+(?:fee|charge|cost)[:\s]*(?:lkr|rs\.?)?\s*([\d,]+)/i,
+      /shipping\s+(?:fee|charge|cost)[:\s]*(?:lkr|rs\.?)?\s*([\d,]+)/i,
+      /(?:fee|charge|cost)[:\s]+(?:lkr|rs\.?)\s*([\d,]+)/i,
+      /(?:lkr|rs\.?)\s*([\d,]+)\s*(?:delivery|shipping|flat)/i,
+    ];
+    for (const pat of patterns) {
+      const m = md.match(pat);
+      if (m) {
+        const n = Number(m[1].replace(/,/g, ''));
+        if (n >= 0 && n <= 10000) { fee = n; break; } // 0 = free delivery is valid
+      }
+    }
+  }
+
   const msgLine = md.split('\n').find(l => l.trim().length > 15 && !/^\*\*|^#/.test(l.trim()));
 
   return {
     available,
+    ...(options.length > 0 ? { options, fee: options[0].fee } : {}),
     ...(fee !== undefined ? { fee } : {}),
-    ...(eta  ? { eta }     : {}),
     message: unavailable
       ? (msgLine?.trim() || 'Delivery not available to this city on the selected date.')
-      : (msgLine?.trim() || undefined),
+      : undefined,
   };
 }
 
@@ -177,6 +219,9 @@ export async function checkDelivery(params: {
   const raw = await callToolRaw(sid, 'kapruka_check_delivery', params);
 
   if (!raw) return { available: false, message: 'No response from delivery service.' };
+
+  // Log raw so we can see exactly what Kapruka returns
+  console.log('[delivery raw]', raw.slice(0, 400));
 
   // Try JSON first (in case MCP starts returning it)
   try {

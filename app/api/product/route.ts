@@ -76,7 +76,7 @@ function parseMarkdownProduct(md: string, productId: string) {
 
 export async function POST(req: NextRequest) {
   const ip = req.headers.get('x-forwarded-for') ?? 'unknown';
-  if (!rateLimit(ip, 60, 60_000)) {
+  if (!rateLimit(ip, 120, 60_000)) {
     return NextResponse.json({ error: 'Rate limited' }, { status: 429 });
   }
 

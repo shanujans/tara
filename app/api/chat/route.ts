@@ -5,21 +5,26 @@ import { rateLimit, sanitizeInput } from '@/lib/security';
 
 export const dynamic = 'force-dynamic';
 
-type Lang = 'si' | 'ta' | 'tl' | 'en';
+type Lang = 'si' | 'sl' | 'ta' | 'tl' | 'en';
 
 function detectLang(text: string): Lang {
   if (/[\u0D80-\u0DFF]/.test(text)) return 'si';
   if (/[\u0B80-\u0BFF]/.test(text)) return 'ta';
   if (/\b(machang|machan|aiyo|oneda|aney|yako|putha)\b/i.test(text)) return 'tl';
   if (/\b(la|neh|ne|da)\s*[.!?,]?\s*$/im.test(text.trim())) return 'tl';
-  if (/\b(bohoma|hariyata|puluwan|mokada|koheda|ekak|ekkada|apita|oyata|eka\b)\b/i.test(text)) return 'tl';
-  if (/\b(bro|machan)\b.{0,40}\b(la|da|neh)\b/i.test(text)) return 'tl';
+  if (/\b(mama|api|eka|ekak|ona|nehe|koheda|mokada|puluwan|bohoma|hadanna|karanna|balanna|ganna|denna|yanawa|thiyenawa|gedara|amma|thaththa|akka|aiya|nangi|malli|hondai|hari|tika|godak|wela|isthuti|ayubowan)\b/i.test(text)) return 'sl';
   return 'en';
 }
 
 const langPrompts: Record<Lang, string> = {
   si: `LANGUAGE: Reply FULLY in Sinhala Unicode script.
 Tone: warm, like a helpful younger sibling (malli/nangi). Use 😊🙏 occasionally.
+IMPORTANT: <search_query> tag content must ALWAYS be in English only.`,
+
+  sl: `LANGUAGE: Reply in Sihalish — romanized Sinhala mixed with English. This is how Sri Lankans type on WhatsApp.
+Use real Sinhala words spelled in English letters naturally: mama, api, eka, ekak, ona, nehe, puluwan, hondai, bohoma, mokada, koheda, hadamu, ganna, denna, balanna, karanna, yanawa, thiyanawa, gedara, amma, thaththa, wada, igenma, heta, aye, aiyo.
+Mix English words naturally as Sri Lankans do. Keep it warm and casual like texting a friend.
+Example: "Aiyo sorry, e item eka out of stock wela. Meka balamu — meka hondai weda!" 
 IMPORTANT: <search_query> tag content must ALWAYS be in English only.`,
 
   ta: `LANGUAGE: Reply FULLY in Tamil Unicode script.

@@ -60,20 +60,33 @@ export function sanitizeProduct(p: Record<string, unknown>) {
 }
 
 export function validateCheckout(body: Record<string, unknown>): string | null {
-  const { items, district, deliveryDate, recipient } = body as {
+  const { items, district, deliveryDate, recipient, deliveryType } = body as {
     items?: unknown[];
     district?: string;
     deliveryDate?: string;
+    deliveryType?: string;
     recipient?: { name?: string; phone?: string };
   };
   if (!items?.length) return 'Empty cart';
   if ((items as unknown[]).length > 30) return 'Too many items';
-  if (!district) return 'Select district';
-  if (!deliveryDate || !/^\d{4}-\d{2}-\d{2}$/.test(deliveryDate)) return 'Invalid date';
+
+  const isPickup = deliveryType === 'pickup';
+
+  if (!isPickup) {
+    if (!district) return 'Select delivery city';
+    if (!deliveryDate || !/^\d{4}-\d{2}-\d{2}$/.test(deliveryDate)) return 'Invalid date';
+    // Compare dates only (not datetime) so selecting today+1 always passes
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const d = new Date(deliveryDate); d.setHours(0, 0, 0, 0);
+    if (isNaN(d.getTime()) || d <= today) return 'Delivery date must be in the future';
+  }
+
   if (!recipient?.name?.trim()) return 'Recipient name required';
   if (!recipient?.phone?.trim()) return 'Recipient phone required';
-  if (!/^(\+94|0)\d{9}$/.test(recipient.phone.replace(/\s/g, ''))) return 'Invalid phone number';
-  const d = new Date(deliveryDate);
-  if (isNaN(d.getTime()) || d < new Date()) return 'Delivery date must be future';
+
+  // Accept: +94xxxxxxxxx  |  0xxxxxxxxx  |  94xxxxxxxxx  (9 digits after prefix)
+  const phone = recipient.phone.replace(/[\s\-]/g, '');
+  if (!/^(\+94|94|0)\d{9}$/.test(phone)) return 'Invalid phone — use +94xxxxxxxxx or 0xxxxxxxxx';
+
   return null;
 }
