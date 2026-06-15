@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Generate TARA Icons</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    background: #0d0d1a;
+    color: #e2e8f0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    gap: 24px;
+  }
+  h1 { color: #f59e0b; font-size: 1.4rem; }
+  .preview { display: flex; gap: 32px; align-items: flex-end; }
+  .icon-box { display: flex; flex-direction: column; align-items: center; gap: 8px; font-size: 12px; color: #94a3b8; }
+  button {
+    padding: 12px 28px;
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: #fff;
+    font-weight: 700;
+    font-size: 14px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  canvas { display: block; image-rendering: pixelated; }
+</style>
+</head>
+<body>
+<h1>TARA Icon Generator</h1>
+<p>Click below to download <code>icon-48.png</code> and <code>icon-128.png</code> for the Chrome extension.</p>
+
+<div class="preview" id="preview"></div>
+<button onclick="generateAndDownload()">⬇ Generate &amp; Download Icons</button>
+
+<script>
+function drawTARAIcon(size) {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const cx = size / 2, cy = size / 2, r = size / 2 - 1;
+
+  // Amber gradient background circle
+  const grad = ctx.createLinearGradient(0, 0, size, size);
+  grad.addColorStop(0, '#f59e0b');
+  grad.addColorStop(1, '#d97706');
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Subtle drop-shadow inner ring
+  ctx.beginPath();
+  ctx.arc(cx, cy, r - 0.5, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // White "T" letter
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `900 ${Math.round(size * 0.52)}px system-ui,-apple-system,sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = 'rgba(0,0,0,0.20)';
+  ctx.shadowBlur = size * 0.06;
+  ctx.shadowOffsetY = size * 0.03;
+  ctx.fillText('T', cx, cy + size * 0.04);
+
+  // Sparkle ✦ bottom-right
+  ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  ctx.fillStyle = 'rgba(255,255,255,0.82)';
+  ctx.font = `600 ${Math.round(size * 0.16)}px system-ui,-apple-system,sans-serif`;
+  ctx.textBaseline = 'middle';
+  ctx.fillText('✦', cx + r * 0.52, cy + r * 0.52);
+
+  return canvas;
+}
+
+function preview() {
+  const container = document.getElementById('preview');
+  [48, 128].forEach(size => {
+    const canvas = drawTARAIcon(size);
+    canvas.style.border = '1px solid rgba(245,158,11,0.3)';
+    canvas.style.borderRadius = '50%';
+    const box = document.createElement('div');
+    box.className = 'icon-box';
+    box.appendChild(canvas);
+    box.appendChild(Object.assign(document.createElement('span'), { textContent: `${size}×${size}` }));
+    container.appendChild(box);
+  });
+}
+
+function download(canvas, filename) {
+  canvas.toBlob(blob => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }, 'image/png');
+}
+
+function generateAndDownload() {
+  download(drawTARAIcon(48),  'icon-48.png');
+  setTimeout(() => download(drawTARAIcon(128), 'icon-128.png'), 400);
+}
+
+preview();
+</script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "TARA for Kapruka",
+  "short_name": "TARA",
+  "version": "1.0.0",
+  "description": "TARA — The AI Retail Agent. Multilingual AI shopping assistant embedded right inside Kapruka.com.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["*://*.kapruka.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "icons": {
+    "48": "icon-48.png",
+    "128": "icon-128.png"
+  },
+  "action": {
+    "default_icon": {
+      "48": "icon-48.png",
+      "128": "icon-128.png"
+    },
+    "default_title": "TARA for Kapruka"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["widget.css", "icon-48.png", "icon-128.png"],
+      "matches": ["*://*.kapruka.com/*"]
+    }
+  ]
+}
