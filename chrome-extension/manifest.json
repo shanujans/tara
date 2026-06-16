@@ -3,7 +3,7 @@
   "name": "TARA for Kapruka",
   "short_name": "TARA",
   "version": "1.0.0",
-  "description": "TARA — The AI Retail Agent. Multilingual AI shopping assistant embedded right inside Kapruka.com.",
+  "description": "TARA — The AI Retail Agent. Multilingual AI shopping assistant embedded inside Kapruka.com.",
   "permissions": [
     "activeTab",
     "scripting",
@@ -15,6 +15,11 @@
       "js": ["content.js"],
       "run_at": "document_idle",
       "all_frames": false
+    },
+    {
+      "matches": ["https://tara-green.vercel.app/embed-demo*"],
+      "js": ["detect.js"],
+      "run_at": "document_start"
     }
   ],
   "icons": {
