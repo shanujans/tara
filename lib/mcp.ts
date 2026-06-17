@@ -1,128 +1,254 @@
 /**
- * lib/mcp.ts
- *
- * Kapruka MCP client — Streamable HTTP transport.
- * Endpoint : https://mcp.kapruka.com/mcp
- * Auth     : none (public free tier)
- * Rate     : 60 req/min, 30 orders/hr per IP
- *
- * Tool names exactly as documented at https://mcp.kapruka.com
+ * lib/mcp.ts — server-side wrappers for all 7 Kapruka MCP tools.
+ * Uses JSON-RPC 2.0 + SSE session protocol. Server-side only.
  */
 
-const MCP_ENDPOINT = 'https://mcp.kapruka.com/mcp';
+const MCP_URL = process.env.MCP_URL ?? 'https://mcp.kapruka.com/mcp';
+const H = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json, text/event-stream',
+};
 
-let _requestId = 1;
-
-// ── Core JSON-RPC caller ─────────────────────────────────────────────────────
-
-async function callTool<T = unknown>(
-  toolName: string,
-  args: Record<string, unknown>,
-): Promise<T> {
-  const body = {
-    jsonrpc: '2.0',
-    method:  'tools/call',
-    params:  { name: toolName, arguments: args },
-    id:      _requestId++,
-  };
-
-  const res = await fetch(MCP_ENDPOINT, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(body),
-    signal:  AbortSignal.timeout(15_000),
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`MCP ${toolName} HTTP ${res.status}: ${text}`);
-  }
-
-  const json = await res.json();
-
-  if (json.error) {
-    throw new Error(`MCP ${toolName} error: ${JSON.stringify(json.error)}`);
-  }
-
-  // MCP wraps result in content[0].text as a JSON string
-  const raw = json.result?.content?.[0]?.text;
-  if (raw) {
-    try { return JSON.parse(raw) as T; } catch { return raw as unknown as T; }
-  }
-  return json.result as T;
+function parseSSE(text: string): Record<string, unknown> {
+  const m = text.match(/^data:\s*(.+)$/m);
+  if (m) { try { return JSON.parse(m[1]); } catch { /* fall through */ } }
+  try { return JSON.parse(text); } catch { return {}; }
 }
 
-// ── Tool wrappers (exact names from mcp.kapruka.com) ────────────────────────
+export async function mcpSession(): Promise<string> {
+  const r = await fetch(MCP_URL, {
+    method: 'POST',
+    headers: H,
+    body: JSON.stringify({
+      jsonrpc: '2.0', id: '1', method: 'initialize',
+      params: {
+        protocolVersion: '2024-11-05',
+        clientInfo: { name: 'tara', version: '1.0' },
+        capabilities: {},
+      },
+    }),
+  });
+  const sid = r.headers.get('mcp-session-id');
+  await r.text();
+  if (!sid) throw new Error('MCP: no session ID');
+  return sid;
+}
 
-export const mcp = {
-  /**
-   * Search the Kapruka catalogue.
-   * q, category, min_price, max_price, in_stock_only, sort, limit, cursor, currency
-   */
-  searchProducts: (args: {
-    q:             string;
-    category?:     string;
-    min_price?:    number;
-    max_price?:    number;
-    in_stock_only?: boolean;
-    sort?:         'relevance' | 'price_asc' | 'price_desc' | 'newest';
-    limit?:        number;
-    cursor?:       string;
-    currency?:     string;
-  }) => callTool('kapruka_search_products', args as Record<string, unknown>),
+/** Returns parsed JSON — throws if response is not valid JSON */
+async function callTool<T>(
+  sid: string, name: string, params: Record<string, unknown>,
+): Promise<T> {
+  const r = await fetch(MCP_URL, {
+    method: 'POST',
+    headers: { ...H, 'mcp-session-id': sid },
+    body: JSON.stringify({
+      jsonrpc: '2.0', id: String(Date.now()), method: 'tools/call',
+      params: { name, arguments: { params } },
+    }),
+  });
+  const text = await r.text();
+  const data = parseSSE(text) as { result?: { content?: { text?: string }[] } };
+  const raw  = data?.result?.content?.[0]?.text;
+  if (!raw) throw new Error(`MCP tool ${name}: empty response`);
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    throw new Error(`MCP tool ${name} returned non-JSON: ${raw.slice(0, 80)}`);
+  }
+}
 
-  /**
-   * Full product details by ID — name, price, stock, variants, images, shipping URL.
-   */
-  getProduct: (productId: string, currency?: string) =>
-    callTool('kapruka_get_product', { product_id: productId, ...(currency ? { currency } : {}) }),
+/** Returns raw text — never throws on non-JSON. Use for Markdown-returning tools. */
+async function callToolRaw(
+  sid: string, name: string, params: Record<string, unknown>,
+): Promise<string> {
+  const r = await fetch(MCP_URL, {
+    method: 'POST',
+    headers: { ...H, 'mcp-session-id': sid },
+    body: JSON.stringify({
+      jsonrpc: '2.0', id: String(Date.now()), method: 'tools/call',
+      params: { name, arguments: { params } },
+    }),
+  });
+  const text = await r.text();
+  const data = parseSSE(text) as { result?: { content?: { text?: string }[] } };
+  return data?.result?.content?.[0]?.text ?? '';
+}
 
-  /**
-   * Top-level category names with browse URLs.
-   */
-  listCategories: (depth?: number) =>
-    callTool('kapruka_list_categories', depth ? { depth } : {}),
+async function mcp<T>(name: string, params: Record<string, unknown>): Promise<T> {
+  const sid = await mcpSession();
+  return callTool<T>(sid, name, params);
+}
 
-  /**
-   * Search Sri Lanka delivery cities by name or vernacular alias.
-   */
-  listDeliveryCities: (query: string, limit = 10) =>
-    callTool('kapruka_list_delivery_cities', { query, limit }),
+// ─── Shared types ────────────────────────────────────────────────────────────
 
-  /**
-   * Check delivery availability + flat LKR rate for a city/date/product.
-   * Returns perishable warning for cakes/flowers.
-   */
-  checkDelivery: (args: {
-    city:          string;
-    delivery_date: string;   // YYYY-MM-DD
-    product_id?:   string;
-  }) => callTool('kapruka_check_delivery', args as Record<string, unknown>),
+export interface MProduct {
+  id: string; name: string; price: number; image: string;
+  url?: string; description?: string; stock?: boolean | string;
+  in_stock?: boolean; category?: string; shipping?: string; images?: string[];
+}
+export interface MCategory { id?: string; name: string; slug?: string; }
+export interface MCity     { name: string; id?: string; }
+export interface DeliveryOption {
+  type: 'express' | 'standard';
+  label: string;   // "Deliver on 13 / June"
+  fee:   number;   // 610
+}
+export interface MDelivery {
+  available: boolean;
+  options?: DeliveryOption[];   // multiple tiers (express / standard)
+  fee?: number; delivery_fee?: number;
+  eta?: string; message?: string;
+}
+export interface MOrder {
+  order_ref?: string; checkout_url?: string;
+  error?: string; summary?: { grand_total?: number };
+}
+export interface MTrack {
+  status?: string; steps?: string[]; eta?: string; message?: string;
+}
 
-  /**
-   * Create a guest-checkout order.
-   * Returns a click-to-pay URL valid for 60 minutes.
-   * No Kapruka account required.
-   *
-   * cart     : [{ product_id, quantity, variant? }]
-   * recipient: { name, phone, address, city }
-   * delivery : { date }
-   * sender   : { name, phone }        (optional)
-   * gift_message: string              (optional)
-   * currency : 'LKR' | 'USD' | ...   (optional, default LKR)
-   */
-  createOrder: (args: {
-    cart:          { product_id: string; quantity: number; variant?: string }[];
-    recipient:     { name: string; phone: string; address: string; city: string };
-    delivery:      { date: string };
-    sender?:       { name: string; phone: string };
-    gift_message?: string;
-    currency?:     string;
-  }) => callTool('kapruka_create_order', args as Record<string, unknown>),
+// ─── Delivery Markdown parser ─────────────────────────────────────────────────
+// kapruka_check_delivery returns Markdown prose, not JSON.
+function parseFee(s: string): number | null {
+  const n = Number(s.replace(/,/g, ''));
+  return (n >= 0 && n <= 10000) ? n : null; // 0 = explicitly free
+}
 
-  /**
-   * Track an existing order by order number.
-   */
-  trackOrder: (orderNumber: string) =>
-    callTool('kapruka_track_order', { order_number: orderNumber }),
-};
+function parseDeliveryMarkdown(md: string): MDelivery {
+  // Availability
+  const unavailable = /not\s+available|unavailable|cannot\s+deliver|not\s+serviceable|no\s+delivery|not\s+covered|outside.*service/i.test(md);
+  const available   = !unavailable && /\bavailable\b|can\s+be\s+deliver|yes\b|possible|serviceable/i.test(md);
+
+  const options: DeliveryOption[] = [];
+
+  // ── Pattern A: "Deliver on DD / Month   Fee: Rs 610"  (Kapruka's exact format)
+  const exprA = md.match(/deliver\s+on\s+([\d]+\s*[\/\-]\s*\w+(?:\s*\/\s*\d+)?)[^\n]*?(?:fee[:\s]+)?(?:rs\.?|lkr)\s*([\d,]+)/i);
+  if (exprA) {
+    const fee = parseFee(exprA[2]);
+    if (fee) options.push({ type: 'express', label: `Deliver on ${exprA[1].trim()}`, fee });
+  }
+
+  // ── Pattern B: "Deliver within 3 to 5 days  Fee: Rs 480"
+  const stdA = md.match(/deliver\s+within\s+([\d\w\s]+?days?)[^\n]*?(?:fee[:\s]+)?(?:rs\.?|lkr)\s*([\d,]+)/i);
+  if (stdA) {
+    const fee = parseFee(stdA[2]);
+    if (fee) options.push({ type: 'standard', label: `Deliver within ${stdA[1].trim()}`, fee });
+  }
+
+  // ── Pattern C: generic express/standard labels with fees on same line
+  if (options.length === 0) {
+    for (const line of md.split('\n')) {
+      const feeM = line.match(/(?:rs\.?|lkr)\s*([\d,]+)/i);
+      if (!feeM) continue;
+      const fee = parseFee(feeM[1]);
+      if (!fee) continue;
+      if (/express|next.?day|same.?day|deliver\s+on/i.test(line) && !options.find(o => o.type === 'express')) {
+        options.push({ type: 'express', label: 'Express delivery', fee });
+      } else if (/standard|regular|within|days?/i.test(line) && !options.find(o => o.type === 'standard')) {
+        options.push({ type: 'standard', label: 'Standard delivery', fee });
+      }
+    }
+  }
+
+  // ── Fallback: single fee when no options found
+  let fee: number | undefined;
+  if (options.length === 0) {
+    const patterns = [
+      /flat\s+rate\s+(?:lkr|rs\.?)\s*([\d,]+)/i,                          // "flat rate LKR 300"  ← Kapruka's most common format
+      /—\s*(?:lkr|rs\.?)\s*([\d,]+)/i,                                     // "Available — LKR 300"
+      /delivery\s+(?:fee|charge|cost)[:\s]*(?:lkr|rs\.?)?\s*([\d,]+)/i,
+      /shipping\s+(?:fee|charge|cost)[:\s]*(?:lkr|rs\.?)?\s*([\d,]+)/i,
+      /(?:fee|charge|cost)[:\s]+(?:lkr|rs\.?)\s*([\d,]+)/i,
+      /(?:lkr|rs\.?)\s*([\d,]+)\s*(?:delivery|shipping|flat)/i,
+    ];
+    for (const pat of patterns) {
+      const m = md.match(pat);
+      if (m) {
+        const n = Number(m[1].replace(/,/g, ''));
+        if (n >= 0 && n <= 10000) { fee = n; break; } // 0 = free delivery is valid
+      }
+    }
+  }
+
+  const msgLine = md.split('\n').find(l => l.trim().length > 15 && !/^\*\*|^#/.test(l.trim()));
+
+  return {
+    available,
+    ...(options.length > 0 ? { options, fee: options[0].fee } : {}),
+    ...(fee !== undefined ? { fee } : {}),
+    message: unavailable
+      ? (msgLine?.trim() || 'Delivery not available to this city on the selected date.')
+      : undefined,
+  };
+}
+
+// ─── Tool 1 — Search products ─────────────────────────────────────────────────
+export async function searchProducts(params: {
+  q: string; category?: string; min_price?: number; max_price?: number;
+  in_stock_only?: boolean; sort?: string; limit?: number; currency?: string;
+}): Promise<{ results: MProduct[] }> {
+  return mcp('kapruka_search_products', {
+    ...params,
+    limit:        params.limit        ?? 12,
+    in_stock_only:params.in_stock_only ?? true,
+    sort:         params.sort          ?? 'relevance',
+    currency:     params.currency      ?? 'LKR',
+  });
+}
+
+// ─── Tool 2 — Get product details ─────────────────────────────────────────────
+export async function getProduct(product_id: string, currency = 'LKR'): Promise<MProduct> {
+  return mcp('kapruka_get_product', { product_id, currency });
+}
+
+// ─── Tool 3 — List categories ──────────────────────────────────────────────────
+export async function listCategories(depth = 1): Promise<{ categories: MCategory[] }> {
+  return mcp('kapruka_list_categories', { depth });
+}
+
+// ─── Tool 4 — List delivery cities ────────────────────────────────────────────
+export async function listDeliveryCities(query: string, limit = 10): Promise<{ cities: MCity[] }> {
+  return mcp('kapruka_list_delivery_cities', { query, limit });
+}
+
+// ─── Tool 5 — Check delivery (returns Markdown, not JSON) ─────────────────────
+export async function checkDelivery(params: {
+  city: string; delivery_date: string; product_id?: string;
+}): Promise<MDelivery> {
+  const sid = await mcpSession();
+  const raw = await callToolRaw(sid, 'kapruka_check_delivery', params);
+
+  if (!raw) return { available: false, message: 'No response from delivery service.' };
+
+  // Log raw so we can see exactly what Kapruka returns
+  console.log('[delivery raw]', raw.slice(0, 400));
+
+  // Try JSON first (in case MCP starts returning it)
+  try {
+    const j = JSON.parse(raw) as MDelivery;
+    if (typeof j.available === 'boolean') return j;
+  } catch { /* fall through to Markdown parser */ }
+
+  return parseDeliveryMarkdown(raw);
+}
+
+// ─── Tool 6 — Create order ────────────────────────────────────────────────────
+export async function createOrder(params: {
+  cart: { product_id: string; quantity: number }[];
+  recipient: { name: string; phone: string };
+  delivery: { address: string; city: string; date: string; location_type?: string };
+  sender?: { name: string; anonymous?: boolean };
+  gift_message?: string | null;
+  currency?: string;
+}): Promise<MOrder> {
+  return mcp('kapruka_create_order', {
+    ...params,
+    currency:        params.currency ?? 'LKR',
+    response_format: 'json',
+  });
+}
+
+// ─── Tool 7 — Track order ─────────────────────────────────────────────────────
+export async function trackOrder(order_number: string): Promise<MTrack> {
+  return mcp('kapruka_track_order', { order_number });
+}
