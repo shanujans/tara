@@ -133,7 +133,6 @@
     iframe.id = 'tf';
     iframe.title = 'TARA AI Shopping Assistant';
     iframe.setAttribute('allow', 'clipboard-write; autoplay');
-    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox');
     panel.appendChild(iframe);
     shadow.appendChild(panel);
 
