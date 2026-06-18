@@ -280,22 +280,33 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
           <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6 text-center">
             <div className="w-14 h-14 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center text-2xl">✓</div>
             <div>
-              <p className="text-green-400 font-bold text-base">Order Placed!</p>
+              <p className="text-green-400 font-bold text-base">TARA sorted everything! 🎉</p>
               <p className="text-slate-400 text-sm mt-0.5">Ref: <span className="text-white font-mono">{orderId}</span></p>
             </div>
+
+            {/* Speed timer — prominent */}
             {orderTime && (
-              <div className="bg-amber-400/10 border border-amber-400/30 rounded-xl px-4 py-2.5">
+              <div className="w-full bg-amber-400/10 border border-amber-400/30 rounded-xl px-4 py-3">
                 <p className="text-amber-400 text-sm font-bold">
-                  {s.orderSpeedPrefix} <span className="text-white">{orderTime}</span> {s.orderSpeedSuffix}
+                  {s.orderSpeedPrefix} <span className="text-white text-base">{orderTime}</span> {s.orderSpeedSuffix}
+                </p>
+                <p className="text-slate-500 text-xs mt-1">Kapruka's traditional flow takes ~7 minutes</p>
+              </div>
+            )}
+
+            {/* Payment CTA — framed as security feature */}
+            {checkoutUrl && (
+              <div className="w-full">
+                <a href={checkoutUrl} target="_blank" rel="noopener noreferrer"
+                  className="w-full bg-amber-400 text-slate-900 font-bold px-6 py-3 rounded-xl text-sm hover:bg-amber-300 transition-colors flex items-center justify-center gap-2">
+                  <span>🔒</span> Complete Payment on Kapruka →
+                </a>
+                <p className="text-slate-600 text-xs mt-2">
+                  Secure checkout · Takes ~30 seconds · Cash on delivery available
                 </p>
               </div>
             )}
-            {checkoutUrl && (
-              <a href={checkoutUrl} target="_blank" rel="noopener noreferrer"
-                className="bg-amber-400 text-slate-900 font-bold px-6 py-2.5 rounded-xl text-sm hover:bg-amber-300 transition-colors">
-                Complete Payment →
-              </a>
-            )}
+
             <button onClick={() => { setOrderId(''); setCheckoutUrl(''); setOrderTime(''); onClose(); }}
               className="text-slate-400 hover:text-slate-200 text-xs transition-colors">
               Continue Shopping

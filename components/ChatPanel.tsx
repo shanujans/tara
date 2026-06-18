@@ -24,10 +24,13 @@ type DetectedLang = Lang;
 function detectLangClient(text: string): DetectedLang {
   if (/[\u0D80-\u0DFF]/.test(text)) return 'si';
   if (/[\u0B80-\u0BFF]/.test(text)) return 'ta';
+  // Strong Tanglish markers (machang, aiyo etc.) — check first
   if (/\b(machang|machan|aiyo|oneda|aney|yako|putha)\b/i.test(text)) return 'tl';
+  // Sihalish BEFORE the generic 'da/la/neh' ending — because Sihalish also ends sentences with 'da'
+  // e.g. "Mama Dubai inna, puluwan da?" → sl, not tl
+  if (/\b(mama|api|eka|ekak|ona|nehe|koheda|mokada|puluwan|bohoma|hariyata|hadanna|karanna|balanna|ganna|denna|yanawa|thiyenawa|gedara|amma|thaththa|akka|aiya|nangi|malli|hondai|hari|tika|godak|wage|wela|isthuti|ayubowan|inna|yawanna|ganna|tiyenawa|wenawa)\b/i.test(text)) return 'sl';
+  // Generic sentence-ending particles (weaker signal — only if no Sihalish words above)
   if (/\b(la|neh|ne|da)\s*[.!?,]?\s*$/im.test(text.trim())) return 'tl';
-  // Sihalish — romanized Sinhala
-  if (/\b(mama|api|eka|ekak|ona|nehe|koheda|mokada|puluwan|bohoma|hariyata|hadanna|karanna|balanna|ganna|denna|yanawa|thiyenawa|gedara|amma|thaththa|akka|aiya|nangi|malli|hondai|hari|tika|godak|wage|wela|isthuti|ayubowan)\b/i.test(text)) return 'sl';
   return 'en';
 }
 
@@ -171,7 +174,11 @@ export default function ChatPanel({
     setConvLang(detected);
     if (detected !== lang) onLangChange(detected);
 
-    if (!expatMode && detectExpat(text)) {
+    // Compute expat mode synchronously — setState is async so we can't rely on
+    // the state variable being updated before the fetch fires
+    const isNewExpat = !expatMode && detectExpat(text);
+    const effectiveExpatMode = expatMode || isNewExpat;
+    if (isNewExpat) {
       const country = detectExpatCountry(text);
       setExpatMode(true); setExpatCountry(country); setShowExpat(true);
     }
@@ -187,7 +194,7 @@ export default function ChatPanel({
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ messages: history, expatMode, lang: detected }),
+        body:    JSON.stringify({ messages: history, expatMode: effectiveExpatMode, lang: detected }),
         signal:  abortRef.current.signal,
       });
       if (!res.ok) throw new Error('API error');
@@ -372,7 +379,14 @@ export default function ChatPanel({
         {!hasUserMsgs && !streaming && (
           <div className="flex flex-wrap gap-2 mt-1 animate-slide-in-left" style={{ animationDelay: '600ms' }}>
             {s.quickChips.map(chip => (
-              <button key={chip} onClick={() => sendMessage(chip)}
+              <button key={chip} onClick={() => {
+                if (chip.includes('✈️') || chip.includes('abroad') || chip.includes('Wideshayen') || chip.includes('வெளிநாட்டில்')) {
+                  setExpatMode(true); setExpatCountry('🌍 Overseas'); setShowExpat(true);
+                  sendMessage(chip);
+                } else {
+                  sendMessage(chip);
+                }
+              }}
                 className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-amber-400 border border-slate-700 hover:border-amber-400/50 px-3 py-1.5 rounded-full transition-all duration-200 active:scale-95">
                 {chip}
               </button>
