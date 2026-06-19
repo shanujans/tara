@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { rateLimit } from '@/lib/security';
+import { cacheGet, cacheSet, cacheKey, TTL } from '@/lib/cache';
 import { mcpSession } from '@/lib/mcp';
 
 export const dynamic = 'force-dynamic';
@@ -88,6 +89,9 @@ export async function POST(req: NextRequest) {
   if (!product_id) return NextResponse.json({ error: 'product_id required' }, { status: 400 });
 
   const safeId = product_id.replace(/[^a-zA-Z0-9_\-]/g, '').slice(0, 80);
+  const key = cacheKey('product', safeId);
+  const hit = cacheGet<Record<string, unknown>>(key);
+  if (hit) { console.log('[cache HIT] product:', safeId); return NextResponse.json({ product: hit }); }
 
   try {
     const sid = await mcpSession();
@@ -124,6 +128,7 @@ export async function POST(req: NextRequest) {
       product = parseMarkdownProduct(raw, safeId);
     }
 
+    cacheSet(key, product, TTL.PRODUCT);
     return NextResponse.json({ product });
   } catch (e) {
     console.error('getProduct error:', e);

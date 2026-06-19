@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { rateLimit, sanitizeProduct } from '@/lib/security';
+import { cacheGet, cacheSet, cacheKey, TTL } from '@/lib/cache';
 import { mcpSession } from '@/lib/mcp';
 
 export const dynamic = 'force-dynamic';
@@ -72,6 +73,10 @@ function parseMarkdownSearch(md: string): Record<string, unknown>[] {
 }
 
 async function mcpSearch(q: string, sid: string, maxPrice?: number, limit = 16): Promise<Record<string, unknown>[]> {
+  const key = cacheKey('search', q, maxPrice, limit);
+  const hit  = cacheGet<Record<string, unknown>[]>(key);
+  if (hit) { console.log('[cache HIT] search:', q); return hit; }
+
   const args: Record<string, unknown> = {
     q: q.slice(0, 100), limit, currency: 'LKR',
     sort: 'relevance',
@@ -96,9 +101,13 @@ async function mcpSearch(q: string, sid: string, maxPrice?: number, limit = 16):
     const raw  = data?.result?.content?.[0]?.text ?? '';
     try {
       const parsed = JSON.parse(raw);
-      return (parsed.results || parsed.products || []) as Record<string, unknown>[];
+      const result = (parsed.results || parsed.products || []) as Record<string, unknown>[];
+      cacheSet(key, result, TTL.SEARCH);
+      return result;
     } catch {
-      return parseMarkdownSearch(raw);
+      const result = parseMarkdownSearch(raw);
+      if (result.length) cacheSet(key, result, TTL.SEARCH);
+      return result;
     }
   } catch { return []; }
 }

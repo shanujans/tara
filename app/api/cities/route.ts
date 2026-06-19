@@ -1,3 +1,4 @@
+import { cacheGet, cacheSet, cacheKey, TTL } from '@/lib/cache';
 import { NextRequest, NextResponse } from 'next/server';
 import { rateLimit } from '@/lib/security';
 import { mcpSession } from '@/lib/mcp';
@@ -29,6 +30,10 @@ export async function POST(req: NextRequest) {
   const query = (body.query ?? '').trim().slice(0, 60);
   if (query.length < 2) return NextResponse.json({ cities: [] });
 
+  const cKey = cacheKey('cities', query.toLowerCase());
+  const hit  = cacheGet<{ cities: { name: string }[] }>(cKey);
+  if (hit) { console.log('[cache HIT] cities:', query); return NextResponse.json(hit); }
+
   try {
     const sid = await mcpSession();
     const r   = await fetch(MCP, {
@@ -59,7 +64,10 @@ export async function POST(req: NextRequest) {
       cities = parseMarkdownCities(content);
     }
 
-    return NextResponse.json({ cities: cities.slice(0, 25) });
+    const result = { cities: cities.slice(0, 25) };
+    cacheSet(cKey, result, TTL.CITIES);
+    console.log('[cache SET] cities:', query, '—', result.cities.length, 'results');
+    return NextResponse.json(result);
   } catch {
     return NextResponse.json({ cities: [] });
   }
