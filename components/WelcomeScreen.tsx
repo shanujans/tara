@@ -1,11 +1,21 @@
 'use client';
 import { useEffect, useState } from 'react';
 
-const GREETINGS = ['Hello! 👋', 'ආයුබෝවන්! 🙏', 'வணக்கம்! 🙏', 'Ayubowan machang! 😊'];
-const CHIPS = ['Find a gift 🎁', 'Browse electronics 📱', 'Track my order 📦'];
+const GREETINGS = [
+  'Hello! 👋',
+  'ආයුබෝවන්! 🙏',
+  'வணக்கம்! 🙏',
+  'Ayubowan machang! 😊',
+];
+
+const CHIPS = [
+  'Find a gift 🎁',
+  'Browse electronics 📱',
+  'Track my order 📦',
+];
 
 export default function WelcomeScreen({ onChip }: { onChip: (text: string) => void }) {
-  const [idx, setIdx] = useState(0);
+  const [idx, setIdx]   = useState(0);
   const [fade, setFade] = useState(true);
 
   useEffect(() => {
@@ -17,27 +27,41 @@ export default function WelcomeScreen({ onChip }: { onChip: (text: string) => vo
   }, []);
 
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-6 px-6 text-center">
-      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-lg shadow-amber-400/30">
-        <span className="text-slate-900 text-2xl font-black">T</span>
+    <div className="flex flex-col items-center justify-center h-full gap-7 px-6 text-center">
+
+      {/* TARA avatar — large */}
+      <div className="tara-avatar" style={{ width: 64, height: 64 }}>
+        <span style={{ fontSize: '1.5rem', fontWeight: 900 }}>T</span>
       </div>
 
+      {/* Animated greeting */}
       <div className="space-y-2">
         <p
-          className="text-white font-bold text-2xl transition-opacity duration-300"
-          style={{ opacity: fade ? 1 : 0 }}
+          className="font-bold text-2xl transition-opacity duration-300"
+          style={{
+            opacity: fade ? 1 : 0,
+            color: 'var(--t-text-1)',
+            fontFamily: 'var(--font-jakarta, "Plus Jakarta Sans", sans-serif)',
+          }}
         >
           {GREETINGS[idx]}
         </p>
-        <p className="text-slate-400 text-sm">I'm TARA — your AI shopping assistant for Kapruka</p>
+        <p style={{ color: 'var(--t-text-3)', fontSize: '0.9rem' }}>
+          I'm TARA — your AI shopping assistant for Kapruka
+        </p>
       </div>
 
-      <div className="flex flex-col gap-2 w-full max-w-xs">
+      {/* Decorative gradient line */}
+      <div className="h-px w-16 rounded-full"
+        style={{ background: 'var(--t-grad-purple)', opacity: 0.6 }} />
+
+      {/* Quick chips */}
+      <div className="flex flex-col gap-2.5 w-full max-w-xs">
         {CHIPS.map(chip => (
           <button
             key={chip}
             onClick={() => onChip(chip)}
-            className="bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-amber-400/50 text-slate-300 hover:text-amber-400 text-sm py-2.5 px-4 rounded-xl transition-all duration-200 text-left"
+            className="action-chip justify-start text-left"
           >
             {chip}
           </button>

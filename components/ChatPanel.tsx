@@ -24,12 +24,8 @@ type DetectedLang = Lang;
 function detectLangClient(text: string): DetectedLang {
   if (/[\u0D80-\u0DFF]/.test(text)) return 'si';
   if (/[\u0B80-\u0BFF]/.test(text)) return 'ta';
-  // Strong Tanglish markers (machang, aiyo etc.) — check first
   if (/\b(machang|machan|aiyo|oneda|aney|yako|putha)\b/i.test(text)) return 'tl';
-  // Sihalish BEFORE the generic 'da/la/neh' ending — because Sihalish also ends sentences with 'da'
-  // e.g. "Mama Dubai inna, puluwan da?" → sl, not tl
   if (/\b(mama|api|eka|ekak|ona|nehe|koheda|mokada|puluwan|bohoma|hariyata|hadanna|karanna|balanna|ganna|denna|yanawa|thiyenawa|gedara|amma|thaththa|akka|aiya|nangi|malli|hondai|hari|tika|godak|wage|wela|isthuti|ayubowan|inna|yawanna|ganna|tiyenawa|wenawa)\b/i.test(text)) return 'sl';
-  // Generic sentence-ending particles (weaker signal — only if no Sihalish words above)
   if (/\b(la|neh|ne|da)\s*[.!?,]?\s*$/im.test(text.trim())) return 'tl';
   return 'en';
 }
@@ -52,12 +48,13 @@ function extractQuery(text: string): string | null {
 
 const SPEECH_LANG: Record<Lang, string> = { si: 'si-LK', sl: 'si-LK', ta: 'ta-IN', tl: 'en-US', en: 'en-US' };
 
-const LANG_OPTIONS: { key: Lang; label: string; active: string }[] = [
-  { key: 'si', label: '🇱🇰 සිං',  active: 'bg-green-600 text-white' },
-  { key: 'sl', label: '🇱🇰 SL',   active: 'bg-emerald-500 text-white' },
-  { key: 'ta', label: '🇱🇰 த',    active: 'bg-orange-500 text-white' },
-  { key: 'tl', label: '🇱🇰 TL',   active: 'bg-amber-400 text-slate-900' },
-  { key: 'en', label: '🇬🇧 EN',   active: 'bg-blue-600 text-white' },
+/* Language pill config — gradient style for active */
+const LANG_OPTIONS: { key: Lang; label: string }[] = [
+  { key: 'si', label: '🇱🇰 සිං' },
+  { key: 'sl', label: '🇱🇰 SL'  },
+  { key: 'ta', label: '🇱🇰 த'   },
+  { key: 'tl', label: '🇱🇰 TL'  },
+  { key: 'en', label: '🇬🇧 EN'  },
 ];
 
 export default function ChatPanel({
@@ -66,10 +63,9 @@ export default function ChatPanel({
   const s = STRINGS[lang];
   const { addItem } = useCart();
 
-  // ── Build initial messages (welcome + Father's Day hint in June) ──────────
   const buildInitial = useCallback((l: Lang): Message[] => {
     const msgs: Message[] = [{ role: 'assistant', content: STRINGS[l].welcomeMsg }];
-    if (new Date().getMonth() === 5) { // June = month 5
+    if (new Date().getMonth() === 5) {
       msgs.push({ role: 'assistant', content: STRINGS[l].fathersDayHint });
     }
     return msgs;
@@ -84,87 +80,61 @@ export default function ChatPanel({
   const [expatMode,    setExpatMode]    = useState(false);
   const [expatCountry, setExpatCountry] = useState('');
   const [showExpat,    setShowExpat]    = useState(false);
-  // Reorder state
   const [lastOrder,    setLastOrder]    = useState<LastOrder | null>(null);
   const [reorderDone,  setReorderDone]  = useState(false);
 
-  const bottomRef   = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const abortRef    = useRef<AbortController | null>(null);
-  const recRef      = useRef<unknown>(null);
-  // Session start time — set on first user message
-  const sessionStartRef = useRef<number | null>(null);
+  const bottomRef        = useRef<HTMLDivElement>(null);
+  const textareaRef      = useRef<HTMLTextAreaElement>(null);
+  const abortRef         = useRef<AbortController | null>(null);
+  const recRef           = useRef<unknown>(null);
+  const sessionStartRef  = useRef<number | null>(null);
 
-  // Voice support detection
   useEffect(() => {
     setVoiceOk(!!(
-      (window as unknown as Record<string, unknown>).SpeechRecognition ||
-      (window as unknown as Record<string, unknown>).webkitSpeechRecognition
+      typeof window !== 'undefined' &&
+      ((window as unknown as Record<string, unknown>).SpeechRecognition ||
+       (window as unknown as Record<string, unknown>).webkitSpeechRecognition)
     ));
-  }, []);
-
-  // ── Check localStorage for previous order (reorder loop) ─────────────────
-  useEffect(() => {
     try {
       const raw = localStorage.getItem('tara_last_order');
-      if (raw) {
-        const order: LastOrder = JSON.parse(raw);
-        // Only show if order was placed in last 90 days
-        const age = Date.now() - new Date(order.date).getTime();
-        if (age < 90 * 24 * 60 * 60 * 1000 && order.items?.length) {
-          setLastOrder(order);
-        }
-      }
-    } catch { /* ignore localStorage errors */ }
+      if (raw) setLastOrder(JSON.parse(raw));
+    } catch { /* */ }
   }, []);
 
-  // ── Reset welcome when lang changes (before first user message) ──────────
   useEffect(() => {
-    setMessages(prev => {
-      if (prev.some(m => m.role === 'user')) return prev;
-      return buildInitial(lang);
-    });
+    setMessages(buildInitial(lang));
     setConvLang(lang);
   }, [lang, buildInitial]);
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, streaming]);
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, streaming]);
 
   useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
-    }
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = `${Math.min(ta.scrollHeight, 112)}px`;
   }, [input]);
 
   const speak = useCallback((text: string) => {
-    if (!speakerOn || !('speechSynthesis' in window)) return;
+    if (!speakerOn || typeof window === 'undefined' || !window.speechSynthesis) return;
     window.speechSynthesis.cancel();
-    const utt   = new SpeechSynthesisUtterance(text.replace(/[✦*#<>]/g, '').trim());
-    const voices = window.speechSynthesis.getVoices();
-    const pref   = SPEECH_LANG[convLang] ?? 'en-US';
-    const match  = voices.find(v => v.lang.startsWith(pref.split('-')[0]));
-    if (match) utt.voice = match;
-    utt.rate = 1.05;
-    window.speechSynthesis.speak(utt);
+    const u = new SpeechSynthesisUtterance(text.slice(0, 300));
+    u.lang = SPEECH_LANG[convLang] ?? 'en-US';
+    window.speechSynthesis.speak(u);
   }, [speakerOn, convLang]);
 
-  // ── Reorder: rebuild cart from last order ─────────────────────────────────
   const handleReorder = () => {
     if (!lastOrder) return;
-    lastOrder.items.forEach(item => {
-      addItem({ id: item.id, name: item.name, price: item.price, image: item.image });
-    });
+    lastOrder.items.forEach(i => addItem({ id: i.id, name: i.name, price: i.price, image: i.image }));
     setReorderDone(true);
-    setMessages(prev => [...prev, {
-      role: 'assistant',
-      content: `${STRINGS[convLang].reorderAdded} 🛒`,
-    }]);
+    setMessages(prev => [...prev, { role: 'assistant', content: s.reorderAdded }]);
   };
 
-  const sendMessage = async (text: string) => {
+  const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || streaming) return;
 
-    // Start session timer on FIRST user message
     if (!messages.some(m => m.role === 'user')) {
       sessionStartRef.current = Date.now();
       try { localStorage.setItem('tara_session_start', String(Date.now())); } catch { /* */ }
@@ -174,8 +144,6 @@ export default function ChatPanel({
     setConvLang(detected);
     if (detected !== lang) onLangChange(detected);
 
-    // Compute expat mode synchronously — setState is async so we can't rely on
-    // the state variable being updated before the fetch fires
     const isNewExpat = !expatMode && detectExpat(text);
     const effectiveExpatMode = expatMode || isNewExpat;
     if (isNewExpat) {
@@ -224,7 +192,6 @@ export default function ChatPanel({
       });
       speak(visible);
 
-      // Search only if AI included a <search_query> tag
       const query = extractQuery(full);
       if (query) {
         onSearching(true);
@@ -240,7 +207,6 @@ export default function ChatPanel({
         finally { onSearching(false); }
       }
 
-      // Order tracking
       const orderMatch = text.match(/\b([A-Z]{2,6}\d{4,}[A-Z0-9]*)\b/);
       if (orderMatch) {
         try {
@@ -262,20 +228,18 @@ export default function ChatPanel({
     } finally {
       setStreaming(false);
     }
-  };
+  }, [messages, streaming, lang, expatMode, onLangChange, onProductsFound, onSearching, speak, s.reorderAdded]);
 
   const startListening = async () => {
     if (!voiceOk) return;
     try { await navigator.mediaDevices.getUserMedia({ audio: true }); }
     catch { alert('Allow microphone access.'); return; }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const SR: any = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rec: any = new SR();
+    const SR = (window as unknown as Record<string, unknown>).SpeechRecognition ??
+               (window as unknown as Record<string, unknown>).webkitSpeechRecognition;
+    const rec = new (SR as new () => { lang: string; interimResults: boolean; onresult: unknown; onerror: unknown; onend: unknown; start: () => void; })();
     rec.lang           = SPEECH_LANG[convLang] ?? 'en-US';
     rec.interimResults = false;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    rec.onresult       = (e: any) => { setListening(false); sendMessage(e.results[0][0].transcript); };
+    rec.onresult       = (e: { results: { 0: { 0: { transcript: string } } }[] }) => { setListening(false); sendMessage(e.results[0][0].transcript); };
     rec.onerror        = () => setListening(false);
     rec.onend          = () => setListening(false);
     recRef.current     = rec;
@@ -288,85 +252,93 @@ export default function ChatPanel({
   };
 
   const hasUserMsgs = messages.some(m => m.role === 'user');
-
-  // Reorder card: show only before user messages, once, if last order exists
   const showReorder = !hasUserMsgs && !reorderDone && lastOrder && lastOrder.items.length > 0;
   const reorderItemName = lastOrder?.items[0]?.name ?? '';
 
-  return (
-    <div className="flex flex-col h-full bg-slate-900 relative">
+  /* ── Typing dots shared node ──────────────────────────── */
+  const TypingDots = (
+    <span className="flex gap-1 items-center" style={{ height: 16 }}>
+      {[0, 200, 400].map(d => (
+        <span key={d} className="dot-bounce rounded-full"
+          style={{ width: 6, height: 6, background: 'var(--t-purple-light, #6b4dab)', animationDelay: `${d}ms` }} />
+      ))}
+    </span>
+  );
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
-        {showExpat && <ExpatBanner country={expatCountry} onDismiss={() => setShowExpat(false)} />}
+  return (
+    <div className="flex flex-col h-full" style={{ background: 'transparent' }}>
+
+      {/* ── Messages ─────────────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-3">
+
+        {showExpat && (
+          <ExpatBanner country={expatCountry} onDismiss={() => setShowExpat(false)} />
+        )}
 
         {messages.map((msg, i) => (
-          <div key={i} className={`flex gap-2 ${msg.role === 'user' ? 'justify-end animate-slide-in-right' : 'justify-start animate-slide-in-left'}`}>
+          <div key={i}
+            className={`flex gap-2.5 ${msg.role === 'user'
+              ? 'justify-end animate-slide-in-right'
+              : 'justify-start animate-slide-in-left'}`}
+          >
+            {/* TARA avatar */}
             {msg.role === 'assistant' && (
-              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center flex-shrink-0 mt-0.5 shadow-md">
-                <span className="text-slate-900 text-xs font-black">T</span>
+              <div className="tara-avatar flex-shrink-0 mt-0.5" style={{ width: 28, height: 28 }}>
+                <span style={{ fontSize: '0.7rem', fontWeight: 900 }}>T</span>
               </div>
             )}
-            <div className={`max-w-[82%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words ${
-              msg.role === 'user'
-                ? 'bg-amber-400 text-slate-900 font-medium rounded-br-sm'
-                : 'bg-slate-800 text-slate-100 border border-slate-700/50 rounded-bl-sm'
-            }`}>
-              {msg.content || (streaming && i === messages.length - 1
-                ? <span className="flex gap-1 items-center h-4">
-                    <span className="w-1.5 h-1.5 bg-slate-400 rounded-full dot-bounce" style={{ animationDelay: '0ms' }} />
-                    <span className="w-1.5 h-1.5 bg-slate-400 rounded-full dot-bounce" style={{ animationDelay: '200ms' }} />
-                    <span className="w-1.5 h-1.5 bg-slate-400 rounded-full dot-bounce" style={{ animationDelay: '400ms' }} />
-                  </span>
-                : ''
-              )}
+
+            {/* Bubble */}
+            <div className={`max-w-[82%] px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words ${
+              msg.role === 'user' ? 'bubble-user' : 'bubble-tara'
+            }`}
+              style={{ color: msg.role === 'user' ? 'var(--t-charcoal)' : 'var(--t-text-1)' }}
+            >
+              {msg.content || (streaming && i === messages.length - 1 ? TypingDots : '')}
             </div>
           </div>
         ))}
 
-        {/* Typing indicator */}
+        {/* Standalone typing indicator */}
         {streaming && messages[messages.length - 1]?.role !== 'assistant' && (
-          <div className="flex gap-2 justify-start animate-slide-in-left">
-            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center flex-shrink-0 shadow-md">
-              <span className="text-slate-900 text-xs font-black">T</span>
+          <div className="flex gap-2.5 justify-start animate-slide-in-left">
+            <div className="tara-avatar flex-shrink-0" style={{ width: 28, height: 28 }}>
+              <span style={{ fontSize: '0.7rem', fontWeight: 900 }}>T</span>
             </div>
-            <div className="bg-slate-800 border border-slate-700/50 px-4 py-3 rounded-2xl rounded-bl-sm">
-              <span className="flex gap-1 items-center">
-                <span className="w-1.5 h-1.5 bg-slate-400 rounded-full dot-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-1.5 h-1.5 bg-slate-400 rounded-full dot-bounce" style={{ animationDelay: '200ms' }} />
-                <span className="w-1.5 h-1.5 bg-slate-400 rounded-full dot-bounce" style={{ animationDelay: '400ms' }} />
-              </span>
-            </div>
+            <div className="bubble-tara px-4 py-3">{TypingDots}</div>
           </div>
         )}
 
-        {/* ── Reorder card (self-sustaining loop) ─────────────────────────── */}
+        {/* Reorder card */}
         {showReorder && (
-          <div className="flex gap-2 justify-start animate-slide-in-left" style={{ animationDelay: '400ms' }}>
-            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center flex-shrink-0 mt-0.5 shadow-md">
-              <span className="text-slate-900 text-xs font-black">T</span>
+          <div className="flex gap-2.5 justify-start animate-slide-in-left" style={{ animationDelay: '400ms' }}>
+            <div className="tara-avatar flex-shrink-0 mt-0.5" style={{ width: 28, height: 28 }}>
+              <span style={{ fontSize: '0.7rem', fontWeight: 900 }}>T</span>
             </div>
-            <div className="max-w-[82%] bg-slate-800 border border-amber-400/30 rounded-2xl rounded-bl-sm overflow-hidden">
+            <div className="max-w-[82%] bubble-tara overflow-hidden" style={{ borderColor: 'var(--t-border-gold)' }}>
               <div className="px-3.5 pt-2.5 pb-2">
-                <p className="text-slate-100 text-sm leading-relaxed">
+                <p className="text-sm leading-relaxed" style={{ color: 'var(--t-text-1)' }}>
                   {s.reorderPrompt}
                 </p>
                 {reorderItemName && (
-                  <p className="text-amber-400 text-xs font-semibold mt-0.5 line-clamp-1">
-                    {reorderItemName}{lastOrder && lastOrder.items.length > 1 ? ` +${lastOrder.items.length - 1} more` : ''}
+                  <p className="text-xs font-semibold mt-0.5 line-clamp-1 gradient-text-gold">
+                    {reorderItemName}{lastOrder && lastOrder.items.length > 1
+                      ? ` +${lastOrder.items.length - 1} more` : ''}
                   </p>
                 )}
               </div>
-              <div className="flex border-t border-slate-700/50">
-                <button
-                  onClick={handleReorder}
-                  className="flex-1 py-2 text-xs font-bold text-amber-400 hover:bg-amber-400/10 transition-colors"
+              <div className="flex" style={{ borderTop: '1px solid var(--t-border)' }}>
+                <button onClick={handleReorder}
+                  className="flex-1 py-2 text-xs font-bold transition-colors"
+                  style={{ color: 'var(--t-gold)' }}
+                  onMouseOver={e => (e.currentTarget.style.background = 'rgba(250,229,85,0.08)')}
+                  onMouseOut={e => (e.currentTarget.style.background = 'transparent')}
                 >
                   🔄 {s.reorderBtn}
                 </button>
-                <button
-                  onClick={() => setReorderDone(true)}
-                  className="px-3 py-2 text-xs text-slate-500 hover:text-slate-300 border-l border-slate-700/50 transition-colors"
+                <button onClick={() => setReorderDone(true)}
+                  className="px-3 py-2 text-xs transition-colors"
+                  style={{ borderLeft: '1px solid var(--t-border)', color: 'var(--t-text-4)' }}
                 >
                   ✕
                 </button>
@@ -375,19 +347,36 @@ export default function ChatPanel({
           </div>
         )}
 
-        {/* Quick chips — before first user message */}
+        {/* Quick chips */}
         {!hasUserMsgs && !streaming && (
           <div className="flex flex-wrap gap-2 mt-1 animate-slide-in-left" style={{ animationDelay: '600ms' }}>
             {s.quickChips.map(chip => (
-              <button key={chip} onClick={() => {
-                if (chip.includes('✈️') || chip.includes('abroad') || chip.includes('Wideshayen') || chip.includes('வெளிநாட்டில்')) {
-                  setExpatMode(true); setExpatCountry('🌍 Overseas'); setShowExpat(true);
-                  sendMessage(chip);
-                } else {
-                  sendMessage(chip);
-                }
-              }}
-                className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-amber-400 border border-slate-700 hover:border-amber-400/50 px-3 py-1.5 rounded-full transition-all duration-200 active:scale-95">
+              <button key={chip}
+                onClick={() => {
+                  if (chip.includes('✈️') || chip.includes('abroad') || chip.includes('Wideshayen') || chip.includes('வெளிநாட்டில்')) {
+                    setExpatMode(true); setExpatCountry('🌍 Overseas'); setShowExpat(true);
+                    sendMessage(chip);
+                  } else {
+                    sendMessage(chip);
+                  }
+                }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  padding: '7px 14px',
+                  borderRadius: 9999,
+                  fontSize: '0.775rem',
+                  color: '#c9b8d8',
+                  background: 'rgba(26,18,58,0.75)',
+                  border: '1px solid rgba(107,77,171,0.28)',
+                  cursor: 'pointer',
+                  backdropFilter: 'blur(8px)',
+                  WebkitBackdropFilter: 'blur(8px)',
+                  transition: 'all 0.18s ease',
+                }}
+                onMouseOver={e => { e.currentTarget.style.background = 'rgba(64,41,112,0.35)'; e.currentTarget.style.borderColor = 'rgba(107,77,171,0.55)'; e.currentTarget.style.color = '#F5E9E2'; }}
+                onMouseOut={e => { e.currentTarget.style.background = 'rgba(26,18,58,0.75)'; e.currentTarget.style.borderColor = 'rgba(107,77,171,0.28)'; e.currentTarget.style.color = '#c9b8d8'; }}
+              >
                 {chip}
               </button>
             ))}
@@ -397,49 +386,126 @@ export default function ChatPanel({
         <div ref={bottomRef} />
       </div>
 
-      {/* ── Language bar — always visible, all 5 options ───────────────── */}
-      <div className="flex-shrink-0 border-b border-slate-800/80 bg-slate-900/90 backdrop-blur-sm px-3 py-2">
-        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
-          <span className="text-slate-600 text-xs flex-shrink-0 mr-0.5">🌐</span>
-          {LANG_OPTIONS.map(o => (
-            <button
-              key={o.key}
-              onClick={() => { onLangChange(o.key); setConvLang(o.key); }}
-              className={`flex-shrink-0 text-xs font-bold px-3 py-1.5 rounded-full transition-all duration-200 border ${
-                convLang === o.key
-                  ? `${o.active} border-transparent shadow-sm scale-105`
-                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:border-slate-500 hover:text-slate-200'
-              }`}
-            >
-              {o.label}
-            </button>
-          ))}
+      {/* ── Language bar ─────────────────────────────────────── */}
+      <div
+        style={{
+          flexShrink: 0,
+          padding: '8px 12px',
+          borderTop: '1px solid rgba(107,77,171,0.30)',
+          borderBottom: '1px solid rgba(107,77,171,0.30)',
+          background: 'rgba(5,3,15,0.65)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflowX: 'auto', scrollbarWidth: 'none' }}>
+          {/* Globe icon */}
+          <span style={{ color: '#52436a', fontSize: '0.8rem', flexShrink: 0, marginRight: 2 }}>🌐</span>
+
+          {LANG_OPTIONS.map(o => {
+            const isActive = convLang === o.key;
+            return (
+              <button
+                key={o.key}
+                onClick={() => { onLangChange(o.key); setConvLang(o.key); }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  padding: '5px 13px',
+                  borderRadius: 9999,
+                  fontSize: '0.7rem',
+                  fontWeight: isActive ? 700 : 600,
+                  letterSpacing: '0.01em',
+                  border: isActive
+                    ? '1px solid transparent'
+                    : '1px solid rgba(107,77,171,0.30)',
+                  background: isActive
+                    ? 'linear-gradient(135deg,#402970,#6b4dab)'
+                    : 'rgba(26,18,58,0.55)',
+                  color: isActive ? '#fff' : '#8878a0',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                  boxShadow: isActive ? '0 2px 10px rgba(64,41,112,0.40)' : 'none',
+                  transition: 'all 0.18s ease',
+                  transform: isActive ? 'scale(1.05)' : 'scale(1)',
+                }}
+              >
+                {o.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Input */}
-      <div className="border-t border-slate-800 px-3 py-2.5">
-        <div className="flex gap-2 items-end bg-slate-800 border border-slate-700 rounded-2xl px-3 py-2 focus-within:border-amber-400/50 transition-colors">
-          <textarea ref={textareaRef} value={input}
+      {/* ── Input bar ────────────────────────────────────────── */}
+      <div style={{
+        flexShrink: 0,
+        padding: '10px 12px',
+        borderTop: '1px solid rgba(107,77,171,0.30)',
+        background: 'rgba(5,3,15,0.65)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+      }}>
+        <div style={{
+          display: 'flex', gap: 8, alignItems: 'flex-end',
+          background: 'rgba(17,11,46,0.90)',
+          border: '1px solid rgba(107,77,171,0.32)',
+          borderRadius: 18,
+          padding: '8px 12px',
+        }}>
+          <textarea
+            ref={textareaRef}
+            value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={s.chatPlaceholder}
             disabled={streaming}
             rows={1}
-            className="flex-1 bg-transparent text-slate-100 placeholder-slate-500 text-sm resize-none outline-none leading-relaxed max-h-28 py-0.5"
-            style={{ scrollbarWidth: 'none', minHeight: '22px' }}
+            className="flex-1 bg-transparent text-sm resize-none outline-none leading-relaxed max-h-28 py-0.5"
+            style={{
+              color: 'var(--t-text-1)',
+              scrollbarWidth: 'none',
+              minHeight: '22px',
+            }}
           />
-          <button onClick={() => sendMessage(input.trim())} disabled={!input.trim() || streaming}
-            className="flex-shrink-0 w-8 h-8 bg-amber-400 hover:bg-amber-300 disabled:bg-slate-700 disabled:text-slate-500 text-slate-900 rounded-xl flex items-center justify-center transition-all active:scale-90 mb-0.5">
+
+          {/* Send button */}
+          <button
+            onClick={() => sendMessage(input.trim())}
+            disabled={!input.trim() || streaming}
+            className="flex-shrink-0 flex items-center justify-center rounded-xl transition-all active:scale-90 mb-0.5"
+            style={{
+              width: 34, height: 34,
+              background: input.trim() && !streaming
+                ? 'var(--t-grad-purple)'
+                : 'rgba(26,18,58,0.6)',
+              color: input.trim() && !streaming ? 'white' : 'var(--t-text-4)',
+            }}
+          >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path d="M1 7h12M7 1l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </button>
+
+          {/* Mic button */}
           {voiceOk && (
-            <button onClick={listening ? () => { (recRef.current as { stop: () => void })?.stop(); setListening(false); } : startListening}
+            <button
+              onClick={listening
+                ? () => { (recRef.current as { stop: () => void })?.stop(); setListening(false); }
+                : startListening}
               disabled={streaming}
-              className={`flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center transition-all mb-0.5 relative ${listening ? 'bg-red-500 text-white' : 'bg-slate-700 hover:bg-slate-600 text-slate-300'}`}>
-              {listening && <span className="absolute inset-0 rounded-xl bg-red-500 animate-ping opacity-60" />}
+              className="flex-shrink-0 flex items-center justify-center rounded-xl transition-all mb-0.5 relative"
+              style={{
+                width: 34, height: 34,
+                background: listening ? '#ef4444' : 'rgba(26,18,58,0.6)',
+                color: listening ? 'white' : 'var(--t-text-3)',
+              }}
+            >
+              {listening && (
+                <span className="absolute inset-0 rounded-xl bg-red-500 animate-ping"
+                  style={{ opacity: 0.5 }} />
+              )}
               <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
                 <rect x="4" y="0.5" width="5" height="7" rx="2.5" fill="currentColor"/>
                 <path d="M1.5 6.5a5 5 0 0010 0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
@@ -448,10 +514,11 @@ export default function ChatPanel({
             </button>
           )}
         </div>
+
         <p className="text-xs text-center mt-1.5">
           {listening
-            ? <span className="text-red-400 font-medium animate-pulse">🎙 Listening…</span>
-            : <span className="text-slate-600">Shift+Enter for new line</span>
+            ? <span className="font-medium animate-pulse" style={{ color: '#ef4444' }}>🎙 Listening…</span>
+            : <span style={{ color: 'var(--t-text-4)' }}>Shift+Enter for new line</span>
           }
         </p>
       </div>

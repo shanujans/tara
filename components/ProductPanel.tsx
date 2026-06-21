@@ -17,56 +17,108 @@ export default function ProductPanel({ products, lang, loading, quantum }: Produ
   const [selectedId,  setSelectedId]  = useState<string | null>(null);
   const [selectedUrl, setSelectedUrl] = useState<string>('');
 
-  const handleViewDetail = (id: string, url: string) => {
-    setSelectedId(id);
-    setSelectedUrl(url);
-  };
-
   return (
-    <div className="flex flex-col h-full bg-slate-950 relative">
+    <div className="flex flex-col h-full relative" style={{ background: 'transparent' }}>
 
-      {/* Header */}
-      <div className="px-5 py-3 border-b border-slate-800 flex items-center gap-2 flex-shrink-0">
-        <span className="text-slate-400 text-xs font-semibold uppercase tracking-widest">Products</span>
+      {/* Panel header */}
+      <div className="flex-shrink-0 flex items-center gap-2.5 px-5 py-3"
+        style={{
+          borderBottom: '1px solid rgba(107,77,171,0.40)',
+          background: 'rgba(5,3,15,0.65)',
+          backdropFilter: 'blur(14px)',
+          WebkitBackdropFilter: 'blur(14px)',
+        }}>
+        <span className="text-xs font-semibold uppercase tracking-widest"
+          style={{ color: 'var(--t-text-3)' }}>
+          Products
+        </span>
+
         {products.length > 0 && (
-          <span className="bg-amber-400/20 text-amber-400 text-xs font-bold px-2 py-0.5 rounded-full">
+          <span className="text-xs font-bold px-2 py-0.5 rounded-full"
+            style={{
+              background: 'rgba(64,41,112,0.30)',
+              border: '1px solid rgba(107,77,171,0.40)',
+              color: '#c7abff',
+            }}>
             {products.length}
           </span>
         )}
+
         {quantum && products.length > 0 && (
-          <span className="flex items-center gap-1 bg-purple-500/20 text-purple-300 border border-purple-500/30 text-xs font-bold px-2.5 py-0.5 rounded-full animate-quantum ml-auto">
+          <span className="flex items-center gap-1 text-xs font-bold px-2.5 py-0.5 rounded-full ml-auto animate-quantum"
+            style={{
+              background: 'rgba(64,41,112,0.25)',
+              border: '1px solid rgba(107,77,171,0.40)',
+              color: '#c7abff',
+            }}>
             ✦ Quantum
           </span>
         )}
       </div>
 
-      {/* Grid */}
+      {/* Content */}
       <div className="flex-1 overflow-y-auto p-4">
-        {loading ? (
+
+        {/* Skeleton loading */}
+        {loading && (
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="flex flex-col bg-slate-800 rounded-xl overflow-hidden border border-slate-700 animate-pulse">
-                <div className="aspect-square bg-slate-700" />
+              <div key={i} className="rounded-2xl overflow-hidden"
+                style={{ background: 'var(--t-glass-card)', border: '1px solid var(--t-border)' }}>
+                {/* 4:3 skeleton */}
+                <div className="skeleton" style={{ paddingTop: '75%' }} />
                 <div className="p-3 space-y-2">
-                  <div className="h-3 bg-slate-700 rounded w-full" />
-                  <div className="h-3 bg-slate-700 rounded w-3/4" />
-                  <div className="h-4 bg-slate-600 rounded w-1/2 mt-1" />
-                  <div className="h-8 bg-slate-700 rounded w-full mt-1" />
+                  <div className="skeleton rounded h-3 w-full" />
+                  <div className="skeleton rounded h-3 w-3/4" />
+                  <div className="skeleton rounded h-4 w-1/2 mt-1" />
+                  <div className="skeleton rounded h-8 w-full mt-1" />
                 </div>
               </div>
             ))}
           </div>
-        ) : products.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full min-h-[300px] gap-4 text-center px-8">
-            <div className="w-20 h-20 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700">
-              <span className="text-4xl">🛍️</span>
-            </div>
-            <div>
-              <p className="text-slate-300 font-semibold text-base">{s.emptyProducts}</p>
-              <p className="text-slate-500 text-sm mt-1">{s.emptyProductsSub}</p>
+        )}
+
+        {/* Empty state */}
+        {!loading && products.length === 0 && (
+          <div className="flex items-center justify-center h-full min-h-[300px]">
+            <div className="glass-card rounded-3xl p-10 flex flex-col items-center gap-5 text-center max-w-xs"
+              style={{ boxShadow: '0 24px 64px rgba(64,41,112,0.18)' }}>
+              {/* Kapruka logo — place your PNG at public/kapruka-logo.png */}
+              <div className="relative flex items-center justify-center"
+                style={{ width: 88, height: 88 }}>
+                <div className="absolute inset-0 rounded-2xl"
+                  style={{ background: 'rgba(64,41,112,0.18)', backdropFilter: 'blur(8px)', border: '1px solid rgba(107,77,171,0.25)' }} />
+                <img
+                  src="/kapruka-logo.png"
+                  alt="Kapruka"
+                  style={{
+                    width: 58, height: 58,
+                    objectFit: 'contain',
+                    position: 'relative', zIndex: 1,
+                    filter: 'drop-shadow(0 4px 12px rgba(64,41,112,0.40))',
+                  }}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <p className="font-bold text-lg leading-snug"
+                  style={{ color: 'var(--t-text-1)', fontFamily: 'var(--font-jakarta, "Plus Jakarta Sans", sans-serif)' }}>
+                  {s.emptyProducts}
+                </p>
+                <p className="text-sm" style={{ color: 'var(--t-text-3)' }}>
+                  {s.emptyProductsSub}
+                </p>
+              </div>
+
+              {/* Decorative gradient line */}
+              <div className="h-0.5 w-16 rounded-full"
+                style={{ background: 'var(--t-grad-purple)', opacity: 0.6 }} />
             </div>
           </div>
-        ) : (
+        )}
+
+        {/* Product grid */}
+        {!loading && products.length > 0 && (
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             {products.map((p, i) => (
               <ProductCard
@@ -74,7 +126,7 @@ export default function ProductPanel({ products, lang, loading, quantum }: Produ
                 product={p}
                 lang={lang}
                 index={i}
-                onViewDetail={handleViewDetail}
+                onViewDetail={(id, url) => { setSelectedId(id); setSelectedUrl(url); }}
               />
             ))}
           </div>

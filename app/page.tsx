@@ -1,153 +1,289 @@
 'use client';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import ChatPanel from '@/components/ChatPanel';
 import ProductPanel from '@/components/ProductPanel';
 import CartDrawer from '@/components/CartDrawer';
+import TaraBackground from '@/components/TaraBackground';
+import SplashScreen from '@/components/SplashScreen';
 import { CartProvider, useCart, Product } from '@/context/CartContext';
 import { STRINGS, Lang } from '@/lib/strings';
 
-const LANG_FLAGS: { key: Lang; label: string; active: string }[] = [
-  { key: 'si', label: '🇱🇰 සිං', active: 'bg-green-600 text-white' },
-  { key: 'ta', label: '🇱🇰 த',   active: 'bg-orange-500 text-white' },
-  { key: 'tl', label: '🇱🇰 TL',  active: 'bg-amber-400 text-slate-900' },
-  { key: 'en', label: '🇬🇧 EN',  active: 'bg-blue-600 text-white' },
-];
+const LANG_KEYS: Lang[]                 = ['si', 'sl', 'ta', 'tl', 'en'];
+const LANG_LABELS: Record<Lang, string> = {
+  si: '🇱🇰 සිං', sl: '🇱🇰 SL', ta: '🇱🇰 த', tl: '🇱🇰 TL', en: '🇬🇧 EN',
+};
+
+/* ── shared inline style objects ──────────────────────────────── */
+const BORDER_COLOR = 'rgba(107, 77, 171, 0.42)';
 
 function AppContent() {
-  const [lang,      setLang]      = useState<Lang>('en');
-  const [products,  setProducts]  = useState<(Product & { url?: string })[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [quantum,   setQuantum]   = useState(false);
-  const [cartOpen,  setCartOpen]  = useState(false);
-  const [speakerOn, setSpeakerOn] = useState(false);
-  const [tab,       setTab]       = useState<'chat' | 'products'>('chat');
+  const [lang,       setLang]       = useState<Lang>('en');
+  const [products,   setProducts]   = useState<(Product & { url?: string })[]>([]);
+  const [searching,  setSearching]  = useState(false);
+  const [quantum,    setQuantum]    = useState(false);
+  const [cartOpen,   setCartOpen]   = useState(false);
+  const [speakerOn,  setSpeakerOn]  = useState(false);
+  const [tab,        setTab]        = useState<'chat' | 'products'>('chat');
   const { totalQty } = useCart();
   const s = STRINGS[lang];
 
-  const handleProducts = (p: (Product & { url?: string })[], q = false) => {
+  const handleProducts = useCallback((p: (Product & { url?: string })[], q = false) => {
     setProducts(p);
     setQuantum(q);
-    // Auto-switch to products tab on mobile when results arrive
     if (p.length > 0) setTab('products');
-  };
-
-  const currentFlag = LANG_FLAGS.find(f => f.key === lang) ?? LANG_FLAGS[3];
+  }, []);
 
   return (
-    <div className="flex flex-col bg-slate-950 overflow-hidden" style={{ height: '100dvh' }}>
+    <>
+      <div className="flex flex-col overflow-hidden" style={{ height: '100dvh' }}>
 
-      {/* ── Header ── */}
-      <header className="bg-slate-900 border-b border-slate-800 px-3 md:px-4 py-2.5 flex items-center justify-between flex-shrink-0 z-10 gap-2">
-        {/* Brand */}
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <span className="text-white font-black text-lg tracking-tight">
-            TARA <span className="text-amber-400">✦</span>
-          </span>
-          <span className="hidden sm:block text-slate-500 text-xs border-l border-slate-700 pl-2">
-            AI Retail Agent
-          </span>
-        </div>
+        {/* ── Animated aurora background ──────────────────────── */}
+        <TaraBackground />
 
-        {/* Controls */}
-        <div className="flex items-center gap-1.5">
-          {/* Language switcher — scrollable on mobile */}
-          <div className="flex items-center bg-slate-800 border border-slate-700 rounded-full overflow-hidden divide-x divide-slate-700 flex-shrink-0">
-            {LANG_FLAGS.map(({ key, label, active }) => (
-              <button key={key} onClick={() => setLang(key)}
-                className={`px-2 py-1 text-xs font-bold transition-all duration-200 whitespace-nowrap ${lang === key ? active : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700'}`}>
-                {label}
-              </button>
-            ))}
+        {/* ── Header ─────────────────────────────────────────── */}
+        <header
+          className="flex items-center justify-between px-4 md:px-6 flex-shrink-0 z-20"
+          style={{
+            height: 60,
+            background: 'rgba(5,3,15,0.88)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            borderBottom: `1px solid ${BORDER_COLOR}`,
+          }}
+        >
+          {/* Brand */}
+          <div className="flex items-center gap-3">
+            {/* T avatar */}
+            <div style={{
+              width: 34, height: 34, borderRadius: '50%',
+              background: 'linear-gradient(135deg,#f97316,#f59e0b)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}>
+              <span style={{ color: 'white', fontWeight: 900, fontSize: '0.8rem' }}>T</span>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span style={{
+                fontFamily: 'var(--font-jakarta,"Plus Jakarta Sans",sans-serif)',
+                fontWeight: 800, fontSize: '1.15rem',
+                color: '#F5E9E2', letterSpacing: '-0.02em',
+              }}>TARA</span>
+              <span style={{
+                background: 'linear-gradient(90deg,#FAE555,#F5A623)',
+                WebkitBackgroundClip: 'text', backgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                fontWeight: 800, fontSize: '1.1rem',
+              }}>✦</span>
+              <span className="hidden sm:block" style={{ color: '#8878a0', fontSize: '0.8rem' }}>
+                AI Retail Agent
+              </span>
+            </div>
           </div>
 
-          {/* Speaker */}
-          <button onClick={() => setSpeakerOn(v => !v)}
-            className="w-8 h-8 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-full flex items-center justify-center transition-all flex-shrink-0"
-            title={speakerOn ? 'Mute' : 'Unmute'}>
-            {speakerOn
-              ? <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 4.5h3l4-3v11l-4-3H1V4.5z" fill="#f59e0b"/><path d="M10 4a4 4 0 010 6" stroke="#f59e0b" strokeWidth="1.5" strokeLinecap="round"/></svg>
-              : <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 4.5h3l4-3v11l-4-3H1V4.5z" stroke="#64748b" strokeWidth="1.5" strokeLinejoin="round"/><line x1="10.5" y1="5" x2="13" y2="9" stroke="#64748b" strokeWidth="1.5" strokeLinecap="round"/><line x1="13" y1="5" x2="10.5" y2="9" stroke="#64748b" strokeWidth="1.5" strokeLinecap="round"/></svg>
-            }
-          </button>
+          {/* Controls */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
 
-          {/* Cart */}
-          <button onClick={() => setCartOpen(true)}
-            className="relative flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-amber-400/50 px-2.5 py-1.5 rounded-full transition-all group flex-shrink-0">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M1 1h2l2.5 8h6L14 4H4" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="group-hover:stroke-amber-400 transition-colors"/>
-              <circle cx="7" cy="12.5" r="1" fill="#94a3b8" className="group-hover:fill-amber-400 transition-colors"/>
-              <circle cx="11" cy="12.5" r="1" fill="#94a3b8" className="group-hover:fill-amber-400 transition-colors"/>
-            </svg>
-            <span className="text-slate-300 text-xs font-medium group-hover:text-amber-400 transition-colors hidden sm:block">{s.cartBtn}</span>
-            {totalQty > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-amber-400 text-slate-900 text-xs font-black rounded-full flex items-center justify-center leading-none">
-                {totalQty > 9 ? '9+' : totalQty}
-              </span>
-            )}
-          </button>
+            {/* Segmented lang control — desktop, using inline styles for guaranteed render */}
+            <div className="hidden sm:flex" style={{
+              background: 'rgba(10,6,32,0.70)',
+              border: `1px solid ${BORDER_COLOR}`,
+              borderRadius: 9999,
+              overflow: 'hidden',
+            }}>
+              {LANG_KEYS.map((k, idx) => (
+                <button key={k} onClick={() => setLang(k)}
+                  style={{
+                    padding: '5px 12px',
+                    fontSize: '0.68rem',
+                    fontWeight: lang === k ? 700 : 600,
+                    color: lang === k ? '#fff' : '#8878a0',
+                    background: lang === k
+                      ? 'linear-gradient(135deg,#402970,#6b4dab)'
+                      : 'transparent',
+                    borderRight: idx < LANG_KEYS.length - 1 ? `1px solid ${BORDER_COLOR}` : 'none',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    whiteSpace: 'nowrap',
+                  }}>
+                  {LANG_LABELS[k]}
+                </button>
+              ))}
+            </div>
+
+            {/* Speaker */}
+            <button onClick={() => setSpeakerOn(v => !v)}
+              title={speakerOn ? 'Mute' : 'Unmute'}
+              style={{
+                width: 34, height: 34,
+                borderRadius: '50%',
+                background: 'rgba(26,18,58,0.70)',
+                border: `1px solid ${BORDER_COLOR}`,
+                color: speakerOn ? '#FAE555' : '#8878a0',
+                cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'all 0.15s ease',
+                flexShrink: 0,
+              }}>
+              {speakerOn ? '🔊' : '🔇'}
+            </button>
+
+            {/* Cart */}
+            <button onClick={() => setCartOpen(true)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '6px 12px',
+                borderRadius: 9999,
+                background: 'rgba(26,18,58,0.70)',
+                border: `1px solid ${BORDER_COLOR}`,
+                color: '#c9b8d8',
+                fontSize: '0.8rem', fontWeight: 600,
+                cursor: 'pointer',
+                flexShrink: 0,
+                position: 'relative',
+                transition: 'all 0.15s ease',
+              }}>
+              <span>🛒</span>
+              <span className="hidden sm:inline">{s.cartBtn}</span>
+              {totalQty > 0 && (
+                <span style={{
+                  position: 'absolute', top: -6, right: -6,
+                  width: 18, height: 18, borderRadius: '50%',
+                  background: 'linear-gradient(135deg,#402970,#6b4dab)',
+                  color: 'white',
+                  fontSize: '0.62rem', fontWeight: 900,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  {totalQty > 9 ? '9+' : totalQty}
+                </span>
+              )}
+            </button>
+          </div>
+        </header>
+
+        {/* ── Main ────────────────────────────────────────────── */}
+        <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
+
+          {/* Chat panel — the glass sidebar */}
+          <div
+            className={`flex-col overflow-hidden md:flex md:flex-shrink-0 ${
+              tab === 'chat' ? 'flex w-full' : 'hidden'
+            }`}
+            style={{
+              width: undefined,
+              /* desktop width via md class isn't available here, use max-content trick */
+            }}
+          >
+            {/* Inner wrapper handles the glass + border */}
+            <div style={{
+              display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden',
+              background: 'rgba(8,5,22,0.80)',
+              backdropFilter: 'blur(20px)',
+              WebkitBackdropFilter: 'blur(20px)',
+              borderRight: `1px solid ${BORDER_COLOR}`,
+              boxShadow: `4px 0 32px rgba(0,0,0,0.40)`,
+              /* Fixed sidebar width on desktop */
+              minWidth: 0,
+            }}
+              className="w-full md:w-[400px] lg:w-[420px]"
+            >
+              <ChatPanel
+                lang={lang}
+                onLangChange={setLang}
+                onProductsFound={handleProducts}
+                onSearching={setSearching}
+                speakerOn={speakerOn}
+                onSpeakerToggle={() => setSpeakerOn(v => !v)}
+              />
+            </div>
+          </div>
+
+          {/* Products panel */}
+          <div
+            className={`flex-col overflow-hidden flex-1 md:flex ${
+              tab === 'products' ? 'flex w-full' : 'hidden'
+            }`}
+            style={{ background: 'rgba(5,3,15,0.30)' }}
+          >
+            <ProductPanel
+              products={products}
+              lang={lang}
+              loading={searching}
+              quantum={quantum}
+            />
+          </div>
         </div>
-      </header>
 
-      {/* ── Main — desktop: side-by-side, mobile: tabbed ── */}
-      <div className="flex flex-1 overflow-hidden min-h-0">
-
-        {/* Chat panel */}
-        <div className={`flex-col overflow-hidden md:flex md:w-[40%] md:flex-shrink-0 md:border-r md:border-slate-800 ${tab === 'chat' ? 'flex w-full' : 'hidden'}`}>
-          <ChatPanel
-            lang={lang}
-            onLangChange={setLang}
-            onProductsFound={handleProducts}
-            onSearching={setSearching}
-            speakerOn={speakerOn}
-            onSpeakerToggle={() => setSpeakerOn(v => !v)}
-          />
-        </div>
-
-        {/* Products panel */}
-        <div className={`flex-col overflow-hidden md:flex md:flex-1 ${tab === 'products' ? 'flex w-full' : 'hidden'}`}>
-          <ProductPanel
-            products={products}
-            lang={lang}
-            loading={searching}
-            quantum={quantum}
-          />
-        </div>
-      </div>
-
-      {/* ── Mobile tab bar ── */}
-      <div className="md:hidden flex border-t border-slate-800 bg-slate-900 flex-shrink-0">
-        <button
-          onClick={() => setTab('chat')}
-          className={`flex-1 flex flex-col items-center justify-center py-2.5 gap-0.5 text-xs font-semibold transition-colors ${tab === 'chat' ? 'text-amber-400' : 'text-slate-500 hover:text-slate-300'}`}
+        {/* ── Mobile tab bar ─────────────────────────────────── */}
+        <div
+          className="md:hidden flex flex-shrink-0"
+          style={{
+            background: 'rgba(5,3,15,0.93)',
+            backdropFilter: 'blur(24px)',
+            WebkitBackdropFilter: 'blur(24px)',
+            borderTop: `1px solid ${BORDER_COLOR}`,
+            paddingBottom: 'env(safe-area-inset-bottom,0px)',
+          }}
         >
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-            <path d="M2 3h14a1 1 0 011 1v8a1 1 0 01-1 1H5l-4 3V4a1 1 0 011-1z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-          </svg>
-          Chat
-        </button>
-        <button
-          onClick={() => setTab('products')}
-          className={`flex-1 flex flex-col items-center justify-center py-2.5 gap-0.5 text-xs font-semibold transition-colors relative ${tab === 'products' ? 'text-amber-400' : 'text-slate-500 hover:text-slate-300'}`}
-        >
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-            <path d="M1 1h3l2.5 10h8L17 5H5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-            <circle cx="8" cy="16" r="1.5" fill="currentColor"/>
-            <circle cx="14" cy="16" r="1.5" fill="currentColor"/>
-          </svg>
-          Products
-          {products.length > 0 && (
-            <span className="absolute top-1.5 right-5 bg-amber-400 text-slate-900 text-xs font-black w-4 h-4 rounded-full flex items-center justify-center leading-none">
-              {products.length > 9 ? '9+' : products.length}
-            </span>
-          )}
-        </button>
-      </div>
+          <MobileTab icon="💬" label="Chat"     active={tab === 'chat'}     onClick={() => setTab('chat')} />
+          <MobileTab icon="🛍️" label="Products" active={tab === 'products'} onClick={() => setTab('products')}
+            badge={products.length > 0 ? products.length : undefined} />
+        </div>
 
-      <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} lang={lang} />
-    </div>
+        <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} lang={lang} />
+      </div>
+    </>
   );
 }
 
+function MobileTab({
+  icon, label, active, onClick, badge,
+}: { icon: string; label: string; active: boolean; onClick: () => void; badge?: number }) {
+  return (
+    <button onClick={onClick}
+      style={{
+        flex: 1,
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        paddingTop: 10, paddingBottom: 6, gap: 3,
+        color: active ? '#c7abff' : '#52436a',
+        cursor: 'pointer',
+        position: 'relative',
+        transition: 'color 0.18s ease',
+        background: 'transparent',
+        border: 'none',
+      }}>
+      <span style={{ fontSize: '1.25rem', lineHeight: 1 }}>{icon}</span>
+      <span style={{ fontSize: '0.67rem', fontWeight: 600, letterSpacing: '0.01em' }}>{label}</span>
+      {active && (
+        <div style={{
+          width: 20, height: 3, borderRadius: 2,
+          background: 'linear-gradient(90deg,#402970,#6b4dab)',
+          marginTop: 2,
+        }} />
+      )}
+      {badge !== undefined && (
+        <span style={{
+          position: 'absolute', top: 8, right: 'calc(50% - 24px)',
+          width: 16, height: 16, borderRadius: '50%',
+          background: 'linear-gradient(135deg,#402970,#6b4dab)',
+          color: 'white',
+          fontSize: '0.6rem', fontWeight: 900,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          {badge > 9 ? '9+' : badge}
+        </span>
+      )}
+    </button>
+  );
+}
+
+// ── Root: splash gate — AppContent never mounts until splash completes ──
 export default function Home() {
+  const [ready, setReady] = useState(false);
+
+  if (!ready) {
+    return <SplashScreen onDone={() => setReady(true)} />;
+  }
+
   return <CartProvider><AppContent /></CartProvider>;
 }
