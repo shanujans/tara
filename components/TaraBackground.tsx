@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useRef } from 'react';
 
-/* ── WebGL aurora shader — Kapruka purple × indigo palette ─── */
+/* ── Lumina palette — vivid enough to bleed through glass overlays ── */
 const VS = `
   attribute vec4 a_position;
   varying vec2 v_uv;
@@ -16,22 +16,38 @@ const FS = `
   varying vec2 v_uv;
   uniform float u_time;
 
-  /* Kapruka brand colors */
-  vec3 c1 = vec3(0.251, 0.161, 0.439); /* #402970 deep purple  */
-  vec3 c2 = vec3(0.102, 0.055, 0.227); /* #1a0e3a dark indigo  */
-  vec3 c3 = vec3(0.357, 0.247, 0.627); /* #5b3fa0 violet       */
-  vec3 c4 = vec3(0.157, 0.094, 0.314); /* #281850 mid purple   */
-  vec3 c5 = vec3(0.020, 0.012, 0.063); /* #05030f near black   */
+  /* Lumina design system — brighter to pierce glass layers */
+  vec3 c1 = vec3(0.255, 0.078, 0.471); /* #411478 primary deep */
+  vec3 c2 = vec3(0.063, 0.043, 0.122); /* #100b1f void base    */
+  vec3 c3 = vec3(0.443, 0.290, 0.667); /* #714aaa violet mid   */
+  vec3 c4 = vec3(0.188, 0.114, 0.353); /* #301d5a dark mid     */
+  vec3 c5 = vec3(0.082, 0.067, 0.141); /* #151024 surface      */
+  vec3 cg = vec3(0.420, 0.478, 0.165); /* #6b7a2a gold-green   */
+
+  float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5); }
 
   void main() {
     vec2 uv = v_uv;
-    float w1 = sin(uv.x * 2.8 + u_time * 0.40) * 0.5 + 0.5;
-    float w2 = sin(uv.y * 2.1 - u_time * 0.28) * 0.5 + 0.5;
-    float w3 = sin((uv.x + uv.y) * 3.5 + u_time * 0.65) * 0.5 + 0.5;
-    float n  = sin(uv.x * 8.0 + u_time * 0.9) * cos(uv.y * 8.0 + u_time * 0.7) * 0.5 + 0.5;
-    vec3 m1  = mix(c1, c2, w1);
-    vec3 m2  = mix(c3, c4, w2);
-    vec3 col = mix(mix(m1, m2, w3), c5, n * 0.45);
+
+    /* Organic wave layers */
+    float w1 = sin(uv.x * 3.2 + u_time * 0.35) * 0.5 + 0.5;
+    float w2 = sin(uv.y * 2.4 - u_time * 0.22) * 0.5 + 0.5;
+    float w3 = sin((uv.x + uv.y) * 4.1 + u_time * 0.55) * 0.5 + 0.5;
+    float w4 = cos(uv.x * 1.8 - uv.y * 2.6 + u_time * 0.18) * 0.5 + 0.5;
+
+    /* Micro noise for texture */
+    float n = sin(uv.x * 9.0 + u_time * 0.8) * cos(uv.y * 9.0 + u_time * 0.6) * 0.5 + 0.5;
+
+    /* Gold-green aurora hint (secondary color accent) */
+    float goldWave = smoothstep(0.6, 0.9, sin(uv.y * 5.0 + u_time * 0.4) * 0.5 + 0.5);
+    goldWave *= smoothstep(0.0, 0.3, uv.x) * smoothstep(1.0, 0.7, uv.x);
+
+    vec3 m1  = mix(c1, c3, w1);          /* purple range */
+    vec3 m2  = mix(c4, c2, w2);          /* dark range */
+    vec3 col = mix(mix(m1, m2, w3), c5, n * 0.30);
+    col      = mix(col, c3, w4 * 0.25);  /* violet shimmer */
+    col      = mix(col, cg, goldWave * 0.12); /* subtle gold streak */
+
     gl_FragColor = vec4(col, 1.0);
   }
 `;
@@ -82,25 +98,26 @@ function boot(canvas: HTMLCanvasElement): () => void {
 }
 
 export default function TaraBackground() {
-  const ref = useRef<HTMLCanvasElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    if (!ref.current) return;
-    const cleanup = boot(ref.current);
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const cleanup = boot(canvas);
     return cleanup;
   }, []);
 
   return (
     <canvas
-      ref={ref}
-      aria-hidden
+      ref={canvasRef}
       style={{
         position: 'fixed',
         inset: 0,
         width: '100%',
         height: '100%',
-        zIndex: -1,
+        zIndex: 0,         /* sit above body bg, below all UI */
         display: 'block',
+        pointerEvents: 'none',
       }}
     />
   );
