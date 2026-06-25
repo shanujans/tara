@@ -6,6 +6,9 @@ export interface Product {
   price: number;
   image: string;
   url?: string;
+  in_stock?: boolean;
+  stock?: string | boolean;
+  category?: string;
 }
 
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
