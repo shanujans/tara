@@ -127,10 +127,17 @@ export async function POST(req: NextRequest) {
   const maxPrice  = primary.match(/max_price:(\d+)/)?.[1]
     ? Number(primary.match(/max_price:(\d+)/)![1]) : undefined;
 
-  // Secondary query: first 2 meaningful words (catches "wireless earbuds" from longer phrases)
-  // Never use single-word broadening — returns unrelated products
   const words = baseQuery.split(' ').filter(w => w.length > 2);
   const q2    = words.length >= 3 ? words.slice(0, 2).join(' ') : '';
+
+  /* ── Keyword visibility log ────────────────────────────────── */
+  console.log(
+    `\n🔍 TARA → Kapruka search` +
+    `\n   primary  : "${baseQuery}"` +
+    (q2        ? `\n   secondary: "${q2}"` : '') +
+    (maxPrice  ? `\n   maxPrice : LKR ${maxPrice}` : '') +
+    `\n`
+  );
 
   try {
     // Sequential — MCP sessions are SSE-based and don't support concurrent requests on the same sid

@@ -46,11 +46,30 @@ function parseMarkdownProduct(md: string, productId: string) {
 
   const url = buildProductUrl(allUrls, productId, name);
 
-  // ── Image extraction: prefer URLs that ARE image paths ──────────────────
-  const imgInMd = md.match(/!\[.*?\]\((https?:\/\/[^)]+)\)/)?.[1]
-               ?? md.match(/\*\*Image[^:]*\*\*[^:]*:\s*(https?:\/\/\S+)/i)?.[1]
-               ?? allUrls.find(isImageUrl)  // fall back to any image URL found
-               ?? '';
+  // ── Image extraction: collect every image URL in the markdown ──────────
+  const rawImgUrls: string[] = [];
+
+  // 1. Markdown image syntax  ![alt](url)
+  for (const m of md.matchAll(/!\[.*?\]\((https?:\/\/[^)\s]+)\)/g))
+    rawImgUrls.push(m[1].trim());
+
+  // 2. Labelled fields: **Image**, **Image 2**, **Photo**, **Gallery** etc.
+  for (const m of md.matchAll(/\*\*(?:Image|Photo|Gallery|Thumbnail)\s*\d*[^:]*\*\*[^:]*:\s*(https?:\/\/[^\s)\]"'\\<>]+)/gi))
+    rawImgUrls.push(m[1].trim());
+
+  // 3. Any URL ending in an image extension anywhere in the text
+  for (const m of md.matchAll(/https?:\/\/[^\s)"'\\<>]+\.(?:jpg|jpeg|png|webp|gif|avif)(?:[?#][^\s)"'\\<>]*)?/gi))
+    rawImgUrls.push(m[0].replace(/[.,;:!?)\]]+$/, ''));
+
+  // Deduplicate, preserve order, cap at 10
+  const seenI = new Set<string>();
+  const uniqueImgs: string[] = [];
+  for (const u of rawImgUrls)
+    if (!seenI.has(u)) { seenI.add(u); uniqueImgs.push(u); }
+
+  const imgInMd    = uniqueImgs[0] ?? allUrls.find(isImageUrl) ?? '';
+  const allImgsArr = uniqueImgs.length ? uniqueImgs.slice(0, 10)
+                   : imgInMd ? [imgInMd] : [];
 
   const desc = md.match(/\*\*(?:Description|Summary)\*\*[^:]*:\s*([\s\S]+?)(?=\n\*\*|\n##|$)/i)?.[1]?.trim() ?? '';
 
@@ -70,11 +89,107 @@ function parseMarkdownProduct(md: string, productId: string) {
     shipping:    shipping || undefined,
     url,
     image:       imgInMd,
-    images:      imgInMd ? [imgInMd] : [],
+    image_url:   imgInMd,
+    images:      allImgsArr,
     description: desc || (category ? `${category} product${vendor ? ` by ${vendor}` : ''}` : undefined),
   };
 }
 
+/* ── Normalise a JSON product response from Kapruka MCP ─────────────────
+   When response_format:"json" is set, the MCP returns a structured object
+   whose "images" array contains ALL product images. We deduplicate and cap. */
+function normalizeJsonProduct(p: Record<string, unknown>, pid: string): Record<string, unknown> {
+  /* Coerce any value to a plain string — Kapruka JSON returns object fields like
+     category: { id, name, slug, path }  instead of plain strings.
+     React cannot render objects as children, so every text field must go through this. */
+  const str = (v: unknown, fallback = ''): string => {
+    if (v == null) return fallback;
+    if (typeof v === 'string') return v.trim();
+    if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+    if (typeof v === 'object') {
+      const o = v as Record<string, unknown>;
+      // Kapruka wraps categories/vendors as { id, name, slug, path }
+      return String(o.name ?? o.title ?? o.label ?? o.value ?? o.id ?? fallback).trim();
+    }
+    return String(v);
+  };
+
+  // ── Collect every image URL ──────────────────────────────────────────────
+  const srcs: string[] = [];
+
+  for (const k of ['image', 'image_url', 'thumbnail', 'thumb', 'photo']) {
+    const v = p[k];
+    if (typeof v === 'string' && v.startsWith('http')) srcs.push(v);
+  }
+
+  const imgs = p.images;
+  if (Array.isArray(imgs)) {
+    for (const img of imgs) {
+      if (typeof img === 'string' && img.startsWith('http'))
+        srcs.push(img);
+      else if (img && typeof img === 'object') {
+        const obj = img as Record<string, unknown>;
+        const u = obj.url ?? obj.src ?? obj.image ?? '';
+        if (typeof u === 'string' && u.startsWith('http')) srcs.push(u);
+      }
+    }
+  }
+
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const u of srcs) { if (!seen.has(u)) { seen.add(u); unique.push(u); } }
+
+  // ── URL ───────────────────────────────────────────────────────────────────
+  let url = typeof p.url === 'string' ? p.url : '';
+  if (!url) {
+    const name = str(p.name);
+    url = name
+      ? `https://www.kapruka.com/products/?q=${encodeURIComponent(name)}`
+      : 'https://www.kapruka.com';
+  }
+
+  // ── Price — may be number, string, or { amount, currency } ───────────────
+  let price = 0;
+  if (typeof p.price === 'number') price = p.price;
+  else if (typeof p.price === 'string') price = Number(p.price.replace(/[^0-9.]/g, ''));
+  else if (p.price && typeof p.price === 'object') {
+    const po = p.price as Record<string, unknown>;
+    price = Number(po.amount ?? po.value ?? po.lkr ?? 0);
+  }
+
+  // ── Shipping / vendor line ────────────────────────────────────────────────
+  const vendor  = str(p.vendor ?? p.seller ?? p.brand);
+  const weight  = str(p.weight);
+  const rating  = str(p.rating);
+  const shipping = str(p.shipping)
+    || [
+        vendor  && `Sold by ${vendor}`,
+        weight  && weight !== '0 lb' && `Weight: ${weight}`,
+        rating  && `Rating: ${rating}`,
+      ].filter(Boolean).join(' · ');
+
+  return {
+    /* Spread safe scalars from original; override anything that might be an object */
+    ...Object.fromEntries(
+      Object.entries(p).filter(([, v]) =>
+        typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' || v == null
+      )
+    ),
+    id:          pid,
+    name:        str(p.name),
+    price,
+    in_stock:    !!(p.in_stock === true || /in.?stock/i.test(str(p.stock))),
+    stock:       str(p.stock),
+    category:    str(p.category),          /* was arriving as { id,name,slug,path } */
+    vendor,
+    description: str(p.description ?? p.summary),
+    shipping:    shipping || undefined,
+    url,
+    image:       unique[0] ?? '',
+    image_url:   unique[0] ?? '',
+    images:      unique.slice(0, 10),
+  };
+}
 export async function POST(req: NextRequest) {
   const ip = req.headers.get('x-forwarded-for') ?? 'unknown';
   if (!rateLimit(ip, 120, 60_000)) {
@@ -103,7 +218,11 @@ export async function POST(req: NextRequest) {
         jsonrpc: '2.0',
         id: String(Date.now()),
         method: 'tools/call',
-        params: { name: 'kapruka_get_product', arguments: { params: { product_id: safeId, currency: 'LKR' } } },
+        params: {
+          name: 'kapruka_get_product',
+          /* response_format:"json" → returns full images array, not just thumbnail */
+          arguments: { params: { product_id: safeId, currency: 'LKR', response_format: 'json' } },
+        },
       }),
     });
 
@@ -123,9 +242,14 @@ export async function POST(req: NextRequest) {
 
     let product: Record<string, unknown>;
     try {
-      product = JSON.parse(raw);
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      product = normalizeJsonProduct(parsed, safeId);
+      /* Invalidate any stale markdown-parsed entry with same key */
+      cacheSet(key, product, TTL.PRODUCT);
+      console.log(`[product] ${safeId} → JSON, ${(product.images as string[]).length} image(s)`);
     } catch {
-      product = parseMarkdownProduct(raw, safeId);
+      product = parseMarkdownProduct(raw, safeId) as Record<string, unknown>;
+      console.log(`[product] ${safeId} → Markdown, ${((product.images as string[]) ?? []).length} image(s)`);
     }
 
     cacheSet(key, product, TTL.PRODUCT);

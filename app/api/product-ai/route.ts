@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const resp = await client.chat.completions.create({
-      model: 'google/gemini-3-5-flash',
+      model: 'anthropic/claude-opus-4-6',
       max_tokens: type === 'summary' ? 300 : 180,
       messages: [
         { role: 'system', content: SYSTEM(product, type) },

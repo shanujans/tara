@@ -165,7 +165,7 @@ export default function ProductCard({ product, lang, index = 0, onViewDetail }: 
         </p>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, minWidth: 0 }}>
-          <span className="product-price" style={{ fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, minWidth: 0 }}>
+          <span className="product-price" style={{ fontSize: 12, flex: 1, minWidth: 0, fontVariantNumeric: 'tabular-nums' }}>
             {s.lkr}&nbsp;{product.price.toLocaleString('si-LK')}
           </span>
 

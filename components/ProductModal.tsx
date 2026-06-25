@@ -78,9 +78,10 @@ export default function ProductModal({ productId, productUrl, lang, onClose }: P
   useEffect(() => { chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMsgs, chatBusy]);
 
   const imgSrc = product?.image_url || product?.image || '';
-  /* Up to 10 images */
+  /* Collect all URLs, deduplicate, cap at 10 */
+  const seenUrls = new Set<string>();
   const images = [imgSrc, ...(product?.images ?? [])]
-    .filter(u => u && u.startsWith('http'))
+    .filter(u => { if (!u || !u.startsWith('http')) return false; if (seenUrls.has(u)) return false; seenUrls.add(u); return true; })
     .map(proxyImg)
     .slice(0, 10);
   const desc = product?.description || product?.summary || '';

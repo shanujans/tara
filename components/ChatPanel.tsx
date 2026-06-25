@@ -5,8 +5,6 @@ import { useCart, Product } from '@/context/CartContext';
 import { detectExpat, detectExpatCountry } from '@/lib/expat';
 import ExpatBanner from './ExpatBanner';
 import { MicIcon, SendIcon, AttachIcon, AddCartIcon, CheckIcon, GlobeIcon } from './Icons';
-import dynamic from 'next/dynamic';
-const BroccoliCharacter = dynamic(() => import('./BroccoliCharacter'), { ssr: false });
 
 /* ── Types ─────────────────────────────────────────────────── */
 interface Message { role: 'user' | 'assistant'; content: string; products?: Product[]; imagePreview?: string; }
@@ -364,21 +362,9 @@ export default function ChatPanel({
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', background:'transparent' }}>
 
-      {/* ── Main content area (character + messages share the same space) ── */}
-      <div style={{ flex:1, position:'relative', overflow:'hidden' }}>
-
-        {/* 3D character — absolute fill, fades out when first message sent */}
-        <BroccoliCharacter visible={!hasUserMsgs && !streaming} />
-
-        {/* Messages list — hidden behind character until user sends first message */}
-        <div
-          style={{
-            position:'absolute', inset:0, overflowY:'auto', padding:'16px 16px 8px',
-            opacity: hasUserMsgs || streaming ? 1 : 0,
-            transition: 'opacity 0.5s ease-out',
-            pointerEvents: hasUserMsgs || streaming ? 'all' : 'none',
-          }}>
-          <div style={{ maxWidth:760, margin:'0 auto' }}>
+      {/* ── Messages ───────────────────────────────────────── */}
+      <div style={{ flex:1, overflowY:'auto', padding:'16px 16px 8px' }}>
+        <div style={{ maxWidth:760, margin:'0 auto' }}>
           {showExpat && <ExpatBanner country={expatCountry} onDismiss={()=>setShowExpat(false)}/>}
 
           {messages.map((msg,i)=>(
@@ -459,9 +445,8 @@ export default function ChatPanel({
             </div>
           )}
           <div ref={bottomRef}/>
-          </div>{/* end maxWidth content */}
-        </div>{/* end inner messages div */}
-      </div>{/* end position:relative main area */}
+        </div>
+      </div>
 
       {/* Language bar */}
       <div style={{flexShrink:0,padding:'8px 16px',borderTop:'1px solid rgba(74,68,81,0.20)',background:'rgba(21,16,36,0.65)',backdropFilter:'blur(8px)'}}>

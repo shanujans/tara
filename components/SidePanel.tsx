@@ -14,19 +14,19 @@ interface SidePanelProps {
   onClearChat: () => void;
 }
 
-const CATEGORIES = [
-  { emoji: '🎂', name: 'Birthday Cakes',   query: 'birthday cake'      },
-  { emoji: '💐', name: 'Flowers',           query: 'flowers bouquet'    },
-  { emoji: '🎁', name: 'Gift Hampers',      query: 'gift hamper'        },
-  { emoji: '📱', name: 'Electronics',       query: 'electronics mobile' },
-  { emoji: '👗', name: 'Fashion',           query: 'fashion clothing'   },
-  { emoji: '🛒', name: 'Groceries',         query: 'groceries food'     },
-  { emoji: '📚', name: 'Books',             query: 'books'              },
-  { emoji: '🎮', name: 'Toys & Games',      query: 'toys games'         },
-  { emoji: '💍', name: 'Jewelry',           query: 'jewelry gold'       },
-  { emoji: '🌿', name: 'Health & Beauty',   query: 'health beauty'      },
-  { emoji: '🏠', name: 'Home & Living',     query: 'home decor'         },
-  { emoji: '🍫', name: 'Chocolates',        query: 'chocolates sweets'  },
+const FALLBACK_CATEGORIES = [
+  { emoji: '💐', name: 'Flowers',        query: 'Show me flowers and bouquets on Kapruka'       },
+  { emoji: '🎂', name: 'Cakes',          query: 'Show me birthday cakes on Kapruka'              },
+  { emoji: '🎁', name: 'Gift Hampers',   query: 'Show me gift hampers on Kapruka'                },
+  { emoji: '📱', name: 'Electronics',   query: 'Show me electronics on Kapruka'                  },
+  { emoji: '👗', name: 'Fashion',        query: 'Show me fashion and clothing on Kapruka'        },
+  { emoji: '🛒', name: 'Groceries',      query: 'Show me groceries on Kapruka'                   },
+  { emoji: '📚', name: 'Books',          query: 'Show me books on Kapruka'                       },
+  { emoji: '🎮', name: 'Toys & Games',   query: 'Show me toys and games on Kapruka'             },
+  { emoji: '💍', name: 'Jewelry',        query: 'Show me jewelry on Kapruka'                    },
+  { emoji: '🍫', name: 'Chocolates',     query: 'Show me chocolates and sweets on Kapruka'      },
+  { emoji: '🌿', name: 'Health & Beauty',query: 'Show me health and beauty products on Kapruka' },
+  { emoji: '🏠', name: 'Home & Living',  query: 'Show me home and decor on Kapruka'             },
 ];
 
 const FAQS = [
@@ -134,32 +134,57 @@ function RewardsPanel() {
 }
 
 function BrowsePanel({ onCategorySearch, onClose }: { onCategorySearch: (q: string) => void; onClose: () => void }) {
+  const [categories, setCategories] = useState<{ name:string; emoji:string; query:string }[]>([]);
+  const [catLoading, setCatLoading] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/categories')
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then(d => {
+        if (Array.isArray(d.categories) && d.categories.length > 0) {
+          setCategories(d.categories);
+        } else {
+          setCategories(FALLBACK_CATEGORIES);
+        }
+      })
+      .catch(() => setCategories(FALLBACK_CATEGORIES))
+      .finally(() => setCatLoading(false));
+  }, []);
+
   return (
     <div style={{ padding: 16 }}>
       <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--c-outline)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
-        Shop by Category
+        {catLoading ? 'Loading categories…' : `${categories.length} Kapruka Categories`}
       </p>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-        {CATEGORIES.map(cat => (
-          <button
-            key={cat.name}
-            onClick={() => { onCategorySearch(cat.query); onClose(); }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              padding: '11px 12px', borderRadius: 10, cursor: 'pointer',
-              background: 'var(--c-surface-container)',
-              border: '1px solid rgba(74,68,81,0.25)',
-              transition: 'all 0.15s ease',
-              textAlign: 'left',
-            }}
-            onMouseOver={e => { e.currentTarget.style.background = 'var(--c-surface-container-high)'; e.currentTarget.style.borderColor = 'rgba(215,186,255,0.30)'; }}
-            onMouseOut={e => { e.currentTarget.style.background = 'var(--c-surface-container)'; e.currentTarget.style.borderColor = 'rgba(74,68,81,0.25)'; }}
-          >
-            <span style={{ fontSize: 20 }}>{cat.emoji}</span>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--c-on-surface)', lineHeight: 1.3 }}>{cat.name}</span>
-          </button>
-        ))}
-      </div>
+
+      {catLoading ? (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="skeleton" style={{ height: 48, borderRadius: 10 }} />
+          ))}
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {categories.map(cat => (
+            <button
+              key={cat.name}
+              onClick={() => { onCategorySearch(cat.query); onClose(); }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '11px 12px', borderRadius: 10, cursor: 'pointer',
+                background: 'var(--c-surface-container)',
+                border: '1px solid rgba(74,68,81,0.25)',
+                transition: 'all 0.15s ease', textAlign: 'left',
+              }}
+              onMouseOver={e => { e.currentTarget.style.background = 'var(--c-surface-container-high)'; e.currentTarget.style.borderColor = 'rgba(215,186,255,0.30)'; }}
+              onMouseOut={e => { e.currentTarget.style.background = 'var(--c-surface-container)'; e.currentTarget.style.borderColor = 'rgba(74,68,81,0.25)'; }}
+            >
+              <span style={{ fontSize: 20, flexShrink: 0 }}>{cat.emoji}</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--c-on-surface)', lineHeight: 1.3 }}>{cat.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
