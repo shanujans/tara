@@ -34,6 +34,7 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
   const [fadingOut, setFadingOut] = useState(false);
   const [stars, setStars] = useState<any[]>([]);
   const [sparkles, setSparkles] = useState<any[]>([]);
+  const [spriteReady, setSpriteReady] = useState(false); // ← new
 
   // Fade‑out timers
   useEffect(() => {
@@ -91,13 +92,19 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+    // Position the canvas absolutely to overlay the fallback image
+    renderer.domElement.style.position = 'absolute';
+    renderer.domElement.style.top = '0';
+    renderer.domElement.style.left = '0';
+    renderer.domElement.style.zIndex = '2';
     container.appendChild(renderer.domElement);
 
     const ambientLight = new THREE.AmbientLight(0xffffff, 2.0);
     scene.add(ambientLight);
 
     const textureLoader = new THREE.TextureLoader();
-    const textureUrl = '/cartoon.jpg'; // your image in public/
+    const textureUrl = '/cartoon.jpg';
 
     textureLoader.load(
       textureUrl,
@@ -110,17 +117,17 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           color: 0xffffff,
         });
         sprite = new THREE.Sprite(material);
-        // initial scale
         sprite.scale.set(3.8, 3.8, 1);
         sprite.position.x = 0.2;
         scene.add(sprite);
 
+        setSpriteReady(true); // hide the fallback image
+
         const animate = (time: number) => {
           if (!mounted) return;
           animationId = requestAnimationFrame(animate);
-          // floating + breathing
           const floatY = Math.sin(time * 0.002) * 0.15;
-          const breathe = 1 + Math.sin(time * 0.003) * 0.02; // subtle scale pulse
+          const breathe = 1 + Math.sin(time * 0.003) * 0.02;
           sprite.position.y = floatY;
           sprite.scale.set(3.8 * breathe, 3.8 * breathe, 1);
           renderer.render(scene, camera);
@@ -130,6 +137,8 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
       undefined,
       (error) => {
         console.error('Failed to load cartoon texture:', error);
+        // Still start render loop (no sprite) and hide fallback
+        setSpriteReady(true);
         const animate = (time: number) => {
           if (!mounted) return;
           animationId = requestAnimationFrame(animate);
@@ -181,7 +190,6 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
         fontFamily: "'Inter', sans-serif",
       }}
     >
-      {/* ---- Embedded styles with NEW animations ---- */}
       <style>{`
         :root {
           --surface: #140f2c;
@@ -198,7 +206,6 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           --move-y: 0px;
         }
 
-        /* ---------- vignette ---------- */
         .vignette {
           position: absolute;
           inset: 0;
@@ -212,7 +219,6 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           50% { opacity: 0.85; transform: scale(1.15); }
         }
 
-        /* ---------- stars ---------- */
         .star {
           position: absolute;
           border-radius: 50%;
@@ -233,7 +239,6 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           transition: transform 0.1s ease-out;
         }
 
-        /* ---------- waves ---------- */
         .waves-wrap {
           position: absolute;
           inset: -5%;
@@ -270,7 +275,6 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           100% { transform: translateX(-2%) translateY(0); }
         }
 
-        /* sparkle dots on waves */
         .sparkle-dot {
           fill: var(--primary);
           filter: drop-shadow(0 0 4px var(--primary));
@@ -281,7 +285,6 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           50% { opacity: 1; transform: translateY(-12px) scale(1.2); }
         }
 
-        /* ---------- center layout ---------- */
         .center {
           position: relative;
           z-index: 5;
@@ -293,7 +296,6 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           transition: transform 0.1s ease-out;
         }
 
-        /* ---------- ring wrap ---------- */
         .ring-wrap {
           position: relative;
           width: 320px;
@@ -303,7 +305,6 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           justify-content: center;
         }
 
-        /* spinning arc (yellow) */
         .ring {
           position: absolute;
           inset: 0;
@@ -316,16 +317,15 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           stroke-width: 4;
           stroke-linecap: round;
           filter: drop-shadow(0 0 12px rgba(255,215,0,0.9));
-          animation: arcDash 4s linear infinite; /* dashoffset anim for loading feel */
+          animation: arcDash 4s linear infinite;
         }
         @keyframes arcDash {
           0% { stroke-dashoffset: 0; }
-          100% { stroke-dashoffset: -860; } /* total dasharray is 860 */
+          100% { stroke-dashoffset: -860; }
         }
         .ring.spin { animation: spin 12s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        /* yellow glow ring (original breathing effect) */
         .ring-glow {
           position: absolute;
           inset: 0;
@@ -339,10 +339,9 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           50% { opacity: 1; transform: scale(1.08); box-shadow: 0 0 70px 30px rgba(255,215,0,0.25); }
         }
 
-        /* --- NEW: pulsating blue concentric ring --- */
         .ring-blue {
           position: absolute;
-          inset: -15px; /* slightly larger than the glow */
+          inset: -15px;
           border-radius: 50%;
           border: 2px solid rgba(59, 130, 246, 0.5);
           box-shadow: 0 0 15px rgba(59, 130, 246, 0.4);
@@ -353,7 +352,6 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           50% { transform: scale(1.05); opacity: 0.8; }
         }
 
-        /* --- NEW: Entrance animations for text & badge --- */
         .entrance-text {
           opacity: 0;
           transform: translateY(20px);
@@ -373,7 +371,6 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           }
         }
 
-        /* ---------- wordmark ---------- */
         .wordmark {
           font-family: 'Montserrat', sans-serif;
           font-weight: 700;
@@ -400,7 +397,6 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           100% { left: 160%; }
         }
 
-        /* ---------- badge ---------- */
         .badge {
           display: flex;
           align-items: center;
@@ -503,7 +499,6 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
 
       <div className="center">
         <div className="ring-wrap">
-          {/* Spinning arc */}
           <div className="ring spin">
             <svg viewBox="0 0 300 300">
               <circle
@@ -515,11 +510,10 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
               />
             </svg>
           </div>
-          {/* Glowing yellow backdrop */}
           <div className="ring-glow" />
-          {/* NEW: Blue pulsing ring */}
           <div className="ring-blue" />
-          {/* Three.js character container */}
+
+          {/* Character container with fallback image */}
           <div
             ref={threeContainerRef}
             style={{
@@ -529,16 +523,31 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
               position: 'relative',
               zIndex: 10,
             }}
-          />
+          >
+            {/* Fallback image – visible until Three.js sprite is ready */}
+            {!spriteReady && (
+              <img
+                src="/cartoon.jpg"
+                alt="TARA character"
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'contain',
+                  zIndex: 1,
+                }}
+              />
+            )}
+          </div>
         </div>
 
-        {/* Wordmark with entrance animation */}
         <div className="wordmark entrance-text">
           TARA
           <div className="shimmer-effect" />
         </div>
 
-        {/* Badge with entrance animation */}
         <div className="badge entrance-badge">
           Powered by{' '}
           <img

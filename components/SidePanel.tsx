@@ -134,7 +134,7 @@ function RewardsPanel() {
 }
 
 function BrowsePanel({ onCategorySearch, onClose }: { onCategorySearch: (q: string) => void; onClose: () => void }) {
-  const [categories, setCategories] = useState<{ name:string; emoji:string; query:string }[]>([]);
+  const [categories, setCategories] = useState<{ id:string; name:string; emoji:string; query:string; parent?:string }[]>([]);
   const [catLoading, setCatLoading] = useState(true);
 
   useEffect(() => {
@@ -167,7 +167,7 @@ function BrowsePanel({ onCategorySearch, onClose }: { onCategorySearch: (q: stri
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           {categories.map(cat => (
             <button
-              key={cat.name}
+              key={cat.id}
               onClick={() => { onCategorySearch(cat.query); onClose(); }}
               style={{
                 display: 'flex', alignItems: 'center', gap: 10,

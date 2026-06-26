@@ -33,6 +33,29 @@ function stockOk(p: FullProduct) {
   return false;
 }
 
+/* ── Minimal markdown → JSX renderer (handles **bold** and *italic*) ─ */
+function renderMd(text: string): React.ReactNode {
+  return (
+    <>
+      {text.split('\n').map((line, li) => {
+        if (!line.trim()) return <br key={li}/>;
+        const segments = line.split(/(\*\*[^*\n]+\*\*|\*[^*\n]+\*)/g);
+        return (
+          <div key={li} style={{ marginBottom: 5 }}>
+            {segments.map((seg, si) => {
+              if (seg.startsWith('**') && seg.endsWith('**'))
+                return <strong key={si}>{seg.slice(2, -2)}</strong>;
+              if (seg.startsWith('*') && seg.endsWith('*'))
+                return <em key={si}>{seg.slice(1, -1)}</em>;
+              return <span key={si}>{seg}</span>;
+            })}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 export default function ProductModal({ productId, productUrl, lang, onClose }: ProductModalProps) {
   const { addItem, items } = useCart();
   const s = STRINGS[lang];
@@ -273,8 +296,8 @@ export default function ProductModal({ productId, productUrl, lang, onClose }: P
                     <p style={{ fontSize:11, fontWeight:700, color:'var(--c-outline)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:12 }}>
                       AI-Generated Summary
                     </p>
-                    <div style={{ padding:'16px 18px', borderRadius:14, background:'rgba(34,28,49,0.70)', border:'1px solid rgba(74,68,81,0.30)', fontSize:14, lineHeight:1.75, color:'var(--c-on-surface)', whiteSpace:'pre-line' }}>
-                      {summary}
+                    <div style={{ padding:'16px 18px', borderRadius:14, background:'rgba(34,28,49,0.70)', border:'1px solid rgba(74,68,81,0.30)', fontSize:14, lineHeight:1.75, color:'var(--c-on-surface)' }}>
+                      {renderMd(summary)}
                     </div>
                     <p style={{ fontSize:11, color:'var(--c-outline)', marginTop:12, textAlign:'center' }}>AI-generated · Always verify with the product page</p>
                     <button onClick={()=>{ setTab('ask'); }}

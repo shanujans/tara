@@ -1,7 +1,7 @@
 /**
  * GET /api/categories
- * Calls kapruka_list_categories with response_format:"json"
- * Returns cleaned, emoji-labelled category list with 60-min cache.
+ * Calls kapruka_list_categories with response_format:"json" and depth:2
+ * Returns cleaned, emoji-labelled category list (with subcategories) with 60-min cache.
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { rateLimit } from '@/lib/security';
@@ -40,12 +40,48 @@ function getEmoji(name: string): string {
 }
 
 interface RawCategory {
-  id?: string | number;
-  name?: string;
-  slug?: string;
-  title?: string;
-  label?: string;
+  id?:          string | number;
+  name?:        string;
+  slug?:        string;
+  title?:       string;
+  label?:       string;
   description?: string;
+  children?:    RawCategory[];   // populated when depth:2 is requested
+}
+
+interface Category {
+  id:      string;
+  name:    string;
+  emoji:   string;
+  query:   string;
+  parent?: string;               // set for subcategories; undefined for top-level
+}
+
+/* Recursively flatten categories + their children into a single list. */
+function flattenCategories(cats: RawCategory[], parent?: string): Category[] {
+  return cats.flatMap(c => {
+    const name = (c.name ?? c.title ?? c.label ?? '').trim();
+    if (!name) return [];
+
+    const self: Category = {
+      /* Composite id: the API returns no stable id/slug, so falling back
+         to name alone causes duplicate keys when the same name appears
+         as a subcategory under multiple parents (e.g. "Fruits", "Liquor").
+         Including the parent makes every entry in the flat list unique. */
+      id:    parent ? `${parent}::${name}` : String(c.id ?? c.slug ?? name),
+      name,
+      emoji: getEmoji(name),
+      /* query = natural language sent to the chat when user clicks */
+      query: `Show me ${name.toLowerCase()} products on Kapruka`,
+      ...(parent ? { parent } : {}),
+    };
+
+    const children = Array.isArray(c.children)
+      ? flattenCategories(c.children, name)
+      : [];
+
+    return [self, ...children];
+  });
 }
 
 export async function GET(req: NextRequest) {
@@ -54,7 +90,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Rate limited' }, { status: 429 });
 
   const key = cacheKey('categories', 'all');
-  const hit = cacheGet<unknown[]>(key);
+  const hit = cacheGet<Category[]>(key);
   if (hit) { console.log('[cache HIT] categories'); return NextResponse.json({ categories: hit }); }
 
   try {
@@ -69,8 +105,8 @@ export async function GET(req: NextRequest) {
         method: 'tools/call',
         params: {
           name: 'kapruka_list_categories',
-          /* response_format:"json" returns structured category list */
-          arguments: { params: { response_format: 'json' } },
+          /* depth:2 fetches top-level categories AND their subcategories */
+          arguments: { params: { response_format: 'json', depth: 2 } },
         },
       }),
     });
@@ -111,17 +147,11 @@ export async function GET(req: NextRequest) {
       ) as RawCategory[];
     }
 
-    console.log(`[categories] fetched ${rawCats.length} from MCP`);
+    console.log(`[categories] fetched ${rawCats.length} top-level from MCP`);
 
-    const categories = rawCats
-      .map(c => ({
-        name:  (c.name ?? c.title ?? c.label ?? '').trim(),
-        emoji: getEmoji(c.name ?? c.title ?? c.label ?? ''),
-        /* query = natural language sent to the chat when user clicks */
-        query: `Show me ${(c.name ?? c.title ?? c.label ?? '').toLowerCase()} products on Kapruka`,
-        id:    String(c.id ?? c.slug ?? c.name ?? ''),
-      }))
-      .filter(c => c.name.length > 0);
+    const categories = flattenCategories(rawCats);
+
+    console.log(`[categories] ${categories.length} total after flattening subcategories`);
 
     cacheSet(key, categories, TTL.CITIES); /* 60-min cache */
     return NextResponse.json({ categories });
