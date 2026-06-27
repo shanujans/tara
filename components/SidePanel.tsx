@@ -15,18 +15,18 @@ interface SidePanelProps {
 }
 
 const FALLBACK_CATEGORIES = [
-  { emoji: '💐', name: 'Flowers',        query: 'Show me flowers and bouquets on Kapruka'       },
-  { emoji: '🎂', name: 'Cakes',          query: 'Show me birthday cakes on Kapruka'              },
-  { emoji: '🎁', name: 'Gift Hampers',   query: 'Show me gift hampers on Kapruka'                },
-  { emoji: '📱', name: 'Electronics',   query: 'Show me electronics on Kapruka'                  },
-  { emoji: '👗', name: 'Fashion',        query: 'Show me fashion and clothing on Kapruka'        },
-  { emoji: '🛒', name: 'Groceries',      query: 'Show me groceries on Kapruka'                   },
-  { emoji: '📚', name: 'Books',          query: 'Show me books on Kapruka'                       },
-  { emoji: '🎮', name: 'Toys & Games',   query: 'Show me toys and games on Kapruka'             },
-  { emoji: '💍', name: 'Jewelry',        query: 'Show me jewelry on Kapruka'                    },
-  { emoji: '🍫', name: 'Chocolates',     query: 'Show me chocolates and sweets on Kapruka'      },
-  { emoji: '🌿', name: 'Health & Beauty',query: 'Show me health and beauty products on Kapruka' },
-  { emoji: '🏠', name: 'Home & Living',  query: 'Show me home and decor on Kapruka'             },
+  { id:'flowers',   emoji: '💐', name: 'Flowers',         query: 'Show me flowers and bouquets on Kapruka'       },
+  { id:'cakes',     emoji: '🎂', name: 'Cakes',            query: 'Show me birthday cakes on Kapruka'              },
+  { id:'gifts',     emoji: '🎁', name: 'Gift Hampers',     query: 'Show me gift hampers on Kapruka'                },
+  { id:'elec',      emoji: '📱', name: 'Electronics',      query: 'Show me electronics on Kapruka'                 },
+  { id:'fashion',   emoji: '👗', name: 'Fashion',          query: 'Show me fashion and clothing on Kapruka'        },
+  { id:'grocery',   emoji: '🛒', name: 'Groceries',        query: 'Show me groceries on Kapruka'                   },
+  { id:'books',     emoji: '📚', name: 'Books',            query: 'Show me books on Kapruka'                       },
+  { id:'toys',      emoji: '🎮', name: 'Toys & Games',     query: 'Show me toys and games on Kapruka'             },
+  { id:'jewelry',   emoji: '💍', name: 'Jewelry',          query: 'Show me jewelry on Kapruka'                    },
+  { id:'choc',      emoji: '🍫', name: 'Chocolates',       query: 'Show me chocolates and sweets on Kapruka'      },
+  { id:'health',    emoji: '🌿', name: 'Health & Beauty',  query: 'Show me health and beauty products on Kapruka' },
+  { id:'home',      emoji: '🏠', name: 'Home & Living',    query: 'Show me home and decor on Kapruka'             },
 ];
 
 const FAQS = [
@@ -133,55 +133,286 @@ function RewardsPanel() {
   );
 }
 
+/* ─── Types ────────────────────────────────────────────────────────────── */
+type CatItem = {
+  id:      string;
+  name:    string;
+  emoji:   string;
+  query:   string;
+  url?:    string;   // Kapruka page URL — present when MCP returned one
+  parent?: string;   // set for level-2 items; absent for top-level
+};
+
+type L3Item = {
+  name:  string;
+  url:   string;
+  emoji: string;
+  query: string;
+};
+
+/* ─── Shared card button ────────────────────────────────────────────────── */
+function CatBtn({
+  emoji, name, onClick, showArrow = false, disabled = false,
+}: {
+  emoji: string; name: string; onClick: () => void;
+  showArrow?: boolean; disabled?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        padding: '11px 12px', borderRadius: 10,
+        cursor: disabled ? 'default' : 'pointer',
+        background: 'var(--c-surface-container)',
+        border: '1px solid rgba(74,68,81,0.25)',
+        transition: 'all 0.15s ease', textAlign: 'left',
+        opacity: disabled ? 0.5 : 1, width: '100%',
+      }}
+      onMouseOver={e => {
+        if (!disabled) {
+          e.currentTarget.style.background    = 'var(--c-surface-container-high)';
+          e.currentTarget.style.borderColor   = 'rgba(215,186,255,0.30)';
+        }
+      }}
+      onMouseOut={e => {
+        e.currentTarget.style.background  = 'var(--c-surface-container)';
+        e.currentTarget.style.borderColor = 'rgba(74,68,81,0.25)';
+      }}
+    >
+      <span style={{ fontSize: 20, flexShrink: 0 }}>{emoji}</span>
+      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--c-on-surface)', lineHeight: 1.3, flex: 1 }}>
+        {name}
+      </span>
+      {showArrow && (
+        <ChevronRightIcon size={12} style={{ color: 'var(--c-outline)', flexShrink: 0 }} />
+      )}
+    </button>
+  );
+}
+
+/* ─── Back button ───────────────────────────────────────────────────────── */
+function BackBtn({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 4,
+        padding: '3px 10px', borderRadius: 20,
+        background: 'rgba(189,147,249,0.12)',
+        border: '1px solid rgba(189,147,249,0.30)',
+        color: 'var(--c-primary)', fontSize: 12, fontWeight: 600,
+        cursor: 'pointer', fontFamily: 'var(--font-body)', flexShrink: 0,
+      }}
+    >
+      <ChevronRightIcon size={12} style={{ transform: 'rotate(180deg)' }} />
+      Back
+    </button>
+  );
+}
+
+/* ─── Skeleton grid ─────────────────────────────────────────────────────── */
+function SkeletonGrid({ count = 8 }: { count?: number }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="skeleton" style={{ height: 48, borderRadius: 10 }} />
+      ))}
+    </div>
+  );
+}
+
+/* ─── BrowsePanel — 3-level navigation ─────────────────────────────────── */
 function BrowsePanel({ onCategorySearch, onClose }: { onCategorySearch: (q: string) => void; onClose: () => void }) {
-  const [categories, setCategories] = useState<{ id:string; name:string; emoji:string; query:string; parent?:string }[]>([]);
+  /* Level 1+2 from MCP */
+  const [categories, setCategories] = useState<CatItem[]>([]);
   const [catLoading, setCatLoading] = useState(true);
 
+  /* Drill-down state */
+  const [selected,    setSelected]    = useState<CatItem | null>(null);  // clicked top-level
+  const [selectedSub, setSelectedSub] = useState<CatItem | null>(null);  // clicked level-2
+  const [level3,      setLevel3]      = useState<L3Item[]>([]);
+  const [loadingL3,   setLoadingL3]   = useState(false);
+
+  /* Fetch level 1+2 on mount */
   useEffect(() => {
     fetch('/api/categories')
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-      .then(d => {
-        if (Array.isArray(d.categories) && d.categories.length > 0) {
-          setCategories(d.categories);
-        } else {
-          setCategories(FALLBACK_CATEGORIES);
-        }
-      })
+      .then(d => setCategories(
+        Array.isArray(d.categories) && d.categories.length > 0 ? d.categories : FALLBACK_CATEGORIES
+      ))
       .catch(() => setCategories(FALLBACK_CATEGORIES))
       .finally(() => setCatLoading(false));
   }, []);
 
+  /* Derived lists */
+  const topLevel = categories.filter(c => !c.parent);
+  const subItems = selected ? categories.filter(c => c.parent === selected.name) : [];
+
+  /* ── Handlers ─────────────────────────────────────────────────────── */
+
+  /* Clicking a top-level category */
+  const handleTopClick = (cat: CatItem) => {
+    const hasSubs = categories.some(c => c.parent === cat.name);
+    if (hasSubs) {
+      setSelected(cat);
+      setSelectedSub(null);
+      setLevel3([]);
+    } else {
+      onCategorySearch(cat.query);
+      onClose();
+    }
+  };
+
+  /* Clicking a level-2 subcategory — try to fetch level-3, else search */
+  const handleSubClick = async (cat: CatItem) => {
+    if (!cat.url) {
+      onCategorySearch(cat.query);
+      onClose();
+      return;
+    }
+
+    setSelectedSub(cat);
+    setLoadingL3(true);
+    setLevel3([]);
+
+    try {
+      const res  = await fetch(`/api/categories?sub=${encodeURIComponent(cat.url)}`);
+      const data = await res.json() as { subcategories?: L3Item[] };
+      const subs = data.subcategories ?? [];
+
+      if (subs.length > 0) {
+        setLevel3(subs);
+      } else {
+        /* No level-3 exists — trigger search directly */
+        onCategorySearch(cat.query);
+        onClose();
+      }
+    } catch {
+      onCategorySearch(cat.query);
+      onClose();
+    } finally {
+      setLoadingL3(false);
+    }
+  };
+
+  /* Clicking a level-3 sub-subcategory */
+  const handleL3Click = (item: L3Item) => {
+    onCategorySearch(item.query);
+    onClose();
+  };
+
+  /* ── Breadcrumb / header ──────────────────────────────────────────── */
+  const view: 'top' | 'l2' | 'l3' = level3.length > 0 || loadingL3 ? 'l3' : selected ? 'l2' : 'top';
+
+  const headerLabel = (() => {
+    if (catLoading) return 'Loading categories…';
+    if (view === 'l3' && selectedSub) return `${selectedSub.emoji} ${selectedSub.name}`;
+    if (view === 'l2' && selected)    return `${selected.emoji} ${selected.name}`;
+    return `${topLevel.length} Kapruka Categories`;
+  })();
+
+  const handleBack = () => {
+    if (view === 'l3') { setLevel3([]); setSelectedSub(null); }
+    else               { setSelected(null); setSelectedSub(null); setLevel3([]); }
+  };
+
+  /* ── Render ───────────────────────────────────────────────────────── */
   return (
     <div style={{ padding: 16 }}>
-      <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--c-outline)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
-        {catLoading ? 'Loading categories…' : `${categories.length} Kapruka Categories`}
-      </p>
 
-      {catLoading ? (
+      {/* Header row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        {view !== 'top' && <BackBtn onClick={handleBack} />}
+        <p style={{
+          fontSize: 11, fontWeight: 700, color: 'var(--c-outline)',
+          textTransform: 'uppercase', letterSpacing: '0.08em',
+          margin: 0, flex: 1,
+          /* Truncate long subcategory names */
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {headerLabel}
+        </p>
+        {view === 'l2' && subItems.length > 0 && (
+          <span style={{ fontSize: 11, color: 'var(--c-outline)', flexShrink: 0 }}>
+            {subItems.length} items
+          </span>
+        )}
+        {view === 'l3' && level3.length > 0 && (
+          <span style={{ fontSize: 11, color: 'var(--c-outline)', flexShrink: 0 }}>
+            {level3.length} items
+          </span>
+        )}
+      </div>
+
+      {/* ── View: top-level loading skeleton ── */}
+      {catLoading && <SkeletonGrid count={8} />}
+
+      {/* ── View: top-level categories (L1) ── */}
+      {!catLoading && view === 'top' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="skeleton" style={{ height: 48, borderRadius: 10 }} />
+          {topLevel.map(cat => (
+            <CatBtn
+              key={cat.id}
+              emoji={cat.emoji}
+              name={cat.name}
+              onClick={() => handleTopClick(cat)}
+              showArrow={categories.some(c => c.parent === cat.name)}
+            />
           ))}
         </div>
-      ) : (
+      )}
+
+      {/* ── View: level-2 subcategories ── */}
+      {!catLoading && view === 'l2' && selected && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          {categories.map(cat => (
-            <button
-              key={cat.id}
-              onClick={() => { onCategorySearch(cat.query); onClose(); }}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                padding: '11px 12px', borderRadius: 10, cursor: 'pointer',
-                background: 'var(--c-surface-container)',
-                border: '1px solid rgba(74,68,81,0.25)',
-                transition: 'all 0.15s ease', textAlign: 'left',
-              }}
-              onMouseOver={e => { e.currentTarget.style.background = 'var(--c-surface-container-high)'; e.currentTarget.style.borderColor = 'rgba(215,186,255,0.30)'; }}
-              onMouseOut={e => { e.currentTarget.style.background = 'var(--c-surface-container)'; e.currentTarget.style.borderColor = 'rgba(74,68,81,0.25)'; }}
-            >
-              <span style={{ fontSize: 20, flexShrink: 0 }}>{cat.emoji}</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--c-on-surface)', lineHeight: 1.3 }}>{cat.name}</span>
-            </button>
+          {/* "All [Category]" shortcut */}
+          <CatBtn
+            key="__all__"
+            emoji={selected.emoji}
+            name={`All ${selected.name}`}
+            onClick={() => { onCategorySearch(selected.query); onClose(); }}
+          />
+          {subItems.map(sub => (
+            <CatBtn
+              key={sub.id}
+              emoji={sub.emoji}
+              name={sub.name}
+              onClick={() => handleSubClick(sub)}
+              showArrow={!!sub.url}   /* arrow = may have level-3 */
+            />
+          ))}
+        </div>
+      )}
+
+      {/* ── View: level-3 loading skeleton ── */}
+      {loadingL3 && (
+        <>
+          <p style={{ fontSize: 11, color: 'var(--c-outline)', marginBottom: 8 }}>
+            Fetching subcategories…
+          </p>
+          <SkeletonGrid count={6} />
+        </>
+      )}
+
+      {/* ── View: level-3 scraped sub-subcategories ── */}
+      {!loadingL3 && view === 'l3' && selectedSub && level3.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {/* "All [Subcategory]" shortcut */}
+          <CatBtn
+            key="__all_sub__"
+            emoji={selectedSub.emoji}
+            name={`All ${selectedSub.name}`}
+            onClick={() => { onCategorySearch(selectedSub.query); onClose(); }}
+          />
+          {level3.map((item, i) => (
+            <CatBtn
+              key={i}
+              emoji={item.emoji}
+              name={item.name}
+              onClick={() => handleL3Click(item)}
+            />
           ))}
         </div>
       )}

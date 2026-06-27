@@ -2,6 +2,10 @@
  * GET /api/categories
  * Calls kapruka_list_categories with response_format:"json" and depth:2
  * Returns cleaned, emoji-labelled category list (with subcategories) with 60-min cache.
+ *
+ * GET /api/categories?sub=<encoded_kapruka_url>
+ * Scrapes that Kapruka subcategory page for level-3 sub-subcategories.
+ * Uses regex to find /lanka/ links — no extra npm packages needed.
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { rateLimit } from '@/lib/security';
@@ -46,7 +50,8 @@ interface RawCategory {
   title?:       string;
   label?:       string;
   description?: string;
-  children?:    RawCategory[];   // populated when depth:2 is requested
+  url?:         string;            // ← Kapruka page URL returned by MCP
+  children?:    RawCategory[];
 }
 
 interface Category {
@@ -54,7 +59,16 @@ interface Category {
   name:    string;
   emoji:   string;
   query:   string;
-  parent?: string;               // set for subcategories; undefined for top-level
+  url?:    string;                 // ← Kapruka page URL (used for level-3 scraping)
+  parent?: string;
+}
+
+/* Level-3 subcategory item (returned by ?sub= endpoint) */
+interface Level3Item {
+  name:  string;
+  url:   string;
+  emoji: string;
+  query: string;
 }
 
 /* Recursively flatten categories + their children into a single list. */
@@ -64,15 +78,12 @@ function flattenCategories(cats: RawCategory[], parent?: string): Category[] {
     if (!name) return [];
 
     const self: Category = {
-      /* Composite id: the API returns no stable id/slug, so falling back
-         to name alone causes duplicate keys when the same name appears
-         as a subcategory under multiple parents (e.g. "Fruits", "Liquor").
-         Including the parent makes every entry in the flat list unique. */
       id:    parent ? `${parent}::${name}` : String(c.id ?? c.slug ?? name),
       name,
       emoji: getEmoji(name),
-      /* query = natural language sent to the chat when user clicks */
       query: `Show me ${name.toLowerCase()} products on Kapruka`,
+      /* Preserve the URL so SidePanel can request level-3 scraping */
+      ...(c.url ? { url: c.url } : {}),
       ...(parent ? { parent } : {}),
     };
 
@@ -84,8 +95,127 @@ function flattenCategories(cats: RawCategory[], parent?: string): Category[] {
   });
 }
 
+/**
+ * Scrape level-3 sub-subcategories from a Kapruka category page.
+ *
+ * Kapruka renders them as filter pills at the top of each subcategory
+ * listing. Their hrefs follow the pattern:
+ *   /online/{cat}/price/{subcat}/lanka/{sub_subcat}
+ *
+ * We fetch the page HTML and regex-extract all such links.
+ * No npm package required — built-in fetch + regex only.
+ */
+async function scrapeLevel3(pageUrl: string): Promise<Level3Item[]> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const res = await fetch(pageUrl, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent':      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept':          'text/html,application/xhtml+xml',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer':         'https://www.kapruka.com/',
+      },
+    });
+
+    clearTimeout(timer);
+    if (!res.ok) return [];
+
+    const html = await res.text();
+
+    /*
+     * Match anchor tags whose href contains /lanka/ — these are level-3 links.
+     * Pattern: href="/online/{cat}/price/{subcat}/lanka/{sub}"...>{text}</a>
+     *
+     * Two passes:
+     *  1. Extract all /lanka/ hrefs
+     *  2. For each href, find its anchor text by locating it in the HTML
+     */
+    const hrefRe  = /href="(\/online\/[^"]+\/lanka\/[^"]+)"/g;
+    const seen    = new Set<string>();
+    const results: Level3Item[] = [];
+
+    let hm: RegExpExecArray | null;
+    while ((hm = hrefRe.exec(html)) !== null) {
+      const href = hm[1];
+      if (seen.has(href)) continue;
+      seen.add(href);
+
+      /* Find the text content of the anchor that contains this href.
+         Look ahead up to 300 chars from the href position for ">...text...</" */
+      const pos      = hm.index;
+      const snippet  = html.slice(pos, pos + 300);
+
+      /* Match:  >  optional whitespace/tags  text  < */
+      const txtMatch = snippet.match(/>[^<]*>?\s*([A-Za-z0-9][^<\n\r]{1,70}?)\s*<\/a>/);
+      const rawName  = txtMatch ? txtMatch[1].trim() : '';
+
+      /* Decode common HTML entities */
+      const name = rawName
+        .replace(/&amp;/g,   '&')
+        .replace(/&apos;/g,  "'")
+        .replace(/&#039;/g,  "'")
+        .replace(/&quot;/g,  '"')
+        .replace(/&lt;/g,    '<')
+        .replace(/&gt;/g,    '>')
+        .trim();
+
+      /* Skip empty, too-short, or UI-noise strings */
+      if (!name || name.length < 2 || name.length > 80) continue;
+      if (/^(home|back|more|all items|view all|sort|filter|clear|search)$/i.test(name)) continue;
+
+      results.push({
+        name,
+        url:   `https://www.kapruka.com${href}`,
+        emoji: getEmoji(name),
+        query: `Show me ${name.toLowerCase()} on Kapruka`,
+      });
+    }
+
+    return results;
+  } catch {
+    clearTimeout(timer);
+    return [];
+  }
+}
+
 export async function GET(req: NextRequest) {
   const ip = req.headers.get('x-forwarded-for') ?? 'local';
+
+  /* ─────────────────────────────────────────────────────────────
+   *  ?sub=<encoded URL>  →  on-demand level-3 scrape
+   *  Called by SidePanel when user taps a level-2 category.
+   * ───────────────────────────────────────────────────────────── */
+  const subUrl = req.nextUrl.searchParams.get('sub');
+  if (subUrl) {
+    /* Basic allowlist check — only scrape kapruka.com pages */
+    if (!subUrl.startsWith('https://www.kapruka.com/')) {
+      return NextResponse.json({ error: 'Invalid URL' }, { status: 400 });
+    }
+
+    if (!rateLimit(`categories-sub:${ip}`, 20, 60_000))
+      return NextResponse.json({ error: 'Rate limited' }, { status: 429 });
+
+    /* Cache each subcategory page individually for 60 min */
+    const subKey   = cacheKey('level3', subUrl);
+    const subCached = cacheGet<Level3Item[]>(subKey);
+    if (subCached) {
+      console.log('[cache HIT] level3', subUrl);
+      return NextResponse.json({ subcategories: subCached });
+    }
+
+    const subcategories = await scrapeLevel3(subUrl);
+    console.log(`[level3] scraped ${subcategories.length} items from ${subUrl}`);
+
+    if (subcategories.length > 0) cacheSet(subKey, subcategories, TTL.CITIES);
+    return NextResponse.json({ subcategories });
+  }
+
+  /* ─────────────────────────────────────────────────────────────
+   *  Default  →  MCP level-1 + level-2 categories (unchanged)
+   * ───────────────────────────────────────────────────────────── */
   if (!rateLimit(`categories:${ip}`, 30, 60_000))
     return NextResponse.json({ error: 'Rate limited' }, { status: 429 });
 
@@ -105,7 +235,6 @@ export async function GET(req: NextRequest) {
         method: 'tools/call',
         params: {
           name: 'kapruka_list_categories',
-          /* depth:2 fetches top-level categories AND their subcategories */
           arguments: { params: { response_format: 'json', depth: 2 } },
         },
       }),
@@ -125,7 +254,6 @@ export async function GET(req: NextRequest) {
 
     if (!raw) return NextResponse.json({ error: 'Empty MCP response' }, { status: 500 });
 
-    /* Parse JSON from MCP */
     let parsed: unknown;
     try { parsed = JSON.parse(raw); }
     catch {
@@ -133,7 +261,6 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Non-JSON categories' }, { status: 500 });
     }
 
-    /* Normalise — handle both array and { categories: [] } shapes */
     let rawCats: RawCategory[] = [];
     if (Array.isArray(parsed)) {
       rawCats = parsed as RawCategory[];
@@ -153,7 +280,7 @@ export async function GET(req: NextRequest) {
 
     console.log(`[categories] ${categories.length} total after flattening subcategories`);
 
-    cacheSet(key, categories, TTL.CITIES); /* 60-min cache */
+    cacheSet(key, categories, TTL.CITIES);
     return NextResponse.json({ categories });
   } catch (e) {
     console.error('categories error:', e);
