@@ -272,15 +272,18 @@ async function aiValidateProducts(
   const q = query.toLowerCase();
 
   // ── Intent flags ──────────────────────────────────────────────────────────
+  // ── Intent flags ──────────────────────────────────────────────────────────
   const isTechSearch    = /macbook|mac mini|imac|laptop|computer|ipad|tablet|monitor|ssd|ram|router|wifi|keyboard|mouse/i.test(q);
-  const isAppleSearch   = /\bmac\b|macbook|imac|mac mini|ipad|iphone|airpods|apple/i.test(q);
-  const isPhoneSearch   = /iphone|samsung|galaxy|pixel|smartphone|redmi|xiaomi|oppo/i.test(q);
+  const isAppleSearch   = /\bmac\b|macbook|imac|mac mini|ipad|iphone|airpods|\bapple\b/i.test(q);
+  const isPhoneSearch   = /iphone|samsung|galaxy|pixel|smartphone|redmi|xiaomi|oppo|oneplus|nokia/i.test(q);
   const isCosmeticQuery = /lipstick|foundation|mascara|blush|concealer|eyeliner|makeup|beauty|cosmetic/i.test(q);
-  const isFoodSearch    = /\bapple\b.*\b(fruit|kg|fresh|eat)\b|\b(fresh|fruit|kg|eat).*\bapple\b/i.test(q);
+  const isFoodSearch    = /\bapple\b/i.test(q) && /fruit|kg|fresh|eat|red|green|basket/i.test(q);
+  // Automobile guard — "oil" / "lubricant" should NEVER match liquor, food, beauty
+  const isAutoSearch    = /engine.?oil|lubricant|gear.?oil|grease|coolant|brake.?fluid|transmission/i.test(q);
 
   LOG.info(
     `aiValidateProducts flags — tech=${isTechSearch} apple=${isAppleSearch} ` +
-    `phone=${isPhoneSearch} cosmetic=${isCosmeticQuery} food=${isFoodSearch} | q="${q}"`
+    `phone=${isPhoneSearch} cosmetic=${isCosmeticQuery} food=${isFoodSearch} auto=${isAutoSearch} | q="${q}"`
   );
 
   const before = products.length;
@@ -288,6 +291,20 @@ async function aiValidateProducts(
   const filtered = products.filter(p => {
     const name = (p.name     ?? '').toLowerCase();
     const cat  = (p.category ?? '').toLowerCase();
+
+    // ── Automobile / oil search guard ─────────────────────────────────────
+    // This catches the "engine oil → Jack Daniels" bug where the fallback
+    // broadens "engine oil" to "oil" and returns liquor / cooking oil.
+    if (isAutoSearch) {
+      if (/liquor|whisky|whiskey|brandy|arrack|beer|wine|spirits/i.test(cat + ' ' + name)) {
+        LOG.info(`  ✂️  Removed (auto search → liquor false positive): "${p.name}" [${p.category}]`);
+        return false;
+      }
+      if (/coconut.?oil|cooking.?oil|hair.?oil|baby.?oil|essential.?oil|olive.?oil/i.test(name)) {
+        LOG.info(`  ✂️  Removed (auto search → food/beauty oil false positive): "${p.name}"`);
+        return false;
+      }
+    }
 
     // ── Tech search guards ────────────────────────────────────────────────
     if (isTechSearch && !isCosmeticQuery) {
@@ -303,21 +320,19 @@ async function aiValidateProducts(
 
     // ── Apple/MAC disambiguation ──────────────────────────────────────────
     if (isAppleSearch && !isCosmeticQuery && !isFoodSearch) {
-      // "MAC Studio Fix", "MAC Lipstick", "M.A.C. Foundation" etc.
       if (/\bmac\b/i.test(name) && /cosmetic|beauty|lip|eye|studio|fix|powder|blush|brush/i.test(name + ' ' + cat)) {
         LOG.info(`  ✂️  Removed (MAC cosmetic false positive): "${p.name}" [${p.category}]`);
         return false;
       }
-      // Apple fruit false positive on Apple tech searches
-      if (/\bapple\b/i.test(name) && /fruit|vegetable|fresh|produce/i.test(cat)) {
+      if (/\bapple\b/i.test(name) && /fruit|vegetable|fresh|grocery/i.test(cat)) {
         LOG.info(`  ✂️  Removed (Apple fruit on tech search): "${p.name}" [${p.category}]`);
         return false;
       }
     }
 
-    // ── Phone search — exclude accessories that sneak in at high prices ───
+    // ── Phone search — block accessories slipping in at phone-level prices ─
     if (isPhoneSearch) {
-      if (/\b(cover|case|screen.?guard|tempered.?glass|cable|charger|adapter|holder|stand)\b/i.test(name) && p.price > 20000) {
+      if (/\b(cover|case|screen.?guard|tempered.?glass|cable|charger|adapter|holder|stand)\b/i.test(name) && p.price > 25000) {
         LOG.info(`  ✂️  Removed (expensive accessory on phone search): "${p.name}" LKR ${p.price}`);
         return false;
       }
@@ -346,11 +361,17 @@ Products: ${JSON.stringify(filtered.map(p => ({ id: p.id, name: p.name, category
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN HANDLER
 // ─────────────────────────────────────────────────────────────────────────────
+// Loopback IPs are never real client IPs in production —
+// exempt them so local dev doesn't burn the rate-limit bucket.
+const LOOPBACK = new Set(['::1', '127.0.0.1', '::ffff:127.0.0.1', 'localhost']);
+
 export async function POST(req: NextRequest) {
   const routeStart = Date.now();
-  const ip = req.headers.get('x-forwarded-for') ?? 'unknown';
+  const ip = req.headers.get('x-real-ip')
+          ?? req.headers.get('x-forwarded-for')?.split(',')[0].trim()
+          ?? 'unknown';
 
-  if (!rateLimit(ip, 30, 60_000)) {
+  if (!LOOPBACK.has(ip) && !rateLimit(ip, 30, 60_000)) {
     LOG.warn(`Rate limit hit for IP: ${ip}`);
     return NextResponse.json({ products: [] }, { status: 429 });
   }
@@ -435,59 +456,144 @@ export async function POST(req: NextRequest) {
 
   LOG.parse(trimmed, sp);
 
-  // ── Execute search with 3-tier fallback ───────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SEARCH STRATEGY: 3-tier with Category Discovery
+  //
+  // The AI in chat/route.ts picks a category name as a hint, but Kapruka's MCP
+  // may use different internal category strings. Instead of hardcoding a mapping,
+  // we let the MCP tell us the right category:
+  //
+  // TIER-1: Try with full params (AI-specified category + price + stock)
+  // TIER-2: DISCOVERY — search without category, bucket results by their REAL
+  //         MCP category, find the dominant category, re-search with its exact
+  //         name. This self-corrects any AI category name mismatch automatically.
+  // TIER-3: Broader keyword (first word only) if TIER-1 + TIER-2 both low.
+  // ═══════════════════════════════════════════════════════════════════════════
   try {
     const sid = await mcpSession();
 
     // ── TIER 1: Full params as-is ─────────────────────────────────────────
     const r1 = await mcpSearch(sp, sid, 50, 'TIER-1 (full params)');
 
-    // ── TIER 2: Keep category, relax price + stock ────────────────────────
-    // ✅ FIX: category is preserved so "Computers And Accessories" stays locked
+    // ── TIER 2: Category Discovery ────────────────────────────────────────
+    // Fires when TIER-1 returns < 5 results — usually means the category string
+    // the AI chose doesn't match what Kapruka's MCP stores internally.
+    // e.g. AI sends "Engine Oils And Lubricants" but MCP stores "Automobile".
+    //
+    // Strategy:
+    //   1. Search WITHOUT any category filter → get products from all categories
+    //   2. Bucket those products by their ACTUAL MCP category field
+    //   3. Find the dominant category (most products for this keyword)
+    //   4. Re-search WITH that real category name for a clean, precise set
+    //   5. Fall back to raw discovery results if targeted re-search underperforms
+    let discoveredCategory: string | undefined;
     let r2: Record<string, unknown>[] = [];
+
     if (r1.length < 5) {
       LOG.fallback(
-        'TIER-2 (category kept, price/stock relaxed)',
-        `only ${r1.length} results from TIER-1`,
+        'TIER-2 DISCOVERY (category:null)',
+        `only ${r1.length} results from TIER-1 with category="${sp.category ?? 'null'}"`,
         r1.length,
       );
-      r2 = await mcpSearch(
-        {
-          q:             sp.q,
-          category:      sp.category,   // ← KEEP category filter
-          in_stock_only: false,          // ← relax stock
-          sort:          'relevance',
-          // min_price / max_price intentionally dropped for broader results
-        },
+
+      const discoveryRaw = await mcpSearch(
+        { q: sp.q, in_stock_only: false, sort: 'relevance' },
         sid,
         50,
-        'TIER-2 (category+no-price)',
+        'TIER-2 DISCOVERY',
       );
+
+      if (discoveryRaw.length > 0) {
+        // ── Bucket by the category field that MCP actually returned ─────────
+        const catBuckets: Record<string, Array<Record<string, unknown>>> = {};
+        for (const item of discoveryRaw) {
+          const p   = sanitizeProduct(item) as Product;
+          const cat = p.category || 'Unknown';
+          if (!catBuckets[cat]) catBuckets[cat] = [];
+          catBuckets[cat].push(item);
+        }
+
+        // Sort categories by product count (most → least)
+        const sortedDiscovered = Object.entries(catBuckets)
+          .sort((a, b) => b[1].length - a[1].length);
+
+        // Log the full breakdown — this is the key diagnostic output
+        // e.g. [TARA:SEARCH] DISCOVERY breakdown: { "Automobile": 18, "Grocery": 3, ... }
+        const breakdown = Object.fromEntries(
+          sortedDiscovered.map(([cat, items]) => [cat, items.length])
+        );
+        LOG.info(`DISCOVERY category breakdown for q="${sp.q}":`, breakdown);
+
+        discoveredCategory        = sortedDiscovered[0]?.[0];
+        const discoveredCount     = sortedDiscovered[0]?.[1].length ?? 0;
+        LOG.info(`Dominant category: "${discoveredCategory}" (${discoveredCount} products)`);
+
+        const aiCatLower   = (sp.category ?? '').toLowerCase();
+        const realCatLower = (discoveredCategory ?? '').toLowerCase();
+
+        if (discoveredCategory && realCatLower !== aiCatLower) {
+          // Category mismatch — re-search with the REAL name from MCP
+          LOG.warn(
+            `Category mismatch: AI sent "${sp.category}" → ` +
+            `MCP dominant is "${discoveredCategory}" — re-searching with real name`,
+          );
+
+          const r2Targeted = await mcpSearch(
+            {
+              q:             sp.q,
+              category:      discoveredCategory,   // ← real MCP category name
+              min_price:     sp.min_price,
+              max_price:     sp.max_price,
+              in_stock_only: false,
+              sort:          sp.sort,
+            },
+            sid,
+            50,
+            `TIER-2 TARGETED ("${discoveredCategory}")`,
+          );
+
+          // Use targeted if it's comparable to discovery; else use raw discovery
+          r2 = r2Targeted.length >= Math.floor(discoveredCount * 0.5)
+            ? r2Targeted
+            : discoveryRaw;
+
+          LOG.info(
+            `TIER-2 result: targeted=${r2Targeted.length}, discovery=${discoveryRaw.length} → using ${r2 === r2Targeted ? 'targeted' : 'discovery'}`,
+          );
+        } else {
+          // Category matched or no category was specified — use discovery directly
+          r2 = discoveryRaw;
+          LOG.info(`TIER-2: category matched or no category — using discovery results directly (${r2.length})`);
+        }
+      } else {
+        LOG.warn(`TIER-2 DISCOVERY also returned 0 results for q="${sp.q}"`);
+      }
     }
 
-    // ── TIER 3: Drop category, broaden keyword ────────────────────────────
+    // ── TIER 3: Broader keyword ───────────────────────────────────────────
+    // Only fires if TIER-1 + TIER-2 are both still very thin.
+    // No SKIP_TIER3 blocklist needed: TIER-2 discovery already validated whether
+    // MCP has products for this keyword — if it doesn't, broadening may help.
     let r3: Record<string, unknown>[] = [];
     if (r1.length + r2.length < 5) {
       const words   = sp.q.split(' ').filter(w => w.length > 2);
       const broader = words[0] ?? sp.q;
 
-      LOG.fallback(
-        'TIER-3 (category dropped, broader keyword)',
-        `only ${r1.length + r2.length} results after TIER-2`,
-        r1.length + r2.length,
-      );
-
-      r3 = await mcpSearch(
-        {
-          q:             broader,
-          in_stock_only: false,
-          sort:          'relevance',
-          // no category, no price — last resort
-        },
-        sid,
-        50,
-        `TIER-3 (q="${broader}", no-category)`,
-      );
+      if (broader !== sp.q) {
+        LOG.fallback(
+          `TIER-3 BROADER (q="${broader}", category:null)`,
+          `only ${r1.length + r2.length} after TIER-2`,
+          r1.length + r2.length,
+        );
+        r3 = await mcpSearch(
+          { q: broader, in_stock_only: false, sort: 'relevance' },
+          sid,
+          50,
+          `TIER-3 BROADER ("${broader}")`,
+        );
+      } else {
+        LOG.info(`TIER-3 skipped — broader keyword same as original ("${sp.q}")`);
+      }
     }
 
     // ── Merge & deduplicate ───────────────────────────────────────────────
@@ -500,38 +606,45 @@ export async function POST(req: NextRequest) {
         return true;
       });
 
-    LOG.info(`After merge+dedup: ${mergedProducts.length} products (r1=${r1.length}, r2=${r2.length}, r3=${r3.length})`);
+    LOG.info(
+      `After merge+dedup: ${mergedProducts.length} products ` +
+      `(r1=${r1.length}, r2=${r2.length}, r3=${r3.length})`
+    );
 
-    // ── ✅ FIX: Post-merge category re-filter ─────────────────────────────
-    // Ensures Tier-3 items don't poison results with unrelated categories
-    if (sp.category && mergedProducts.length > 0) {
-      const needle       = sp.category.toLowerCase();
+    // ── Category filter using the REAL (discovered) category name ─────────
+    // Priority: discoveredCategory (from MCP actual response) > sp.category (AI hint)
+    // This ensures the filter uses a category string MCP actually recognizes.
+    const filterCategory = discoveredCategory ?? sp.category;
+
+    if (filterCategory && mergedProducts.length > 0) {
+      const needle       = filterCategory.toLowerCase();
       const beforeFilter = mergedProducts.length;
 
       const categoryFiltered = mergedProducts.filter(p => {
         const hay = (p.category ?? '').toLowerCase();
-        // Allow: exact match, substring match, or products with no category set
         return hay.includes(needle) || needle.includes(hay) || hay === '';
       });
 
-      LOG.categoryFilter(beforeFilter, categoryFiltered.length, sp.category);
+      LOG.categoryFilter(beforeFilter, categoryFiltered.length, filterCategory);
 
-      // Only apply filter if it doesn't wipe everything (safety net)
       if (categoryFiltered.length > 0) {
         mergedProducts = categoryFiltered;
       } else {
-        LOG.warn(
-          `Category filter "${sp.category}" removed ALL products — ` +
-          `keeping unfiltered results. Check category name vs MCP.`,
-        );
-        // Log all unique categories we received to help debug mismatches
+        // This should rarely happen now because filterCategory came from MCP itself.
+        // Log and keep all results rather than returning empty.
         const receivedCats = [...new Set(mergedProducts.map(p => p.category).filter(Boolean))];
-        LOG.warn('Categories received from MCP:', receivedCats);
+        LOG.warn(
+          `Post-merge filter "${filterCategory}" matched NOTHING (unexpected). ` +
+          `Keeping all ${mergedProducts.length} products. Received categories:`,
+          receivedCats,
+        );
       }
     }
 
-    // ── Stratified category diversification (only when no specific category) ─
-    if (!sp.category && mergedProducts.length > 0) {
+    // ── Category diversification (only when no specific category was requested) ─
+    // When the original query was category:null, spread results across categories
+    // so the user sees variety rather than 50 products from one category.
+    if (!sp.category && !discoveredCategory && mergedProducts.length > 0) {
       const buckets: Record<string, Product[]> = {};
       for (const item of mergedProducts) {
         const cat = item.category || 'Other';
@@ -539,24 +652,20 @@ export async function POST(req: NextRequest) {
         buckets[cat].push(item);
       }
 
-      const sortedCats        = Object.keys(buckets).sort((a, b) => buckets[b].length - buckets[a].length);
-      const diverseResult:     Product[] = [];
-      const distributionLimits           = [20, 15, 10, 5];
+      const sortedCats      = Object.keys(buckets).sort((a, b) => buckets[b].length - buckets[a].length);
+      const diverseResult:  Product[] = [];
+      const limits          = [20, 15, 10, 5];
 
       for (let i = 0; i < sortedCats.length; i++) {
-        const cat   = sortedCats[i];
-        const limit = distributionLimits[i] ?? 2;
-        diverseResult.push(...buckets[cat].splice(0, limit));
+        diverseResult.push(...buckets[sortedCats[i]].splice(0, limits[i] ?? 2));
       }
-      // Fill remaining slots
       for (const cat of sortedCats) {
         if (diverseResult.length >= 50) break;
-        const needed = 50 - diverseResult.length;
-        diverseResult.push(...buckets[cat].splice(0, needed));
+        diverseResult.push(...buckets[cat].splice(0, 50 - diverseResult.length));
       }
 
       const bucketSummary = Object.fromEntries(
-        sortedCats.map(c => [c, (buckets[c].length || 0) + (diverseResult.filter(p => p.category === c).length)])
+        sortedCats.map(c => [c, (buckets[c].length || 0) + diverseResult.filter(p => p.category === c).length])
       );
       LOG.diversify(bucketSummary, diverseResult.length);
       mergedProducts = diverseResult;
@@ -571,9 +680,11 @@ export async function POST(req: NextRequest) {
 
     LOG.final(products.length, quantum, Date.now() - routeStart);
 
-    // Debug: log first 3 product names so you can quickly eyeball in terminal
     if (products.length > 0) {
-      const preview = products.slice(0, 3).map((p, i) => `  [${i + 1}] "${p.name}" (${p.category}) LKR ${p.price}`).join('\n');
+      const preview = products
+        .slice(0, 3)
+        .map((p, i) => `  [${i + 1}] "${p.name}" (${p.category}) LKR ${p.price}`)
+        .join('\n');
       LOG.info(`Top 3 results:\n${preview}`);
     }
 
