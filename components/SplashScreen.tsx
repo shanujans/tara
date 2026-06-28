@@ -7,36 +7,44 @@ import * as THREE from 'three';
 /* ------------------------------------------------------------------ */
 const STAR_TYPES = ['', ' blue', ' purple'];
 const generateStars = (count: number) =>
-  Array.from({ length: count }, (_, i) => ({
-    id: i,
-    type: STAR_TYPES[Math.floor(Math.random() * STAR_TYPES.length)],
-    left: Math.random() * 100,
-    top: Math.random() * 100,
-    size: (2 + Math.random() * 3).toFixed(1),
-    delay: (Math.random() * 4).toFixed(2),
-    duration: (3 + Math.random() * 3).toFixed(2),
-  }));
+  Array.from({ length: count }, (_, i) => {
+    const duration = 3 + Math.random() * 3;
+    return {
+      id: i,
+      type: STAR_TYPES[Math.floor(Math.random() * STAR_TYPES.length)],
+      left: Math.random() * 100,
+      top: Math.random() * 100,
+      size: (2 + Math.random() * 3).toFixed(1),
+      delay: (-Math.random() * duration).toFixed(2), // negative: starts mid-cycle, not frozen at rest
+      duration: duration.toFixed(2),
+    };
+  });
 
 const generateDots = (count: number) =>
-  Array.from({ length: count }, (_, i) => ({
-    id: i,
-    cx: Math.random() * 1057,
-    cy: 420 + Math.random() * 300,
-    r: (1.5 + Math.random() * 2.5).toFixed(1),
-    delay: (Math.random() * 5).toFixed(2),
-    duration: (3 + Math.random() * 4).toFixed(2),
-  }));
+  Array.from({ length: count }, (_, i) => {
+    const duration = 3 + Math.random() * 4;
+    return {
+      id: i,
+      cx: Math.random() * 1057,
+      cy: 420 + Math.random() * 300,
+      r: (1.5 + Math.random() * 2.5).toFixed(1),
+      delay: (-Math.random() * duration).toFixed(2), // negative: starts mid-cycle
+      duration: duration.toFixed(2),
+    };
+  });
 
 /* ------------------------------------------------------------------ */
 /*  Main component                                                    */
 /* ------------------------------------------------------------------ */
 export default function SplashScreen({ onDone }: { onDone: () => void }) {
   const [fadingOut, setFadingOut] = useState(false);
-  const [stars, setStars] = useState<any[]>([]);
-  const [sparkles, setSparkles] = useState<any[]>([]);
-  const [spriteReady, setSpriteReady] = useState(false); // ← new
+  // Lazy initializers run synchronously during the first render — stars/sparkles
+  // exist in the DOM from frame one, not a render cycle later via useEffect.
+  const [stars] = useState(() => generateStars(70));
+  const [sparkles] = useState(() => generateDots(35));
+  const [showFallback, setShowFallback] = useState(true); // static image until sprite ready
 
-  // Fade‑out timers
+  // Fade‑out timers (unchanged)
   useEffect(() => {
     const t1 = setTimeout(() => setFadingOut(true), 2000);
     const t2 = setTimeout(() => onDone(), 2750);
@@ -45,12 +53,6 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
       clearTimeout(t2);
     };
   }, [onDone]);
-
-  // Generate random decorative data only on the client
-  useEffect(() => {
-    setStars(generateStars(70));
-    setSparkles(generateDots(35));
-  }, []);
 
   const stageRef = useRef<HTMLDivElement>(null);
   const threeContainerRef = useRef<HTMLDivElement>(null);
@@ -69,7 +71,7 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, []);
 
-  /* ---------- Three.js scene (character + breathing) ---------- */
+  /* ---------- Three.js scene (preload + perfect swap) ---------- */
   useEffect(() => {
     const container = threeContainerRef.current;
     if (!container) return;
@@ -81,90 +83,111 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
     let sprite: THREE.Sprite;
     let mounted = true;
 
-    const width = container.clientWidth || 300;
-    const height = container.clientHeight || 300;
+    // Preload the cartoon image
+    const preloadImage = new Image();
+    preloadImage.src = '/cartoon.jpg';
 
-    scene = new THREE.Scene();
-    camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
-    camera.position.set(0, 0, 5);
+    const startScene = () => {
+      if (!mounted || !container) return;
 
-    renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-    renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
+      const width = container.clientWidth || 300;
+      const height = container.clientHeight || 300;
 
-    // Position the canvas absolutely to overlay the fallback image
-    renderer.domElement.style.position = 'absolute';
-    renderer.domElement.style.top = '0';
-    renderer.domElement.style.left = '0';
-    renderer.domElement.style.zIndex = '2';
-    container.appendChild(renderer.domElement);
+      scene = new THREE.Scene();
+      camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+      camera.position.set(0, 0, 5);
 
-    const ambientLight = new THREE.AmbientLight(0xffffff, 2.0);
-    scene.add(ambientLight);
+      renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+      renderer.setSize(width, height);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-    const textureLoader = new THREE.TextureLoader();
-    const textureUrl = '/cartoon.jpg';
+      const ambientLight = new THREE.AmbientLight(0xffffff, 2.0);
+      scene.add(ambientLight);
 
-    textureLoader.load(
-      textureUrl,
-      (texture) => {
+      // Create texture from preloaded image (instant)
+      const texture = new THREE.Texture(preloadImage);
+      texture.needsUpdate = true;
+      texture.colorSpace = THREE.SRGBColorSpace;
+
+      const material = new THREE.SpriteMaterial({
+        map: texture,
+        transparent: true,
+        color: 0xffffff,
+      });
+      sprite = new THREE.Sprite(material);
+
+      // Maintain aspect ratio to match the fallback image's object-fit: contain
+      const imgAspect = preloadImage.naturalWidth / preloadImage.naturalHeight;
+      let scaleX = 3.8;
+      let scaleY = 3.8;
+      if (imgAspect > 1) {
+        // wider than tall
+        scaleY = scaleX / imgAspect;
+      } else {
+        scaleX = scaleY * imgAspect;
+      }
+      sprite.scale.set(scaleX, scaleY, 1);
+      sprite.position.set(0, 0, 0);
+      scene.add(sprite);
+
+      // Render one frame off‑screen so the canvas is ready
+      renderer.render(scene, camera);
+
+      // Append canvas and hide fallback in the same frame – no flicker
+      container.appendChild(renderer.domElement);
+      setShowFallback(false);
+
+      // Start animation loop
+      const animate = (time: number) => {
         if (!mounted) return;
-        texture.colorSpace = THREE.SRGBColorSpace;
-        const material = new THREE.SpriteMaterial({
-          map: texture,
-          transparent: true,
-          color: 0xffffff,
-        });
-        sprite = new THREE.Sprite(material);
-        sprite.scale.set(3.8, 3.8, 1);
-        sprite.position.x = 0.2;
-        scene.add(sprite);
+        animationId = requestAnimationFrame(animate);
+        const floatY = Math.sin(time * 0.002) * 0.15;
+        const breathe = 1 + Math.sin(time * 0.003) * 0.02;
+        sprite.position.y = floatY;
+        sprite.scale.set(scaleX * breathe, scaleY * breathe, 1);
+        renderer.render(scene, camera);
+      };
+      animate(0);
 
-        setSpriteReady(true); // hide the fallback image
-
-        const animate = (time: number) => {
-          if (!mounted) return;
-          animationId = requestAnimationFrame(animate);
-          const floatY = Math.sin(time * 0.002) * 0.15;
-          const breathe = 1 + Math.sin(time * 0.003) * 0.02;
-          sprite.position.y = floatY;
-          sprite.scale.set(3.8 * breathe, 3.8 * breathe, 1);
-          renderer.render(scene, camera);
-        };
-        animate(0);
-      },
-      undefined,
-      (error) => {
-        console.error('Failed to load cartoon texture:', error);
-        // Still start render loop (no sprite) and hide fallback
-        setSpriteReady(true);
-        const animate = (time: number) => {
-          if (!mounted) return;
-          animationId = requestAnimationFrame(animate);
-          renderer.render(scene, camera);
-        };
-        animate(0);
-      }
-    );
-
-    const handleResize = () => {
-      const w = container.clientWidth;
-      const h = container.clientHeight;
-      if (camera && renderer) {
-        camera.aspect = w / h;
-        camera.updateProjectionMatrix();
-        renderer.setSize(w, h);
-      }
+      // Resize handler
+      const handleResize = () => {
+        const w = container.clientWidth;
+        const h = container.clientHeight;
+        if (camera && renderer) {
+          camera.aspect = w / h;
+          camera.updateProjectionMatrix();
+          renderer.setSize(w, h);
+        }
+      };
+      window.addEventListener('resize', handleResize);
     };
-    window.addEventListener('resize', handleResize);
+
+    // If image already loaded (cache), start immediately; otherwise wait for load
+    if (preloadImage.complete) {
+      startScene();
+    } else {
+      preloadImage.onload = startScene;
+      preloadImage.onerror = () => {
+        // If image fails, hide fallback and run an empty loop (no character)
+        setShowFallback(false);
+        const animate = () => {
+          if (!mounted) return;
+          animationId = requestAnimationFrame(animate);
+        };
+        animate();
+      };
+    }
 
     return () => {
       mounted = false;
       cancelAnimationFrame(animationId);
-      renderer.dispose();
-      if (container && renderer.domElement) container.removeChild(renderer.domElement);
-      window.removeEventListener('resize', handleResize);
+      if (renderer) {
+        renderer.dispose();
+        if (container && renderer.domElement && container.contains(renderer.domElement)) {
+          container.removeChild(renderer.domElement);
+        }
+      }
     };
   }, []);
 
@@ -183,13 +206,12 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           'radial-gradient(120% 90% at 50% 8%, #1d1640 0%, var(--surface, #140f2c) 55%, #0c0820 100%)',
         overflow: 'hidden',
         opacity: fadingOut ? 0 : 1,
-        transition: fadingOut
-          ? 'opacity 0.70s cubic-bezier(0.4,0,0.2,1)'
-          : 'none',
+        transition: fadingOut ? 'opacity 0.70s cubic-bezier(0.4,0,0.2,1)' : 'none',
         pointerEvents: fadingOut ? 'none' : 'all',
         fontFamily: "'Inter', sans-serif",
       }}
     >
+      {/* ---------- All CSS styles ---------- */}
       <style>{`
         :root {
           --surface: #140f2c;
@@ -206,11 +228,13 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           --move-y: 0px;
         }
 
+        /* ---------- vignette ---------- */
         .vignette {
           position: absolute;
           inset: 0;
           background: radial-gradient(50% 50% at 50% 50%, var(--glow-purple) 0%, transparent 80%);
           animation: vigPulse 8s ease-in-out infinite;
+          animation-delay: -3s; /* start mid-pulse, not frozen at rest on load */
           mix-blend-mode: screen;
           pointer-events: none;
         }
@@ -219,6 +243,7 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           50% { opacity: 0.85; transform: scale(1.15); }
         }
 
+        /* ---------- stars ---------- */
         .star {
           position: absolute;
           border-radius: 50%;
@@ -232,6 +257,16 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           0%, 100% { opacity: 0.1; transform: scale(0.4); }
           50% { opacity: 1; transform: scale(1.5); }
         }
+
+        /* ---------- background ---------- */
+        /* No container-level fade: ribbons/vignette are static markup, not
+           random data, so there's nothing to wait on. Liveliness comes from
+           each star/dot's own negative animation-delay (already mid-cycle
+           at t=0) instead of a macro opacity ramp that reads as "not there yet". */
+        .stars-container, .waves-wrap {
+          opacity: 1;
+        }
+
         .stars {
           position: absolute;
           inset: -10%;
@@ -239,6 +274,7 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           transition: transform 0.1s ease-out;
         }
 
+        /* ---------- waves ---------- */
         .waves-wrap {
           position: absolute;
           inset: -5%;
@@ -255,10 +291,10 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           stroke-linecap: round;
           filter: drop-shadow(0 0 10px rgba(255,215,0,0.4));
         }
-        .ribbon.r1 { stroke: url(#gradGold); animation: drift1 14s linear infinite; }
-        .ribbon.r2 { stroke: url(#gradPurple); animation: drift2 20s linear infinite; stroke-width: 4; }
-        .ribbon.r3 { stroke: url(#gradBlue); animation: drift3 17s linear infinite reverse; }
-        .ribbon.r4 { stroke: url(#gradGold); opacity: 0.4; animation: drift2 25s linear infinite; stroke-width: 2; }
+        .ribbon.r1 { stroke: url(#gradGold); animation: drift1 14s linear infinite; animation-delay: -4s; }
+        .ribbon.r2 { stroke: url(#gradPurple); animation: drift2 20s linear infinite; stroke-width: 4; animation-delay: -11s; }
+        .ribbon.r3 { stroke: url(#gradBlue); animation: drift3 17s linear infinite reverse; animation-delay: -7s; }
+        .ribbon.r4 { stroke: url(#gradGold); opacity: 0.4; animation: drift2 25s linear infinite; stroke-width: 2; animation-delay: -18s; }
         @keyframes drift1 {
           0% { transform: translateX(-4%) translateY(0); }
           50% { transform: translateX(3%) translateY(-2%); }
@@ -275,6 +311,7 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           100% { transform: translateX(-2%) translateY(0); }
         }
 
+        /* sparkle dots */
         .sparkle-dot {
           fill: var(--primary);
           filter: drop-shadow(0 0 4px var(--primary));
@@ -285,6 +322,7 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           50% { opacity: 1; transform: translateY(-12px) scale(1.2); }
         }
 
+        /* ---------- center layout ---------- */
         .center {
           position: relative;
           z-index: 5;
@@ -296,6 +334,7 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           transition: transform 0.1s ease-out;
         }
 
+        /* ---------- ring ---------- */
         .ring-wrap {
           position: relative;
           width: 320px;
@@ -304,7 +343,6 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           align-items: center;
           justify-content: center;
         }
-
         .ring {
           position: absolute;
           inset: 0;
@@ -352,6 +390,7 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           50% { transform: scale(1.05); opacity: 0.8; }
         }
 
+        /* ---------- entrance text/badge ---------- */
         .entrance-text {
           opacity: 0;
           transform: translateY(20px);
@@ -371,6 +410,7 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           }
         }
 
+        /* ---------- wordmark ---------- */
         .wordmark {
           font-family: 'Montserrat', sans-serif;
           font-weight: 700;
@@ -397,6 +437,7 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           100% { left: 160%; }
         }
 
+        /* ---------- badge ---------- */
         .badge {
           display: flex;
           align-items: center;
@@ -425,95 +466,84 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
         @keyframes markSpin { to { transform: rotate(360deg); } }
       `}</style>
 
-      <div className="vignette" />
+      {/* -------- Background wrapper (stars + waves fade in via CSS only) -------- */}
+      <div style={{ position: 'absolute', inset: 0 }}>
+        <div className="vignette" />
 
-      <div className="stars">
-        {stars.map((s) => (
-          <div
-            key={s.id}
-            className={`star${s.type}`}
-            style={{
-              left: `${s.left}%`,
-              top: `${s.top}%`,
-              width: `${s.size}px`,
-              height: `${s.size}px`,
-              animationDelay: `${s.delay}s`,
-              animationDuration: `${s.duration}s`,
-            }}
-          />
-        ))}
-      </div>
-
-      <div className="waves-wrap">
-        <svg className="waves" preserveAspectRatio="none" viewBox="0 0 1057 992">
-          <defs>
-            <linearGradient id="gradGold" x1="0%" x2="100%" y1="0%" y2="0%">
-              <stop offset="0%" stopColor="#ffd700" stopOpacity="0" />
-              <stop offset="50%" stopColor="#ffe46b" stopOpacity="1" />
-              <stop offset="100%" stopColor="#ffd700" stopOpacity="0" />
-            </linearGradient>
-            <linearGradient id="gradPurple" x1="0%" x2="100%" y1="0%" y2="0%">
-              <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0" />
-              <stop offset="50%" stopColor="#dcb4ff" stopOpacity="0.95" />
-              <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0" />
-            </linearGradient>
-            <linearGradient id="gradBlue" x1="0%" x2="100%" y1="0%" y2="0%">
-              <stop offset="0%" stopColor="#3a7bd5" stopOpacity="0" />
-              <stop offset="50%" stopColor="#9ec7ff" stopOpacity="0.9" />
-              <stop offset="100%" stopColor="#3a7bd5" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          <path
-            className="ribbon r1"
-            d="M -100 560 C 150 480, 320 660, 560 560 S 900 460, 1150 540"
-          />
-          <path
-            className="ribbon r2"
-            d="M -100 620 C 200 700, 380 520, 600 620 S 950 700, 1150 600"
-          />
-          <path
-            className="ribbon r3"
-            d="M -100 500 C 220 420, 420 560, 650 480 S 980 400, 1150 470"
-          />
-          <path
-            className="ribbon r4"
-            d="M -100 660 C 180 600, 360 720, 600 660 S 940 600, 1150 660"
-          />
-          <g>
-            {sparkles.map((d) => (
-              <circle
-                key={d.id}
-                className="sparkle-dot"
-                cx={d.cx}
-                cy={d.cy}
-                r={d.r}
+        <div className="stars-container">
+          <div className="stars">
+            {stars.map((s) => (
+              <div
+                key={s.id}
+                className={`star${s.type}`}
                 style={{
-                  animationDelay: `${d.delay}s`,
-                  animationDuration: `${d.duration}s`,
+                  left: `${s.left}%`,
+                  top: `${s.top}%`,
+                  width: `${s.size}px`,
+                  height: `${s.size}px`,
+                  animationDelay: `${s.delay}s`,
+                  animationDuration: `${s.duration}s`,
                 }}
               />
             ))}
-          </g>
-        </svg>
+          </div>
+        </div>
+
+        <div className="waves-wrap">
+          <svg className="waves" preserveAspectRatio="none" viewBox="0 0 1057 992">
+            <defs>
+              <linearGradient id="gradGold" x1="0%" x2="100%" y1="0%" y2="0%">
+                <stop offset="0%" stopColor="#ffd700" stopOpacity="0" />
+                <stop offset="50%" stopColor="#ffe46b" stopOpacity="1" />
+                <stop offset="100%" stopColor="#ffd700" stopOpacity="0" />
+              </linearGradient>
+              <linearGradient id="gradPurple" x1="0%" x2="100%" y1="0%" y2="0%">
+                <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0" />
+                <stop offset="50%" stopColor="#dcb4ff" stopOpacity="0.95" />
+                <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0" />
+              </linearGradient>
+              <linearGradient id="gradBlue" x1="0%" x2="100%" y1="0%" y2="0%">
+                <stop offset="0%" stopColor="#3a7bd5" stopOpacity="0" />
+                <stop offset="50%" stopColor="#9ec7ff" stopOpacity="0.9" />
+                <stop offset="100%" stopColor="#3a7bd5" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+
+            <path className="ribbon r1" d="M -100 560 C 150 480, 320 660, 560 560 S 900 460, 1150 540" />
+            <path className="ribbon r2" d="M -100 620 C 200 700, 380 520, 600 620 S 950 700, 1150 600" />
+            <path className="ribbon r3" d="M -100 500 C 220 420, 420 560, 650 480 S 980 400, 1150 470" />
+            <path className="ribbon r4" d="M -100 660 C 180 600, 360 720, 600 660 S 940 600, 1150 660" />
+
+            <g>
+              {sparkles.map((d) => (
+                <circle
+                  key={d.id}
+                  className="sparkle-dot"
+                  cx={d.cx}
+                  cy={d.cy}
+                  r={d.r}
+                  style={{
+                    animationDelay: `${d.delay}s`,
+                    animationDuration: `${d.duration}s`,
+                  }}
+                />
+              ))}
+            </g>
+          </svg>
+        </div>
       </div>
 
+      {/* -------- Center content (ring, character, text) -------- */}
       <div className="center">
         <div className="ring-wrap">
           <div className="ring spin">
             <svg viewBox="0 0 300 300">
-              <circle
-                className="arc"
-                cx="150"
-                cy="150"
-                r="138"
-                strokeDasharray="240 620"
-              />
+              <circle className="arc" cx="150" cy="150" r="138" strokeDasharray="240 620" />
             </svg>
           </div>
           <div className="ring-glow" />
           <div className="ring-blue" />
 
-          {/* Character container with fallback image */}
           <div
             ref={threeContainerRef}
             style={{
@@ -524,8 +554,7 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
               zIndex: 10,
             }}
           >
-            {/* Fallback image – visible until Three.js sprite is ready */}
-            {!spriteReady && (
+            {showFallback && (
               <img
                 src="/cartoon.jpg"
                 alt="TARA character"

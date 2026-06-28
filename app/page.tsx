@@ -1,10 +1,10 @@
 'use client';
 import { useState, useCallback, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import ChatPanel from '@/components/ChatPanel';
 import ProductPanel from '@/components/ProductPanel';
 import CartDrawer from '@/components/CartDrawer';
 import TaraBackground from '@/components/TaraBackground';
-import SplashScreen from '@/components/SplashScreen';
 import SidePanel, { PanelId } from '@/components/SidePanel';
 import SidebarShader from '@/components/SidebarShader';
 import LoginModal, { UserInfo } from '@/components/LoginModal';
@@ -15,6 +15,15 @@ import {
   SettingsIcon, HelpIcon, BellIcon, MenuIcon, XIcon,
   ChatIcon, BagIcon, SparkleIcon, StoreIcon, HeadsetIcon,
 } from '@/components/Icons';
+
+// Client-only: SplashScreen uses Math.random() for its star field, plus
+// window/WebGL APIs. Rendering it on the server would bake one random
+// layout into the HTML, then swap to a different one on hydration —
+// exactly the "didn't match" hydration error. ssr:false skips the server
+// pass entirely, so it only ever renders (and randomizes) once, client-side.
+const SplashScreen = dynamic(() => import('@/components/SplashScreen'), {
+  ssr: false,
+});
 
 type MobileTab = 'chat' | 'products' | 'discover' | 'menu';
 type NavKey    = 'home' | 'history' | 'rewards' | 'browse' | 'settings' | 'help';
