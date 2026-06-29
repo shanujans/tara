@@ -254,9 +254,20 @@ function BrowsePanel({ onCategorySearch, onClose }: { onCategorySearch: (q: stri
   const totalSubs = categories.filter(c => !!c.parent).length;
   const subItems  = selected ? categories.filter(c => c.parent === selected.name) : [];
 
-  /* Search-filtered top-level */
-  const q           = search.trim().toLowerCase();
-  const filteredTop = q ? topLevel.filter(c => c.name.toLowerCase().includes(q)) : topLevel;
+  /* Search — across top-level AND subcategories */
+  const q = search.trim().toLowerCase();
+  const searchResults: (CatItem & { _isSub?: boolean })[] = q
+    ? [
+        /* Matching top-level categories */
+        ...topLevel
+          .filter(c => c.name.toLowerCase().includes(q))
+          .map(c => ({ ...c, _isSub: false })),
+        /* Matching subcategories (level-2) */
+        ...categories
+          .filter(c => !!c.parent && c.name.toLowerCase().includes(q))
+          .map(c => ({ ...c, _isSub: true })),
+      ]
+    : [];
 
   /* ── Handlers ─────────────────────────────────────────────────────── */
 
@@ -396,26 +407,80 @@ function BrowsePanel({ onCategorySearch, onClose }: { onCategorySearch: (q: stri
       {/* ── View: top-level loading skeleton ── */}
       {catLoading && <SkeletonGrid count={8} />}
 
-      {/* ── View: top-level categories (L1) ── */}
+      {/* ── View: top-level categories (L1) or search results ── */}
       {!catLoading && view === 'top' && (
-        filteredTop.length === 0
-          ? (
-            <p style={{ fontSize: 13, color: 'var(--c-outline)', textAlign: 'center', padding: '24px 0' }}>
-              No categories match &ldquo;{search}&rdquo;
-            </p>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              {filteredTop.map(cat => (
-                <CatBtn
-                  key={cat.id}
-                  emoji={cat.emoji}
-                  name={cat.name}
-                  onClick={() => handleTopClick(cat)}
-                  showArrow={categories.some(c => c.parent === cat.name)}
-                />
-              ))}
-            </div>
-          )
+        q ? (
+          /* ── Search results: single-column with parent labels ── */
+          searchResults.length === 0
+            ? (
+              <p style={{ fontSize: 13, color: 'var(--c-outline)', textAlign: 'center', padding: '24px 0' }}>
+                No results for &ldquo;{search}&rdquo;
+              </p>
+            ) : (
+              <>
+                <p style={{ fontSize: 10, color: 'var(--c-outline)', marginBottom: 8, opacity: 0.75 }}>
+                  {searchResults.length} result{searchResults.length !== 1 ? 's' : ''}
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {searchResults.map(cat => (
+                    <button
+                      key={cat.id}
+                      onClick={() => cat._isSub ? handleSubClick(cat) : handleTopClick(cat)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        padding: '10px 12px', borderRadius: 10, cursor: 'pointer',
+                        background: 'var(--c-surface-container)',
+                        border: '1px solid rgba(74,68,81,0.25)',
+                        transition: 'all 0.15s ease', textAlign: 'left', width: '100%',
+                      }}
+                      onMouseOver={e => {
+                        e.currentTarget.style.background   = 'var(--c-surface-container-high)';
+                        e.currentTarget.style.borderColor  = 'rgba(215,186,255,0.30)';
+                      }}
+                      onMouseOut={e => {
+                        e.currentTarget.style.background  = 'var(--c-surface-container)';
+                        e.currentTarget.style.borderColor = 'rgba(74,68,81,0.25)';
+                      }}
+                    >
+                      <span style={{ fontSize: 20, flexShrink: 0 }}>{cat.emoji}</span>
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{
+                          display: 'block', fontSize: 13, fontWeight: 600,
+                          color: 'var(--c-on-surface)', lineHeight: 1.3,
+                        }}>
+                          {cat.name}
+                        </span>
+                        {cat._isSub && cat.parent && (
+                          <span style={{
+                            display: 'block', fontSize: 10, color: 'var(--c-outline)',
+                            marginTop: 2, opacity: 0.8,
+                          }}>
+                            in {cat.parent}
+                          </span>
+                        )}
+                      </span>
+                      {!cat._isSub && categories.some(c => c.parent === cat.name) && (
+                        <ChevronRightIcon size={12} style={{ color: 'var(--c-outline)', flexShrink: 0 }} />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )
+        ) : (
+          /* ── Normal 2-column grid ── */
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {topLevel.map(cat => (
+              <CatBtn
+                key={cat.id}
+                emoji={cat.emoji}
+                name={cat.name}
+                onClick={() => handleTopClick(cat)}
+                showArrow={categories.some(c => c.parent === cat.name)}
+              />
+            ))}
+          </div>
+        )
       )}
 
       {/* ── View: level-2 subcategories ── */}

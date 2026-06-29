@@ -4,7 +4,7 @@ import { STRINGS, Lang } from '@/lib/strings';
 import { useCart, Product } from '@/context/CartContext';
 import { detectExpat, detectExpatCountry } from '@/lib/expat';
 import ExpatBanner from './ExpatBanner';
-import { MicIcon, SendIcon, AttachIcon, AddCartIcon, CheckIcon, GlobeIcon } from './Icons';
+import { MicIcon, SendIcon, AttachIcon, AddCartIcon, CheckIcon, GlobeIcon, ThumbsUpIcon, ThumbsDownIcon } from './Icons';
 
 /* ── Types ─────────────────────────────────────────────────── */
 interface Message { role: 'user' | 'assistant'; content: string; products?: Product[]; imagePreview?: string; }
@@ -151,6 +151,9 @@ export default function ChatPanel({
   /* Image upload state */
   const [pendingImg,   setPendingImg]   = useState<PendingImage|null>(null);
   const [visionLoading,setVisionLoading]= useState(false);
+  /* Feedback state */
+  const [feedback, setFeedback] = useState<Record<number,'up'|'down'>>({});
+  const [fbModal,  setFbModal]  = useState<{open:boolean;msgIdx:number;category:string;text:string;submitting:boolean;done:boolean}|null>(null);
 
   const bottomRef   = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -400,6 +403,23 @@ export default function ChatPanel({
                     </div>
                   )}
                 </div>
+                {/* 👍 👎 feedback — only on completed (non-streaming) assistant messages */}
+                {msg.role==='assistant' && msg.content && !(streaming && i===messages.length-1) && (
+                  <div style={{display:'flex',gap:1,marginTop:5,paddingLeft:2,width:'fit-content',background:'rgba(34,28,49,0.72)',border:'0.5px solid rgba(215,186,255,0.14)',borderRadius:20,padding:'2px 4px',backdropFilter:'blur(6px)'}}>
+                    <button
+                      onClick={()=>setFeedback(p=>{const n={...p}; if(n[i]==='up') delete n[i]; else n[i]='up'; return n;})}
+                      title={feedback[i]==='up'?'Remove like':'Helpful'}
+                      style={{background:'transparent',border:'none',cursor:'pointer',padding:'3px 8px',borderRadius:16,display:'flex',alignItems:'center',color:feedback[i]==='up'?'#4ade80':'var(--c-on-surface-variant)',transition:'color 0.15s'}}>
+                      <ThumbsUpIcon size={13}/>
+                    </button>
+                    <button
+                      onClick={()=>{ if(feedback[i]!=='up') setFbModal({open:true,msgIdx:i,category:'',text:'',submitting:false,done:false}); }}
+                      title="Not helpful — report issue"
+                      style={{background:'transparent',border:'none',cursor:'pointer',padding:'3px 8px',borderRadius:16,display:'flex',alignItems:'center',color:feedback[i]==='down'?'#ef4444':'var(--c-on-surface-variant)',transition:'color 0.15s'}}>
+                      <ThumbsDownIcon size={13}/>
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -526,6 +546,67 @@ export default function ChatPanel({
           </p>
         </div>
       </div>
+
+      {/* ── Feedback modal ──────────────────────────────────── */}
+      {fbModal?.open && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.65)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}
+          onClick={e=>{if(e.target===e.currentTarget)setFbModal(null);}}>
+          <div style={{background:'var(--c-surface-container)',borderRadius:20,padding:22,width:'100%',maxWidth:420,border:'1px solid rgba(215,186,255,0.20)',boxShadow:'0 24px 60px rgba(0,0,0,0.55)'}}>
+            {fbModal.done
+              ? <div style={{textAlign:'center',padding:'20px 0'}}>
+                  <span style={{fontSize:32}}>✅</span>
+                  <p style={{marginTop:10,color:'var(--c-on-surface)',fontSize:15,fontWeight:700}}>Thanks for the feedback!</p>
+                  <p style={{fontSize:12,color:'var(--c-on-surface-variant)',marginTop:5}}>Saved to <code style={{background:'rgba(215,186,255,0.12)',padding:'1px 6px',borderRadius:4}}>mistakes.md</code> for the dev team.</p>
+                </div>
+              : <>
+                  <p style={{fontSize:15,fontWeight:700,color:'var(--c-on-surface)',marginBottom:14}}>What went wrong? 🐛</p>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:14}}>
+                    {['Wrong products','Wrong language',"Didn't understand",'Delivery info wrong','No upsell','Too slow','Other'].map(cat=>(
+                      <button key={cat} onClick={()=>setFbModal(p=>p?{...p,category:cat}:p)}
+                        style={{padding:'4px 12px',borderRadius:20,fontSize:12,cursor:'pointer',border:'none',fontFamily:'var(--font-body)',transition:'all 0.15s',
+                          background:fbModal.category===cat?'var(--c-primary-container)':'var(--c-surface-container-high)',
+                          color:fbModal.category===cat?'var(--c-on-primary-container)':'var(--c-on-surface-variant)',
+                          fontWeight:fbModal.category===cat?600:400}}>
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                  <textarea value={fbModal.text} onChange={e=>setFbModal(p=>p?{...p,text:e.target.value}:p)}
+                    placeholder="Describe the issue (optional)…" rows={3}
+                    style={{width:'100%',background:'var(--c-surface-container-high)',border:'1px solid rgba(215,186,255,0.20)',borderRadius:10,padding:'10px 12px',fontSize:13,color:'var(--c-on-surface)',resize:'none',fontFamily:'var(--font-body)',outline:'none',boxSizing:'border-box'}}/>
+                  <div style={{display:'flex',gap:8,marginTop:12,justifyContent:'flex-end'}}>
+                    <button onClick={()=>setFbModal(null)}
+                      style={{padding:'8px 16px',borderRadius:8,fontSize:13,cursor:'pointer',background:'transparent',color:'var(--c-outline)',border:'1px solid rgba(150,142,156,0.30)',fontFamily:'var(--font-body)'}}>
+                      Cancel
+                    </button>
+                    <button
+                      disabled={fbModal.submitting||(!fbModal.category&&!fbModal.text.trim())}
+                      onClick={async()=>{
+                        setFbModal(p=>p?{...p,submitting:true}:p);
+                        const ctx = messages.slice(Math.max(0,fbModal.msgIdx-3), fbModal.msgIdx+1);
+                        await fetch('/api/feedback',{
+                          method:'POST', headers:{'Content-Type':'application/json'},
+                          body: JSON.stringify({
+                            category: fbModal.category, issue: fbModal.text,
+                            response: messages[fbModal.msgIdx]?.content ?? '',
+                            context: ctx, lang: convLang,
+                            timestamp: new Date().toISOString(),
+                          }),
+                        }).catch(()=>{});
+                        setFeedback(p=>({...p,[fbModal.msgIdx]:'down'}));
+                        setFbModal(p=>p?{...p,submitting:false,done:true}:p);
+                        setTimeout(()=>setFbModal(null),2200);
+                      }}
+                      style={{padding:'8px 18px',borderRadius:8,fontSize:13,cursor:'pointer',background:'var(--c-primary-container)',color:'var(--c-on-primary-container)',border:'none',fontFamily:'var(--font-body)',fontWeight:600,
+                        opacity:fbModal.submitting||(!fbModal.category&&!fbModal.text.trim())?0.45:1}}>
+                      {fbModal.submitting?'Saving…':'Send Report'}
+                    </button>
+                  </div>
+                </>
+            }
+          </div>
+        </div>
+      )}
 
       {modalId && <ProductModalWrapper productId={modalId} productUrl={modalUrl} lang={lang} onClose={()=>{setModalId(null);setModalUrl('');}}/>}
     </div>

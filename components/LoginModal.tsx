@@ -2,12 +2,10 @@
 import { useEffect, useRef, useState } from 'react';
 
 export interface UserInfo { email: string; name: string; isGuest: boolean; }
-
 interface LoginModalProps { onDone: (user: UserInfo) => void; }
 
 /* =====================================================================
-   Liquid wave config — each ribbon is 7 points (start, c1,c2,end1, c3,c4,end2)
-   matching the original static path shapes, now breathing via sine offsets.
+   Liquid wave config — unchanged (7‑point breathing ribbons)
    ===================================================================== */
 type WavePoint = { x: number; baseY: number; amp: number; phase: number };
 type RibbonConfig = { points: WavePoint[]; speed: number; globalPhase: number };
@@ -46,17 +44,19 @@ function buildWavePath(cfg: RibbonConfig, t: number): string {
 }
 
 /* =====================================================================
-   Constellation particle field (canvas, no deps)
+   Constellation particle field – NOW ENHANCED
    ===================================================================== */
 type Particle = {
   x: number; y: number; vx: number; vy: number; r: number;
-  phase: number; speed: number; kind: 0 | 1 | 2; // 0 white, 1 blue, 2 gold
+  phase: number; speed: number;
+  kind: 0 | 1 | 2 | 3; // 0 white, 1 blue, 2 purple, 3 gold
 };
 
 const PARTICLE_COLOR: Record<Particle['kind'], [number, number, number]> = {
-  0: [255, 255, 255],
-  1: [158, 199, 255],
-  2: [255, 226, 122],
+  0: [255, 255, 255],   // white
+  1: [140, 190, 255],   // soft cosmic blue
+  2: [190, 150, 255],   // deep purple
+  3: [255, 210, 100],   // warm gold
 };
 
 export default function LoginModal({ onDone }: LoginModalProps) {
@@ -124,7 +124,7 @@ export default function LoginModal({ onDone }: LoginModalProps) {
     };
   }, []);
 
-  /* ---------- Liquid wave animation (real path morphing, not just translate) ---------- */
+  /* ---------- Liquid wave animation ---------- */
   useEffect(() => {
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (reduceMotion) return;
@@ -140,7 +140,7 @@ export default function LoginModal({ onDone }: LoginModalProps) {
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  /* ---------- Constellation particle field ---------- */
+  /* ---------- Enhanced Universe Particle Field ---------- */
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -149,23 +149,32 @@ export default function LoginModal({ onDone }: LoginModalProps) {
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     const DPR = Math.min(window.devicePixelRatio || 1, 2);
-    const COUNT = 58;
-    const LINK_DIST = 120;
+    const COUNT = 140;            // ← more stars
+    const LINK_DIST = 160;        // ← longer connections
     let particles: Particle[] = [];
     let raf = 0;
     let w = 0, h = 0;
 
     const initParticles = () => {
-      particles = Array.from({ length: COUNT }, () => ({
-        x: Math.random() * w,
-        y: Math.random() * h,
-        vx: (Math.random() - 0.5) * 0.16,
-        vy: (Math.random() - 0.5) * 0.16,
-        r: 1 + Math.random() * 1.7,
-        phase: Math.random() * Math.PI * 2,
-        speed: 0.6 + Math.random() * 0.9,
-        kind: (Math.random() < 0.65 ? 0 : Math.random() < 0.6 ? 1 : 2) as Particle['kind'],
-      }));
+      particles = Array.from({ length: COUNT }, () => {
+        const r = Math.random();
+        let kind: Particle['kind'];
+        if      (r < 0.4)  kind = 0; // white
+        else if (r < 0.7)  kind = 1; // blue
+        else if (r < 0.9)  kind = 2; // purple
+        else               kind = 3; // gold
+
+        return {
+          x: Math.random() * w,
+          y: Math.random() * h,
+          vx: (Math.random() - 0.5) * 3.0,
+          vy: (Math.random() - 0.5) * 1.4,
+          r: 1.5 + Math.random() * 3.0,
+          phase: Math.random() * Math.PI * 2,
+          speed: 0.5 + Math.random() * 1.2,
+          kind,
+        };
+      });
     };
 
     const resize = () => {
@@ -183,33 +192,37 @@ export default function LoginModal({ onDone }: LoginModalProps) {
       t += 0.016;
       ctx.clearRect(0, 0, w, h);
 
+      // Update positions
       for (const p of particles) {
         p.x += p.vx; p.y += p.vy;
         if (p.x < -10) p.x = w + 10; else if (p.x > w + 10) p.x = -10;
         if (p.y < -10) p.y = h + 10; else if (p.y > h + 10) p.y = -10;
       }
 
-      ctx.lineWidth = 1;
+      // Draw connections
+      ctx.lineWidth = 0.8;
       for (let i = 0; i < particles.length; i++) {
         for (let j = i + 1; j < particles.length; j++) {
           const a = particles[i], b = particles[j];
           const dx = a.x - b.x, dy = a.y - b.y;
           const dist = Math.sqrt(dx * dx + dy * dy);
           if (dist < LINK_DIST) {
-            const alpha = (1 - dist / LINK_DIST) * 0.30;
-            ctx.strokeStyle = `rgba(190,165,255,${alpha.toFixed(3)})`;
+            // Use a cosmic purple/blue link color that fades with distance
+            const alpha = (1 - dist / LINK_DIST) * 0.55;   // ← stronger links
+            ctx.strokeStyle = `rgba(160,140,220,${alpha.toFixed(3)})`;
             ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
           }
         }
       }
 
+      // Draw glowing particles
       for (const p of particles) {
-        const tw = 0.35 + 0.65 * Math.abs(Math.sin(t * p.speed + p.phase));
+        const tw = 0.3 + 0.7 * Math.abs(Math.sin(t * p.speed + p.phase));
         const [r, g, b] = PARTICLE_COLOR[p.kind];
         ctx.beginPath();
         ctx.fillStyle = `rgba(${r},${g},${b},${tw.toFixed(3)})`;
-        ctx.shadowColor = `rgba(${r},${g},${b},${(tw * 0.8).toFixed(3)})`;
-        ctx.shadowBlur = 5;
+        ctx.shadowColor = `rgba(${r},${g},${b},${(tw * 0.9).toFixed(3)})`;
+        ctx.shadowBlur = p.r + 3;   // ← larger, glowing aura
         ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
         ctx.fill();
       }
@@ -217,7 +230,7 @@ export default function LoginModal({ onDone }: LoginModalProps) {
     };
 
     if (reduceMotion) {
-      draw(); // render one static frame, no loop
+      draw(); // single static frame
     } else {
       raf = requestAnimationFrame(draw);
     }
@@ -261,7 +274,6 @@ export default function LoginModal({ onDone }: LoginModalProps) {
       {/* ============== HERO MARK (left side) ============== */}
       <div className="login-hero">
         <div className="login-hero-inner">
-          {/* Ambient bloom — blurred, scaled, slow opacity pulse, sits behind the crisp mark */}
           <svg className="login-mark-bloom" viewBox="0 0 320 220" aria-hidden="true">
             <path d="M 36 70 C 36 150 110 190 160 190 C 210 190 284 150 284 70"
               fill="none" stroke="url(#markGrad)" strokeWidth="34" strokeLinecap="round" />
@@ -280,7 +292,7 @@ export default function LoginModal({ onDone }: LoginModalProps) {
         </div>
       </div>
 
-      {/* ============== CARD (spinning gradient edge) ============== */}
+      {/* ============== CARD ============== */}
       <div className="ai-edge login-card-edge">
         <div className="login-card-inner">
           <div className="login-card-icon">
@@ -368,13 +380,11 @@ export default function LoginModal({ onDone }: LoginModalProps) {
           50%      { opacity: 0.9; transform: scale(1.12); }
         }
 
-        /* Constellation canvas — parallax layer 1 (moves most, opposite to cursor) */
         .login-particles {
           position: absolute; inset: 0; width: 100%; height: 100%;
           transform: translate3d(calc(var(--px) * -22px), calc(var(--py) * -16px), 0);
         }
 
-        /* Wave layer — parallax layer 2 (further back, moves less) */
         .login-waves {
           position: absolute; inset: 0; width: 100%; height: 100%;
           transform: translate3d(calc(var(--px) * -10px), calc(var(--py) * -6px), 0);
@@ -385,7 +395,7 @@ export default function LoginModal({ onDone }: LoginModalProps) {
         .login-ribbon.r3 { stroke: url(#loginBlue); }
         .login-ribbon.r4 { stroke: url(#loginGold); opacity: 0.4; stroke-width: 2; }
 
-        /* ---------- hero mark (foreground — moves with cursor for depth pop) ---------- */
+        /* ... rest of the CSS unchanged (hero, card, buttons) ... */
         .login-hero {
           position: relative; z-index: 1;
           flex: 1; display: flex; align-items: center; justify-content: center;
@@ -414,7 +424,6 @@ export default function LoginModal({ onDone }: LoginModalProps) {
           50%      { opacity: 0.6; }
         }
 
-        /* ---------- spinning conic-gradient edge (shared by card + buttons) ---------- */
         .ai-edge {
           --angle: 0deg;
           position: relative;
@@ -436,7 +445,6 @@ export default function LoginModal({ onDone }: LoginModalProps) {
           animation-duration: 4.5s;
         }
 
-        /* ---------- card inner (glass) ---------- */
         .login-card-inner {
           border-radius: 20px;
           padding: 34px 30px 30px;
@@ -509,7 +517,6 @@ export default function LoginModal({ onDone }: LoginModalProps) {
           font-size: 12px; color: #ff8a8a; margin: -2px 0 10px; line-height: 1.4;
         }
 
-        /* ---------- responsive ---------- */
         @media (max-width: 860px) {
           .login-hero { display: none; }
           .login-root { justify-content: center; }

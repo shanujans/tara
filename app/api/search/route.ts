@@ -531,7 +531,21 @@ export async function POST(req: NextRequest) {
         const aiCatLower   = (sp.category ?? '').toLowerCase();
         const realCatLower = (discoveredCategory ?? '').toLowerCase();
 
-        if (discoveredCategory && realCatLower !== aiCatLower) {
+        // ── "General" guard ────────────────────────────────────────────────
+        // Kapruka's MCP returns category:"General" for ALL products — it is NOT
+        // a real filter category. Re-searching with category:"General" returns
+        // completely unrelated products (cakes, statues, etc.).
+        // When dominant = "General", just use the discovery results as-is.
+        const isGeneral = realCatLower === 'general' || realCatLower === '';
+
+        if (isGeneral) {
+          LOG.info(
+            `TIER-2: dominant category is "${discoveredCategory}" (not a real filter) — ` +
+            `using discovery results directly (${discoveryRaw.length} products)`,
+          );
+          r2 = discoveryRaw;
+          discoveredCategory = undefined; // treat as unfiltered so diversification runs
+        } else if (discoveredCategory && realCatLower !== aiCatLower) {
           // Category mismatch — re-search with the REAL name from MCP
           LOG.warn(
             `Category mismatch: AI sent "${sp.category}" → ` +
@@ -541,7 +555,7 @@ export async function POST(req: NextRequest) {
           const r2Targeted = await mcpSearch(
             {
               q:             sp.q,
-              category:      discoveredCategory,   // ← real MCP category name
+              category:      discoveredCategory,
               min_price:     sp.min_price,
               max_price:     sp.max_price,
               in_stock_only: false,
@@ -552,7 +566,7 @@ export async function POST(req: NextRequest) {
             `TIER-2 TARGETED ("${discoveredCategory}")`,
           );
 
-          // Use targeted if it's comparable to discovery; else use raw discovery
+          // Use targeted if it's comparable to discovery; else fall back to raw
           r2 = r2Targeted.length >= Math.floor(discoveredCount * 0.5)
             ? r2Targeted
             : discoveryRaw;
@@ -561,9 +575,9 @@ export async function POST(req: NextRequest) {
             `TIER-2 result: targeted=${r2Targeted.length}, discovery=${discoveryRaw.length} → using ${r2 === r2Targeted ? 'targeted' : 'discovery'}`,
           );
         } else {
-          // Category matched or no category was specified — use discovery directly
+          // Category matched or no category — use discovery directly
           r2 = discoveryRaw;
-          LOG.info(`TIER-2: category matched or no category — using discovery results directly (${r2.length})`);
+          LOG.info(`TIER-2: category matched — using discovery results directly (${r2.length})`);
         }
       } else {
         LOG.warn(`TIER-2 DISCOVERY also returned 0 results for q="${sp.q}"`);
@@ -613,38 +627,64 @@ export async function POST(req: NextRequest) {
 
     // ── Category filter using the REAL (discovered) category name ─────────
     // Priority: discoveredCategory (from MCP actual response) > sp.category (AI hint)
-    // This ensures the filter uses a category string MCP actually recognizes.
+    // SKIP if filterCategory is "General" — MCP assigns "General" to every product,
+    // so filtering by it removes everything and re-searching with it returns junk.
     const filterCategory = discoveredCategory ?? sp.category;
+    const skipFilter = !filterCategory
+      || filterCategory.toLowerCase() === 'general'
+      || filterCategory === '';
 
-    if (filterCategory && mergedProducts.length > 0) {
-      const needle       = filterCategory.toLowerCase();
+    if (!skipFilter && mergedProducts.length > 0) {
+      const needle       = filterCategory!.toLowerCase();
       const beforeFilter = mergedProducts.length;
 
+      // Kapruka MCP returns category.name = "General" for ALL products regardless
+      // of their actual category. This is an MCP API quirk — the real category is
+      // embedded in the product summary string (e.g. "Electronics, Mobilephones").
+      // Rules for the filter:
+      //   1. "General" category products always pass through (they are real products)
+      //   2. Empty category string passes through
+      //   3. Actual category match (hay contains needle or vice versa) passes through
       const categoryFiltered = mergedProducts.filter(p => {
-        const hay = (p.category ?? '').toLowerCase();
-        return hay.includes(needle) || needle.includes(hay) || hay === '';
+        const hay = (p.category ?? '').toLowerCase().trim();
+        // Pass: no category set or MCP's generic "General" placeholder
+        if (hay === '' || hay === 'general') return true;
+        // Pass: real category match (bidirectional substring)
+        return hay.includes(needle) || needle.includes(hay);
       });
 
-      LOG.categoryFilter(beforeFilter, categoryFiltered.length, filterCategory);
+      LOG.categoryFilter(beforeFilter, categoryFiltered.length, filterCategory!);
+
+      // Log a sample of what the filter kept vs dropped for diagnosis
+      if (categoryFiltered.length < beforeFilter) {
+        const dropped = mergedProducts
+          .filter(p => !categoryFiltered.includes(p))
+          .slice(0, 3)
+          .map(p => `"${p.name}" [${p.category}]`);
+        LOG.info(`Filter dropped ${beforeFilter - categoryFiltered.length} products. Sample: ${dropped.join(', ')}`);
+      }
 
       if (categoryFiltered.length > 0) {
         mergedProducts = categoryFiltered;
       } else {
-        // This should rarely happen now because filterCategory came from MCP itself.
-        // Log and keep all results rather than returning empty.
+        // Filter removed everything. Since all MCP products return "General",
+        // this means no products came back at all — keep empty (nothing to show).
         const receivedCats = [...new Set(mergedProducts.map(p => p.category).filter(Boolean))];
         LOG.warn(
-          `Post-merge filter "${filterCategory}" matched NOTHING (unexpected). ` +
-          `Keeping all ${mergedProducts.length} products. Received categories:`,
-          receivedCats,
+          `Post-merge filter "${filterCategory}" matched NOTHING. ` +
+          `Received categories: ${receivedCats.join(', ')}. ` +
+          `Keeping all ${mergedProducts.length} products.`,
         );
+        // Keep all — better to show something than nothing
       }
+    } else if (skipFilter && filterCategory) {
+      LOG.info(`Post-merge filter skipped — "${filterCategory}" is not a real MCP category filter`);
     }
 
     // ── Category diversification (only when no specific category was requested) ─
-    // When the original query was category:null, spread results across categories
-    // so the user sees variety rather than 50 products from one category.
-    if (!sp.category && !discoveredCategory && mergedProducts.length > 0) {
+    // When the original query was category:null (or General was discovered, meaning
+    // no real filter exists), spread results across categories for variety.
+    if ((!sp.category || !discoveredCategory) && mergedProducts.length > 0) {
       const buckets: Record<string, Product[]> = {};
       for (const item of mergedProducts) {
         const cat = item.category || 'Other';

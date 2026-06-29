@@ -61,7 +61,7 @@ export default function WelcomeScreen({ onChip }: { onChip: (text: string) => vo
           <button
             key={chip}
             onClick={() => onChip(chip)}
-            className="action-chip justify-start text-left"
+            className="px-4 py-3 rounded-full bg-[var(--c-surface-container)]/60 backdrop-blur-md border border-[var(--c-outline)]/30 text-[var(--c-on-surface)] hover:bg-[var(--c-surface-container-high)] transition-all flex items-center justify-start text-left"
           >
             {chip}
           </button>

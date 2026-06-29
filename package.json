@@ -8,6 +8,8 @@
     "start": "next start"
   },
   "dependencies": {
+    "@paper-design/shaders-react": "^0.0.76",
+    "framer-motion": "^12.42.0",
     "next": "^16.2.7",
     "openai": "^6.42.0",
     "react": "^19.2.7",
