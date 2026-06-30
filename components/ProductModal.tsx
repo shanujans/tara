@@ -63,6 +63,7 @@ export default function ProductModal({ productId, productUrl, lang, onClose }: P
   const [product,   setProduct]   = useState<FullProduct | null>(null);
   const [loading,   setLoading]   = useState(true);
   const [activeImg, setActiveImg] = useState(0);
+  const [heroImgLoaded, setHeroImgLoaded] = useState(false);
   const [added,     setAdded]     = useState(false);
   const [tab,       setTab]       = useState<Tab>('overview');
 
@@ -99,6 +100,9 @@ export default function ProductModal({ productId, productUrl, lang, onClose }: P
 
   /* Scroll chat to bottom */
   useEffect(() => { chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMsgs, chatBusy]);
+
+  /* Reset hero image loading state on image switch */
+  useEffect(() => { setHeroImgLoaded(false); }, [activeImg]);
 
   const imgSrc = product?.image_url || product?.image || '';
   /* Collect all URLs, deduplicate, cap at 10 */
@@ -219,10 +223,15 @@ export default function ProductModal({ productId, productUrl, lang, onClose }: P
                     <div className="w-full md:w-64 flex-shrink-0"
                       style={{ borderRight:'1px solid rgba(74,68,81,0.25)', background:'rgba(17,11,46,0.40)' }}>
                       <div style={{ position:'relative', paddingTop:'75%', overflow:'hidden' }}>
+                        {!heroImgLoaded && (
+                          <div className="skeleton" style={{ position:'absolute', inset:0 }} />
+                        )}
                         <img
                           src={images[activeImg] || `https://placehold.co/400x300/110b2e/6b4dab?text=${encodeURIComponent(product.name.slice(0,10))}`}
                           alt={product.name} loading="lazy"
-                          style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover' }}
+                          onLoad={() => setHeroImgLoaded(true)}
+                          onError={() => setHeroImgLoaded(true)}
+                          style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', opacity:heroImgLoaded?1:0, transition:'opacity 0.3s ease' }}
                         />
                         {/* Image counter */}
                         {images.length > 1 && (

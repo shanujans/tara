@@ -5,6 +5,12 @@ export const dynamic = 'force-dynamic';
 
 const MAX_B64 = 2.5 * 1024 * 1024;
 
+const LOG = {
+  info:  (...a: unknown[]) => console.log('[TARA:VISION]', ...a),
+  warn:  (...a: unknown[]) => console.warn('[TARA:VISION] ⚠️', ...a),
+  error: (...a: unknown[]) => console.error('[TARA:VISION] ❌', ...a),
+};
+
 export async function POST(req: NextRequest) {
   const ip = req.headers.get('x-forwarded-for') ?? 'unknown';
   if (!rateLimit(ip, 20, 60_000))
@@ -20,6 +26,8 @@ export async function POST(req: NextRequest) {
   if (!ALLOWED_TYPES.includes(mimeType))
     return NextResponse.json({ error: 'Unsupported image type' }, { status: 415 });
 
+  LOG.info('incoming image', { mimeType, b64Length: imageBase64.length });
+
   /* Lazy-init client — avoids module-level credential error at build time */
   const { default: OpenAI } = await import('openai');
   const client = new OpenAI({
@@ -30,7 +38,7 @@ export async function POST(req: NextRequest) {
   try {
     const completion = await client.chat.completions.create({
       model: 'google/gemini-3-5-flash',
-      max_tokens: 200,
+      max_tokens: 1000,
       messages: [{
         role: 'user',
         content: [
@@ -44,17 +52,36 @@ Respond ONLY with valid JSON (no markdown, no backticks):
     });
 
     const raw = completion.choices[0]?.message?.content ?? '{}';
+    LOG.info('finish_reason:', completion.choices[0]?.finish_reason, '| usage:', completion.usage);
+    LOG.info('raw model output:', raw);
+
     const clean = raw.replace(/```json|```/g, '').trim();
     let parsed: { query: string; description: string; category: string };
-    try { parsed = JSON.parse(clean); }
-    catch {
+    try {
+      parsed = JSON.parse(clean);
+      LOG.info('parsed via JSON.parse OK:', parsed);
+    } catch {
+      LOG.warn('JSON.parse failed, falling back to regex extraction. clean=', clean);
       const qm = clean.match(/"query"\s*:\s*"([^"]+)"/);
       const dm = clean.match(/"description"\s*:\s*"([^"]+)"/);
-      parsed = { query: qm?.[1] ?? 'gift', description: dm?.[1] ?? raw.slice(0, 80), category: 'other' };
+      const cm = clean.match(/"category"\s*:\s*"([^"]+)"/);
+      parsed = {
+        query: qm?.[1] ?? 'gift',
+        description: dm?.[1] ?? raw.slice(0, 80),
+        category: cm?.[1] ?? 'other',
+      };
+      LOG.warn('regex fallback result:', parsed);
     }
-    return NextResponse.json({ query: parsed.query || 'gift', description: parsed.description || '', category: parsed.category || 'other' });
+
+    const result = {
+      query: parsed.query || 'gift',
+      description: parsed.description || '',
+      category: parsed.category || 'other',
+    };
+    LOG.info('final response:', result);
+    return NextResponse.json(result);
   } catch (err) {
-    console.error('vision-search error:', err);
+    LOG.error('vision-search error:', err);
     return NextResponse.json({ error: 'Vision analysis failed' }, { status: 500 });
   }
 }

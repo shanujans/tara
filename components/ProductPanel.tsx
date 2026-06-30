@@ -4,6 +4,7 @@ import ProductCard from './ProductCard';
 import ProductModal from './ProductModal';
 import { Product } from '@/context/CartContext';
 import { STRINGS, Lang } from '@/lib/strings';
+import { ChevronRightIcon } from './Icons';
 
 interface ProductPanelProps {
   products: (Product & { url?: string })[];
@@ -26,6 +27,7 @@ export default function ProductPanel({ products, lang, loading, quantum }: Produ
   const [selectedUrl, setSelectedUrl] = useState<string>('');
   const [sortMode,    setSortMode]    = useState<SortMode>('default');
   const [stockOnly,   setStockOnly]   = useState(false);
+  const [panelOpen,   setPanelOpen]   = useState(true);
 
   const sorted = useMemo(() => {
     if (sortMode === 'default') return products;
@@ -100,39 +102,62 @@ export default function ProductPanel({ products, lang, loading, quantum }: Produ
           </button>
         )}
 
-        {/* Sort controls — right-aligned */}
-        {products.length > 1 && (
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 3 }}>
-            <span style={{ fontSize: 10, color: 'var(--c-outline)', marginRight: 2 }}>Sort</span>
-            {SORT_OPTS.map(opt => (
-              <button
-                key={opt.key}
-                title={opt.title}
-                onClick={() => setSortMode(opt.key)}
-                style={{
-                  padding: '3px 8px', borderRadius: 8,
-                  fontSize: 11, fontWeight: 700, cursor: 'pointer',
-                  background: sortMode === opt.key ? 'var(--c-primary-container)' : 'rgba(44,39,60,0.70)',
-                  color:      sortMode === opt.key ? 'var(--c-on-primary-container)' : 'var(--c-outline)',
-                  border: `1px solid ${sortMode === opt.key ? 'transparent' : 'rgba(74,68,81,0.35)'}`,
-                  transition: 'all 0.15s',
-                  fontFamily: 'var(--font-body)',
-                  boxShadow: sortMode === opt.key ? '0 2px 8px rgba(189,147,249,0.25)' : 'none',
-                }}>
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        )}
+        {/* Right-aligned group: sort controls + collapse toggle */}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          {products.length > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+              <span style={{ fontSize: 10, color: 'var(--c-outline)', marginRight: 2 }}>Sort</span>
+              {SORT_OPTS.map(opt => (
+                <button
+                  key={opt.key}
+                  title={opt.title}
+                  onClick={() => setSortMode(opt.key)}
+                  style={{
+                    padding: '3px 8px', borderRadius: 8,
+                    fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                    background: sortMode === opt.key ? 'var(--c-primary-container)' : 'rgba(44,39,60,0.70)',
+                    color:      sortMode === opt.key ? 'var(--c-on-primary-container)' : 'var(--c-outline)',
+                    border: `1px solid ${sortMode === opt.key ? 'transparent' : 'rgba(74,68,81,0.35)'}`,
+                    transition: 'all 0.15s',
+                    fontFamily: 'var(--font-body)',
+                    boxShadow: sortMode === opt.key ? '0 2px 8px rgba(189,147,249,0.25)' : 'none',
+                  }}>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Collapse / expand whole product list */}
+          {products.length > 0 && (
+            <button
+              onClick={() => setPanelOpen(v => !v)}
+              title={panelOpen ? 'Hide products' : 'Show products'}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                padding: '3px 9px', borderRadius: 8,
+                fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                background: 'rgba(44,39,60,0.70)', color: 'var(--c-outline)',
+                border: '1px solid rgba(74,68,81,0.35)',
+                transition: 'all 0.15s', fontFamily: 'var(--font-body)',
+              }}>
+              <span style={{ display: 'inline-flex', transform: panelOpen ? 'rotate(90deg)' : 'rotate(-90deg)', transition: 'transform 0.15s' }}>
+                <ChevronRightIcon size={12}/>
+              </span>
+              {panelOpen ? 'Hide' : 'Show'}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ── Content ──────────────────────────────────────── */}
+      {panelOpen && (
       <div className="flex-1 overflow-y-auto p-3">
 
         {/* Loading skeleton */}
         {loading && (
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {Array.from({ length: 6 }).map((_, i) => (
+            {Array.from({ length: 12 }).map((_, i) => (
               <div key={i} className="rounded-xl overflow-hidden"
                 style={{ background: 'var(--c-surface-container)', border: '1px solid rgba(74,68,81,0.30)' }}>
                 <div className="skeleton" style={{ paddingTop: '75%' }}/>
@@ -203,6 +228,7 @@ export default function ProductPanel({ products, lang, loading, quantum }: Produ
           </div>
         )}
       </div>
+      )}
 
       {/* Modal */}
       {selectedId && (

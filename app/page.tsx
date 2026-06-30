@@ -194,9 +194,11 @@ function AppContent({ user }: { user: UserInfo }) {
 
       {/* ── Header ───────────────────────────────────────── */}
       <header className="glass-header" style={{ height:64, padding:'0 14px', position:'fixed', top:0, left:0, right:0, zIndex:50, display:'flex', alignItems:'center', gap:6 }}>
-        <IconBtn onClick={()=>setSidebarOpen(v=>!v)} title={sidebarOpen?'Close sidebar':'Open sidebar'}>
-          {sidebarOpen ? <XIcon size={20}/> : <MenuIcon size={20}/>}
-        </IconBtn>
+        <div className="hidden lg:block">
+          <IconBtn onClick={()=>setSidebarOpen(v=>!v)} title={sidebarOpen?'Close sidebar':'Open sidebar'}>
+            {sidebarOpen ? <XIcon size={20}/> : <MenuIcon size={20}/>}
+          </IconBtn>
+        </div>
 
         {/* Kapruka logo + TARA brand */}
         <div style={{ display:'flex', alignItems:'center', gap:10, marginRight:'auto' }}>

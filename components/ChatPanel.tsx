@@ -4,7 +4,7 @@ import { STRINGS, Lang } from '@/lib/strings';
 import { useCart, Product } from '@/context/CartContext';
 import { detectExpat, detectExpatCountry } from '@/lib/expat';
 import ExpatBanner from './ExpatBanner';
-import { MicIcon, SendIcon, AttachIcon, AddCartIcon, CheckIcon, GlobeIcon, ThumbsUpIcon, ThumbsDownIcon } from './Icons';
+import { MicIcon, SendIcon, AttachIcon, AddCartIcon, CheckIcon, GlobeIcon, ThumbsUpIcon, ThumbsDownIcon, ChevronRightIcon } from './Icons';
 
 /* ── Types ─────────────────────────────────────────────────── */
 interface Message { role: 'user' | 'assistant'; content: string; products?: Product[]; imagePreview?: string; }
@@ -22,13 +22,30 @@ interface ChatPanelProps {
 }
 
 /* ── Utils ─────────────────────────────────────────────────── */
-function detectLangClient(text: string): Lang {
-  if (/[\u0D80-\u0DFF]/.test(text)) return 'si';
-  if (/[\u0B80-\u0BFF]/.test(text)) return 'ta';
-  if (/\b(machang|machan|aiyo|oneda|aney|yako|putha)\b/i.test(text)) return 'tl';
-  if (/\b(mama|api|eka|ekak|ona|nehe|koheda|mokada|puluwan|bohoma|hariyata|gedara|amma|thaththa|akka|aiya|nangi|malli|hondai|hari|tika|godak|isthuti|ayubowan)\b/i.test(text)) return 'sl';
-  if (/\b(la|neh|ne|da)\s*[.!?,]?\s*$/im.test(text.trim())) return 'tl';
-  return 'en';
+const SL_WORDS = new Set(['mama','oyage','oyata','api','apita','mata','eka','ekak','ona','onee','nehe','koheda','kohomada','mokada','puluwan','bohoma','hariyata','gedara','amma','thaththa','putha','akka','aiya','nangi','malli','hondai','hondhai','hari','tika','tikak','godak','isthuti','ayubowan','denna','ganna','ganda','wage','witharak','kiyala','yanna','karanna','karala','kamak','nae','newei','sellam','kema','kanna','bonna','danna','enava','yanawa','karanawa','tiyenawa','thiyenawa','nattang','epa','inna','wela','balanna','hadanna']);
+const TL_WORDS = new Set(['machang','machan','aiyo','oneda','aney','yako','oru','naan','nee','ungal','ungaluku','ungalukku','enakku','avan','aval','avanga','ivanga','nanga','romba','rombha','konjam','konju','niraya','ellam','illa','aama','sari','seri','venum','venuma','venumla','venumda','vendum','vendaam','vendam','vendanum','pannunga','pannu','panren','panniten','sollunga','sollu','kudunga','kudu','vaanga','vaa','vangunga','vanganum','anuppu','anuppanum','anuppuvoma','anuppa','appaku','ammaku','thambiku','akkaku','annaku','rupai','rupaiku','rupaikulla','ulla','kitta','kooda','mattum','evlo','evvalo','epdi','eppadi','enna','yenna','enga','epo','eppo','yepo','nalla','aaguma','aagum','kaattu','kaattunga','poda','podi','vaanunga','da','la','neh','nu']);
+function detectLangClient(text: string, currentLang: Lang = 'en'): Lang {
+  const t = text.trim();
+  if (!t) return currentLang;
+  if (/[\u0D80-\u0DFF]/.test(t)) return 'si';
+  if (/[\u0B80-\u0BFF]/.test(t)) return 'ta';
+  const words = t.toLowerCase().match(/[a-z']+/g) ?? [];
+  let slScore = 0, tlScore = 0;
+  for (const w of words) {
+    if (SL_WORDS.has(w)) slScore++;
+    if (TL_WORDS.has(w)) tlScore++;
+  }
+  // No keyword signal at all (e.g. order numbers, gibberish, plain names) —
+  // stay on whatever language the conversation is already in instead of
+  // silently resetting to English.
+  if (slScore === 0 && tlScore === 0) return currentLang;
+  // Tied signal — don't flip-flop an established sl/tl conversation on a
+  // single ambiguous message; only break ties when starting fresh.
+  if (slScore === tlScore) {
+    if (currentLang === 'sl' || currentLang === 'tl') return currentLang;
+    return 'tl';
+  }
+  return tlScore > slScore ? 'tl' : 'sl';
 }
 function cleanResponse(t: string) {
   return t.replace(/<search_query>[\s\S]*?<\/search_query>/g,'').replace(/<[^>]+>/g,'').replace(/```[\s\S]*?```/g,'').replace(/\*\*(.*?)\*\*/g,'$1').replace(/\*(.*?)\*/g,'$1').replace(/^#{1,6}\s+/gm,'').trim();
@@ -90,9 +107,12 @@ function InlineChatCard({ product, lang, onViewDetail }: {
       role="button" tabIndex={0}
       onKeyDown={e => { if (e.key === 'Enter') onViewDetail?.(product.id, product.url ?? ''); }}>
       <div style={{ position:'relative', height:110, background:'var(--c-surface-container)', overflow:'hidden' }}>
-        {imgOk !== true && (
+        {imgOk === null && (
+          <div className="skeleton" style={{ position:'absolute', inset:0 }} />
+        )}
+        {imgOk === false && (
           <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <span style={{ fontSize:'2rem', opacity:0.08 }}>📦</span>
+            <span style={{ fontSize:'2rem', opacity:0.12 }}>📦</span>
           </div>
         )}
         {imgSrc && imgOk !== false && (
@@ -154,6 +174,7 @@ export default function ChatPanel({
   /* Feedback state */
   const [feedback, setFeedback] = useState<Record<number,'up'|'down'>>({});
   const [fbModal,  setFbModal]  = useState<{open:boolean;msgIdx:number;category:string;text:string;submitting:boolean;done:boolean}|null>(null);
+  const [hiddenProducts, setHiddenProducts] = useState<Record<number, boolean>>({});
 
   const bottomRef   = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -173,8 +194,17 @@ export default function ChatPanel({
     try { const raw = localStorage.getItem('tara_last_order'); if (raw) setLastOrder(JSON.parse(raw)); } catch { /**/ }
   }, []);
 
-  /* KEY FIX: only sync convLang, NEVER reset messages on lang change */
-  useEffect(() => { setConvLang(lang); }, [lang]);
+  /* Sync convLang on lang change. If the user hasn't typed anything yet
+     (still showing only the auto-generated welcome/occasion bubbles),
+     re-translate those bubbles into the newly selected language. */
+  useEffect(() => {
+    setConvLang(lang);
+    setMessages(prev => {
+      const userHasTyped = prev.some(m => m.role === 'user');
+      if (userHasTyped) return prev; // never touch an active conversation
+      return buildInitial(lang);
+    });
+  }, [lang, buildInitial]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior:'smooth' }); }, [messages, streaming]);
   useEffect(() => {
@@ -272,10 +302,13 @@ export default function ChatPanel({
   }, [onProductsFound, onSearching]);
 
   /* ── Send text message ──────────────────────────────────── */
-  const sendMessage = useCallback(async (text: string) => {
+  const sendMessage = useCallback(async (text: string, forcedLang?: Lang) => {
     if (!text.trim() || streaming) return;
 
-    const detected = detectLangClient(text);
+    // forcedLang = caller already knows the language (e.g. a pre-translated
+    // quick-action chip) — skip auto-detection, which can misread short
+    // idiomatic Singlish/Tanglish chip text.
+    const detected = forcedLang ?? detectLangClient(text, convLang);
     setConvLang(detected);
     if (detected !== lang) onLangChange(detected);
 
@@ -331,7 +364,7 @@ export default function ChatPanel({
     } catch (err: unknown) {
       if ((err as Error).name!=='AbortError') setMessages(prev=>[...prev,{role:'assistant',content:'⚠️ Something went wrong. Please try again.'}]);
     } finally { setStreaming(false); }
-  }, [messages, streaming, lang, expatMode, onLangChange, onProductsFound, onSearching]);
+  }, [messages, streaming, lang, convLang, expatMode, onLangChange, onProductsFound, onSearching]);
 
   const startListening = async () => {
     if (!voiceOk) return;
@@ -395,12 +428,24 @@ export default function ChatPanel({
                   {msg.content || (streaming && i===messages.length-1 ? TypingDots : '')}
                   {/* Inline products */}
                   {msg.role==='assistant' && msg.products && msg.products.length>0 && (
-                    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:10,marginTop:14}}>
-                      {msg.products.map(p=>(
-                        <InlineChatCard key={p.id} product={p as Product&{url?:string}} lang={lang}
-                          onViewDetail={(id,url)=>{setModalId(id);setModalUrl(url);}}/>
-                      ))}
-                    </div>
+                    <>
+                      <button
+                        onClick={()=>setHiddenProducts(p=>({...p,[i]:!p[i]}))}
+                        style={{display:'flex',alignItems:'center',gap:5,marginTop:12,padding:'4px 0',background:'transparent',border:'none',cursor:'pointer',color:'var(--c-primary)',fontSize:12,fontWeight:600,fontFamily:'var(--font-body)'}}>
+                        <span style={{display:'inline-flex',transform:hiddenProducts[i]?'rotate(0deg)':'rotate(90deg)',transition:'transform 0.15s'}}>
+                          <ChevronRightIcon size={13}/>
+                        </span>
+                        {hiddenProducts[i] ? `Show ${msg.products.length} product${msg.products.length>1?'s':''}` : 'Hide products'}
+                      </button>
+                      {!hiddenProducts[i] && (
+                        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:10,marginTop:8}}>
+                          {msg.products.map(p=>(
+                            <InlineChatCard key={p.id} product={p as Product&{url?:string}} lang={lang}
+                              onViewDetail={(id,url)=>{setModalId(id);setModalUrl(url);}}/>
+                          ))}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
                 {/* 👍 👎 feedback — only on completed (non-streaming) assistant messages */}
@@ -460,7 +505,7 @@ export default function ChatPanel({
           {!hasUserMsgs && !streaming && (
             <div style={{display:'flex',flexWrap:'wrap',gap:8,paddingLeft:40,paddingBottom:8}} className="animate-slide-in-left">
               {s.quickChips.map((chip,idx)=>(
-                <button key={chip} onClick={()=>sendMessage(chip)} className={`action-chip ${chipClasses[idx%chipClasses.length]}`}>{chip}</button>
+                <button key={chip} onClick={()=>sendMessage(chip, convLang)} className={`action-chip ${chipClasses[idx%chipClasses.length]}`}>{chip}</button>
               ))}
             </div>
           )}

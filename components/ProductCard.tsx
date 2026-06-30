@@ -100,10 +100,16 @@ export default function ProductCard({ product, lang, index = 0, onViewDetail }: 
       {/* ── 4:3 Image area ──────────────────────────── */}
       <div className="product-img-wrap">
 
-        {/* Emoji placeholder */}
-        {imgOk !== true && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none">
-            <span style={{ fontSize: '2.5rem', opacity: 0.12 }}>{emoji}</span>
+        {/* Shimmer skeleton while image is still loading */}
+        {imgOk === null && (
+          <div className="skeleton absolute inset-0" />
+        )}
+
+        {/* Emoji fallback only on true load failure (no image / broken URL) */}
+        {imgOk === false && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none"
+            style={{ background: 'var(--c-surface-container)' }}>
+            <span style={{ fontSize: '2.5rem', opacity: 0.18 }}>{emoji}</span>
           </div>
         )}
 
