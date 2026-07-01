@@ -446,7 +446,7 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
                       style={{ color: 'var(--t-text-3)' }}>✦ Occasion</p>
                     <div className="flex flex-wrap gap-1.5">
                       {OCCASIONS.map(o => (
-                        <button key={o} onClick={() => setOccasion(p => p === o ? '' : o)}
+                        <button key={o} onClick={() => setOccasion(occasion === o ? '' : o)}
                           className="text-xs px-2.5 py-1 rounded-full transition-all"
                           style={occasion === o ? {
                             background: 'var(--t-grad-gold)',
