@@ -1,207 +1,201 @@
-# TARA ✦ — The AI Retail Agent for Kapruka
+# TARA ✦ The AI Retail Agent
 
-TARA is a conversational AI shopping agent built on top of Kapruka.lk — Sri Lanka's largest e-commerce platform. Instead of the traditional 7-minute browse-filter-form workflow, TARA lets customers order anything on Kapruka in under 2 minutes through natural conversation — in English, Sinhala, Singlish, Tamil, or Tanglish. It runs as a standalone web app, an embeddable iframe widget, and a Chrome Extension that injects directly into kapruka.com.
+> **Kapruka Agent Challenge submission** — Built on Kapruka.lk, Sri Lanka's leading online shopping platform.
 
----
-
-## Live demos
-
-| Link | Description |
-|------|-------------|
-| [tara-green.vercel.app](https://tara-green.vercel.app) | Full standalone app |
-| [tara-green.vercel.app/embed-demo](https://tara-green.vercel.app/embed-demo) | Judge demo — widget embedded in mock Kapruka page |
-| [tara-green.vercel.app/widget](https://tara-green.vercel.app/widget) | Embeddable iframe widget |
+**Live demo:** [tara-green.vercel.app](https://tara-green.vercel.app)
 
 ---
 
-## What makes TARA different
+## What is TARA?
 
-### Gold standard: customer never needs to return to kapruka.com
-TARA handles discovery, delivery checking, checkout, and order creation. The only redirect is to Kapruka's payment page — by design, not limitation.
+TARA is a multilingual AI shopping agent that replaces the traditional Kapruka website experience with a warm, conversational interface. Instead of browsing menus and filling forms, customers just talk — in any of 5 Sri Lankan languages — and TARA handles everything from product discovery to checkout.
 
-### 7 minutes → under 2 minutes
-From first message to order placed. TARA collects recipient details, checks delivery options, and creates the order inside the conversation.
-
-### 5 languages — a true differentiator
-Auto-detected from the first message. No language selection required.
-
-| Code | Language | Detection method |
-|------|----------|-----------------|
-| `EN` | 🇬🇧 English | Default |
-| `SI` / `සිං` | 🇱🇰 Sinhala script | Unicode U+0D80–U+0DFF |
-| `SL` | 🇱🇰 Singlish (romanised Sinhala) | Keywords: mama, koheda, puluwan, hari, neda… |
-| `TA` / `த` | 🇱🇰 Tamil script | Unicode U+0B80–U+0BFF |
-| `TL` | 🇱🇰 Tanglish (Tamil-English mix) | Keywords: naan, romba, seri, thambi… |
-
-### Human-like gifting personality
-Before searching for any gift, TARA gives one creative, personal suggestion — not a product list. Examples:
-
-- **Flowers for wife:** "Order them to YOUR address and hand-deliver — showing up at the door beats any courier."
-- **Gift for boss:** "Safe: premium hamper. Memorable: tell me what they're into."
-- **Anniversary:** "Flowers timed for morning delivery + a cake = unforgettable 'wait, what?' moment."
-
-### Expat / diaspora use case
-"Ordering from abroad?" chip surfaces TARA's expat mode — reassures that Kapruka delivers door-to-door across Sri Lanka, international cards accepted, same quality.
-
-### Proactive occasion awareness
-TARA surfaces relevant events without being asked:
-
-| Month | Occasion |
-|-------|----------|
-| January | New Year |
-| February | Valentine's Day |
-| April | Sinhala & Tamil New Year (Avurudu) |
-| May | Vesak |
-| June | Father's Day |
-| August | Friendship Day |
-| October | Deepavali |
-| December | Christmas + New Year |
+The goal: reduce a 7-minute order to under 2 minutes, while feeling like shopping with a knowledgeable friend.
 
 ---
 
-## All 7 Kapruka MCP tools
+## Key features
 
-| Tool | What TARA uses it for |
-|------|-----------------------|
-| `kapruka_search_products` | Catalog search — runs 2–3 calls with different terms, dedupes by ID, shows max 20 results |
-| `kapruka_get_product` | Full product details, images, variants, stock status before recommending |
-| `kapruka_list_categories` | Discovery for broad/vague requests ("show me gifts") |
-| `kapruka_list_delivery_cities` | City autocomplete in checkout (400ms debounce) |
-| `kapruka_check_delivery` | Delivery fee + availability before confirming a date |
-| `kapruka_create_order` | Guest checkout — creates order and returns click-to-pay URL |
-| `kapruka_track_order` | Order status lookup by 8-digit order number |
+### 🌐 5-language support
+Auto-detects language from first message using Unicode scripts and a word-scoring system across ~135 Singlish + Tanglish keyword tokens. No UI toggle needed.
 
----
+| Language | Detection | Model |
+|---|---|---|
+| English | Default fallback | claude-sonnet-4.6 |
+| Sinhala (සිංහල) | Unicode U+0D80–U+0DFF | claude-sonnet-4.6 |
+| Singlish | Word scoring (~55 tokens) | claude-sonnet-4.6 |
+| Tamil (தமிழ்) | Unicode U+0B80–U+0BFF | gemini-3-1-pro-preview |
+| Tanglish | Word scoring (~80 tokens) | gemini-3-1-pro-preview |
 
-## Feature list
+Detection is sticky — order numbers, product names, and short replies don't reset the language mid-conversation.
 
-- **Full agentic loop** — multi-round tool calling, up to 8 rounds per request
-- **Streaming responses** — SSE-based word-by-word streaming
-- **Product cards** — lazy image loading with IntersectionObserver, staggered fetch, image proxy (`/api/img`) to bypass Kapruka hotlink protection
-- **Product detail modal** — full gallery, variant selection, add to cart
-- **Cart drawer** — gift / self / pickup order types, express / standard delivery, location type (house / apartment / office / hotel), voucher code, price summary
-- **Delivery fee parser** — handles `flat rate LKR 300` markdown format
-- **Checkout validation** — skips district/date for pickup, accepts `94X` / `+94X` / `0X` phone formats
-- **Pickup locations** — Mirihana HQ, Java Lounge Barnes Place / Kandy / Fort
-- **AI gift message generation** — ASCII-safe, 2 variants (heartfelt + fun), fallback templates
-- **Order speed timer** — measures first message → order placed, shows `✦ Order placed in 2:14 ⚡`
-- **Reorder loop** — last order saved to localStorage, shown as one-tap card on next session
-- **Chrome Extension** — shadow DOM, `content.js`, `widget.css`, `manifest.json`
-- **Embeddable widget** — `/widget` route with `frame-ancestors *` in CSP
-- **CORS** — all API routes have open CORS for cross-origin widget use
+### 🛍️ Natural language checkout
+Type delivery details in any format and TARA fills the entire checkout form automatically:
+
+```
+"Send birthday cake to Priya at 23 Galle Road Colombo 7,
+ her phone is 0771234567, deliver tomorrow, House, shanu@gmail.com"
+```
+
+TARA parses: recipient name + phone, city (normalized to "Colombo 07"), street address, delivery date, location type, email, and occasion — then opens the pre-filled cart drawer.
+
+### 🎁 Gift chain upselling
+TARA builds gift bundles naturally across 8 product pair chains:
+
+```
+User: "show me roses"
+TARA: Shows roses + "Want chocolates to go with it?"
+User: "yes"
+TARA: Shows chocolates + "Should I find a greeting card to complete the gift?"
+User: "ok"
+TARA: Shows cards → chain ends
+```
+
+Chains run for 2 follow-up steps. Recognises affirmatives in all 5 languages (awa/ஆமா/aama/ඔව்).
+
+### 📅 Occasion awareness
+System prompt is injected with today's date and the current month's occasion hint at request time. In June, TARA proactively mentions Father's Day when gifting comes up. 8 occasions covered.
+
+### 🔍 Smart 3-tier search
+1. **TIER-1**: Full params (keyword + category + price filters)
+2. **TIER-2**: Drop category, keep keyword — handles MCP quirks where category filter returns nothing
+3. **TIER-3**: Single broad keyword retry
+
+Cakes and flowers always skip to TIER-2 (MCP category filter doesn't work for these).
+
+### 📸 Vision search
+Paste or upload any image — TARA uses Gemini Vision (gemini-3-5-flash) to extract a product search query and finds matching items on Kapruka.
+
+### 👍 / 👎 Quality feedback loop
+Every TARA response has a thumbs-up / thumbs-down pill. Thumbs-down opens a modal (7 categories + free text), submits to `/api/feedback`, and appends a structured entry to `mistakes.md` for developer debugging.
+
+### 📦 Order history
+All orders saved to `localStorage` as a full array (up to 20 entries). The History panel in the sidebar shows collapsible order rows with ID, date, city, recipient, and item images. Reorder in one tap.
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  Next.js 14 App Router (TypeScript strict, Tailwind CSS) │
-├──────────────────┬──────────────────────────────────────┤
-│  /app/api/chat   │  Agentic loop → AIML API (Claude)    │
-│  route.ts        │  ↕ MCP tool calls → mcp.kapruka.com  │
-├──────────────────┼──────────────────────────────────────┤
-│  ChatPanel.tsx   │  Chat UI, product cards, voice input  │
-│  CartDrawer.tsx  │  Checkout flow, order creation        │
-├──────────────────┼──────────────────────────────────────┤
-│  /widget         │  Iframe-embeddable build              │
-│  /embed-demo     │  Judge demo with mock Kapruka page    │
-│  /chrome-ext     │  Extension download + inject script   │
-└──────────────────┴──────────────────────────────────────┘
+┌─────────────────────────────────────────────────┐
+│                  Browser (Next.js)              │
+│  ChatPanel ← → ProductPanel ← → CartDrawer     │
+│       ↕              ↕                          │
+│  app/api/chat    app/api/search    app/api/*    │
+└────────┬────────────────┬────────────────┬──────┘
+         │                │                │
+    AIML API         Kapruka MCP      /api/img proxy
+  (claude / gemini)  (7 MCP tools)   (image CDN relay)
 ```
 
-**AI model:** `anthropic/claude-sonnet-4` via AIML API (OpenAI-compatible endpoint)  
-**MCP server:** `https://mcp.kapruka.com/mcp` (Streamable HTTP transport, no auth)
+### API routes
+
+| Route | Purpose |
+|---|---|
+| `/api/chat` | Streaming AI chat, lang routing, upsell, checkout_fill tag |
+| `/api/search` | 3-tier product search with AI validator |
+| `/api/product` | Single product details + image gallery |
+| `/api/product-ai` | AI product summary + Ask AI Q&A |
+| `/api/checkout` | 3-step order: city validate → delivery check → create order |
+| `/api/validate-delivery` | Fuzzy city match + delivery date pre-check |
+| `/api/track` | Order tracking by order number |
+| `/api/gift-message` | AI-generated gift message (2 variants) |
+| `/api/feedback` | 👎 issue reports → mistakes.md |
+| `/api/img` | Image proxy (Kapruka CDN requires Referer header) |
+| `/api/vision-search` | Gemini image → search query |
+| `/api/categories` | Live category tree (60-min cache) |
 
 ---
 
-## Local setup
+## Kapruka MCP tools used
 
-**Requirements:** Node.js 18+, npm
+All 7 tools wired, all with `response_format: 'json'`:
 
-```bash
-# 1. Clone
-git clone https://github.com/shanujans/tara.git
-cd tara
-
-# 2. Install dependencies
-npm install
-
-# 3. Environment variables
-cp .env.example .env.local
-# Fill in:
-#   AIML_API_KEY=your_aiml_api_key
-#   MCP_URL=https://mcp.kapruka.com/mcp
-
-# 4. Run development server
-npm run dev
-# → http://localhost:3000
-
-# 5. Optional: build for production
-npm run build && npm start
-```
+- `kapruka_search_products` — product search with filters
+- `kapruka_get_product` — full product details + images
+- `kapruka_list_categories` — category tree
+- `kapruka_list_delivery_cities` — city fuzzy matching
+- `kapruka_check_delivery` — date + city availability + perishable warnings
+- `kapruka_create_order` — order placement
+- `kapruka_track_order` — order status
 
 ---
 
-## Chrome Extension install
+## Tech stack
 
-1. Go to [tara-green.vercel.app/embed-demo](https://tara-green.vercel.app/embed-demo) and click **Download Extension**
-2. Unzip `TARA-chrome-extension.zip`
-3. Open Chrome → `chrome://extensions`
-4. Enable **Developer mode** (top-right toggle)
-5. Click **Load unpacked** → select the unzipped folder
-6. Visit [kapruka.com](https://kapruka.com) — TARA appears as a floating button
+| Layer | Technology |
+|---|---|
+| Framework | Next.js 16.2.7 (App Router, TypeScript strict) |
+| Styling | Tailwind CSS v4 + custom Lumina design system |
+| 3D / WebGL | Three.js r184 (splash screen sprite), custom GLSL shaders |
+| AI models | claude-sonnet-4.6 + gemini-3-1-pro-preview via AIML API |
+| Shopping data | Kapruka MCP (7 tools) |
+| Deployment | Vercel |
 
 ---
 
-## Project structure
+## Design system — Lumina palette
 
+```css
+--c-background:           #151024   /* deepest base */
+--c-surface-container:    #221c31   /* TARA bubbles */
+--c-primary:              #d7baff   /* lavender accents */
+--c-primary-container:    #bd93f9   /* user bubbles, buttons */
+--c-secondary:            #c5cd65   /* yellow-green prices */
+--c-on-surface:           #e8defb   /* body text */
 ```
-tara/
-├── app/
-│   ├── api/
-│   │   ├── chat/route.ts          ← AI + MCP agentic loop
-│   │   ├── img/route.ts           ← Image proxy (Referer spoof)
-│   │   ├── check-delivery/        ← MCP delivery check
-│   │   ├── create-order/          ← MCP order creation
-│   │   └── track/route.ts         ← MCP order tracking
-│   ├── embed-demo/page.tsx        ← Judge demo page
-│   ├── widget/page.tsx            ← Embeddable iframe
-│   └── page.tsx                   ← Main chat page
-├── components/
-│   ├── ChatPanel.tsx              ← Main chat UI
-│   └── CartDrawer.tsx             ← Cart + checkout drawer
-├── context/
-│   └── CartContext.tsx            ← Cart state management
-├── public/
-│   └── chrome-extension.zip      ← Pre-built extension download
-├── chrome-extension/
-│   ├── manifest.json
-│   ├── content.js                 ← Injects widget iframe into kapruka.com
-│   └── widget.css                 ← Shadow DOM styles
-└── next.config.ts                 ← CSP headers for widget embedding
-```
+
+Fonts: Manrope (headings) + Hanken Grotesk (body). No external icon fonts — all icons are inline SVG from `components/Icons.tsx`.
 
 ---
 
 ## Environment variables
 
 | Variable | Required | Description |
-|----------|----------|-------------|
-| `AIML_API_KEY` | ✅ | AIML API key for Claude Sonnet 4 access |
-| `MCP_URL` | optional | Kapruka MCP endpoint (default: `https://mcp.kapruka.com/mcp`) |
+|---|---|---|
+| `AIML_API_KEY` | ✅ | AIML API key for claude-sonnet-4.6 + gemini |
+| `MCP_URL` | ✅ | Kapruka MCP endpoint |
+| `GEMINI_API_KEY` | ✅ | Gemini API key for vision search |
 
 ---
 
-## Stack
+## Running locally
 
-- **Framework:** Next.js 14 (App Router)
-- **Language:** TypeScript (strict mode)
-- **Styling:** Tailwind CSS only
-- **AI:** AIML API → `anthropic/claude-sonnet-4.5`
-- **Tools:** Kapruka MCP (Streamable HTTP, 7 tools)
-- **Deploy:** Vercel
+```bash
+git clone https://github.com/shanujans/tara
+cd tara
+npm install
+cp .env.example .env.local   # add your API keys
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000).
 
 ---
 
-*TARA — Applicant GMEU6 · Kapruka AI Agent Challenge*
+## Chrome extension
+
+The `chrome-extension/` folder contains a content script that injects TARA into kapruka.com as a floating assistant. Load it via `chrome://extensions` → Developer mode → Load unpacked.
+
+---
+
+## Embed / widget
+
+- `/widget` — embeddable iframe widget
+- `/embed-demo` — demo page showing the widget integration
+
+---
+
+## Feedback & quality loop
+
+Every 👎 report from users is saved to `mistakes.md` with:
+- Category (Wrong products / Wrong language / Didn't understand / etc.)
+- The exact TARA response that triggered it
+- Full conversation context (last 4 messages)
+- Timestamp and detected language
+
+This file is the debugging foundation for continuous improvement.
+
+---
+
+*Built for GMEU6 — Kapruka AI Agent Challenge*

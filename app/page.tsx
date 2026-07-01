@@ -1,5 +1,5 @@
 'use client';
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import ChatPanel from '@/components/ChatPanel';
 import ProductPanel from '@/components/ProductPanel';
@@ -161,13 +161,29 @@ function AppContent({ user }: { user: UserInfo }) {
   const [searching,   setSearching]   = useState(false);
   const [quantum,     setQuantum]     = useState(false);
   const [cartOpen,    setCartOpen]    = useState(false);
+  const { totalQty } = useCart();
+
+  /* Open cart drawer when ChatPanel detects a <checkout_fill> tag */
+  useEffect(() => {
+    const handler = () => setCartOpen(true);
+    window.addEventListener('tara:opencart', handler);
+    return () => window.removeEventListener('tara:opencart', handler);
+  }, []);
+
+  /* If checkout was pre-filled before any items were in cart,
+     open the cart as soon as the first item is added */
+  useEffect(() => {
+    if (totalQty > 0 && window.sessionStorage.getItem('tara_opencart_pending') === '1') {
+      window.sessionStorage.removeItem('tara_opencart_pending');
+      setCartOpen(true);
+    }
+  }, [totalQty]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileTab,   setMobileTab]   = useState<MobileTab>('chat');
   const [activeNav,   setActiveNav]   = useState<NavKey>('home');
   const [panel,       setPanel]       = useState<PanelId>('none');
   const [autoSend,    setAutoSend]    = useState('');
   const chatClearRef = useRef<(()=>void)|null>(null);
-  const { totalQty } = useCart();
   const s = STRINGS[lang];
 
   const handleProducts = useCallback((p:(Product&{url?:string})[], q=false) => {

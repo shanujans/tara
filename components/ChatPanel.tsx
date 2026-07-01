@@ -48,9 +48,19 @@ function detectLangClient(text: string, currentLang: Lang = 'en'): Lang {
   return tlScore > slScore ? 'tl' : 'sl';
 }
 function cleanResponse(t: string) {
-  return t.replace(/<search_query>[\s\S]*?<\/search_query>/g,'').replace(/<[^>]+>/g,'').replace(/```[\s\S]*?```/g,'').replace(/\*\*(.*?)\*\*/g,'$1').replace(/\*(.*?)\*/g,'$1').replace(/^#{1,6}\s+/gm,'').trim();
+  return t
+    .replace(/<search_query>[\s\S]*?<\/search_query>/g,'')
+    .replace(/<checkout_fill>[\s\S]*?<\/checkout_fill>/g,'')
+    .replace(/<[^>]+>/g,'').replace(/```[\s\S]*?```/g,'')
+    .replace(/\*\*(.*?)\*\*/g,'$1').replace(/\*(.*?)\*/g,'$1')
+    .replace(/^#{1,6}\s+/gm,'').trim();
 }
 function extractQuery(t: string) { const m = t.match(/<search_query>([\s\S]*?)<\/search_query>/); return m ? m[1].trim() : null; }
+function extractCheckoutFill(t: string): Record<string,string>|null {
+  const m = t.match(/<checkout_fill>([\s\S]*?)<\/checkout_fill>/);
+  if (!m) return null;
+  try { return JSON.parse(m[1].trim()); } catch { return null; }
+}
 function proxyImg(url: string) { if (!url) return ''; return url.includes('kapruka.com') ? `/api/img?url=${encodeURIComponent(url)}` : url; }
 const SPEECH_LANG: Record<Lang,string> = { si:'si-LK',sl:'si-LK',ta:'ta-IN',tl:'en-US',en:'en-US' };
 const LANG_OPTS: { key:Lang; label:string }[] = [
@@ -147,7 +157,7 @@ export default function ChatPanel({
   autoSend, onAutoSendDone, onClearRef,
 }: ChatPanelProps) {
   const s = STRINGS[lang];
-  const { addItem } = useCart();
+  const { addItem, prefillCheckout, items: cartItems } = useCart();
 
   const buildInitial = useCallback((l: Lang): Message[] => {
     const msgs: Message[] = [{ role:'assistant', content:STRINGS[l].welcomeMsg }];
@@ -360,6 +370,21 @@ export default function ChatPanel({
           const r3 = await fetch('/api/track',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({order_number:om[1]})});
           if (r3.ok) { const {status}=await r3.json(); if (status) setMessages(prev=>[...prev,{role:'assistant',content:`📦 Order ${om[1]}: ${status}`}]); }
         } catch {/***/}
+      }
+
+      /* NL Checkout pre-fill — parse <checkout_fill> tag and open cart drawer */
+      const checkoutData = extractCheckoutFill(full);
+      if (checkoutData) {
+        prefillCheckout(checkoutData);
+        // Only auto-open cart if user already has items — otherwise wait for
+        // them to add a product first (avoids opening an empty cart drawer)
+        if (cartItems.length > 0) {
+          window.dispatchEvent(new CustomEvent('tara:opencart'));
+        } else {
+          // Store the intent; page.tsx will open cart on next addItem via a
+          // separate listener registered in CartContext-aware code
+          window.sessionStorage.setItem('tara_opencart_pending', '1');
+        }
       }
     } catch (err: unknown) {
       if ((err as Error).name!=='AbortError') setMessages(prev=>[...prev,{role:'assistant',content:'⚠️ Something went wrong. Please try again.'}]);

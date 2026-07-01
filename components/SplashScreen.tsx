@@ -43,16 +43,23 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
   const [stars] = useState(() => generateStars(70));
   const [sparkles] = useState(() => generateDots(35));
   const [showFallback, setShowFallback] = useState(true); // static image until sprite ready
+  // True only once the cartoon image has actually finished loading (or failed).
+  // Ring, character, wordmark and badge all wait on this so they appear together
+  // instead of the ring popping in first and the character catching up later.
+  const [assetsReady, setAssetsReady] = useState(false);
 
-  // Fade‑out timers (unchanged)
+  // Fade‑out timers — anchored to assetsReady, not mount. If the image takes
+  // 800ms to load, the splash still shows the *complete* scene for a full
+  // 2s before fading, instead of eating that time out of the display window.
   useEffect(() => {
+    if (!assetsReady) return;
     const t1 = setTimeout(() => setFadingOut(true), 2000);
     const t2 = setTimeout(() => onDone(), 2750);
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
     };
-  }, [onDone]);
+  }, [assetsReady, onDone]);
 
   const stageRef = useRef<HTMLDivElement>(null);
   const threeContainerRef = useRef<HTMLDivElement>(null);
@@ -137,6 +144,7 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
       // Append canvas and hide fallback in the same frame – no flicker
       container.appendChild(renderer.domElement);
       setShowFallback(false);
+      setAssetsReady(true); // reveal ring + character + wordmark + badge together
 
       // Start animation loop
       const animate = (time: number) => {
@@ -171,6 +179,7 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
       preloadImage.onerror = () => {
         // If image fails, hide fallback and run an empty loop (no character)
         setShowFallback(false);
+        setAssetsReady(true); // don't leave the splash stuck hidden if the image 404s
         const animate = () => {
           if (!mounted) return;
           animationId = requestAnimationFrame(animate);
@@ -193,8 +202,13 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
 
   /* ---------- Render ---------- */
   return (
-    <div
-      ref={stageRef}
+    <>
+      {/* Kicks off the image fetch as early as possible (before this
+          component's effects even run), shrinking the load window that
+          the ring/wordmark/badge below wait on. */}
+      <link rel="preload" as="image" href="/cartoon.jpg" fetchPriority="high" />
+      <div
+        ref={stageRef}
       style={{
         position: 'fixed',
         inset: 0,
@@ -342,6 +356,13 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           display: flex;
           align-items: center;
           justify-content: center;
+          opacity: 0;
+          transform: scale(0.94);
+          transition: opacity 0.4s ease-out, transform 0.4s ease-out;
+        }
+        .ring-wrap.is-ready {
+          opacity: 1;
+          transform: scale(1);
         }
         .ring {
           position: absolute;
@@ -391,17 +412,24 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
         }
 
         /* ---------- entrance text/badge ---------- */
+        /* No auto animation-delay from mount anymore — that's what caused the
+           ring/text/badge to settle in before the character image was even
+           loaded. Both now stay hidden until .is-ready is applied, which
+           happens at the same moment as the ring-wrap, so everything in the
+           splash appears together regardless of how long the image took. */
         .entrance-text {
           opacity: 0;
           transform: translateY(20px);
-          animation: fadeInUp 0.8s ease-out forwards;
-          animation-delay: 0.2s;
+        }
+        .entrance-text.is-ready {
+          animation: fadeInUp 0.5s ease-out forwards;
         }
         .entrance-badge {
           opacity: 0;
           transform: translateY(20px);
-          animation: fadeInUp 0.8s ease-out forwards;
-          animation-delay: 0.5s;
+        }
+        .entrance-badge.is-ready {
+          animation: fadeInUp 0.5s ease-out forwards;
         }
         @keyframes fadeInUp {
           to {
@@ -535,7 +563,7 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
 
       {/* -------- Center content (ring, character, text) -------- */}
       <div className="center">
-        <div className="ring-wrap">
+        <div className={`ring-wrap${assetsReady ? ' is-ready' : ''}`}>
           <div className="ring spin">
             <svg viewBox="0 0 300 300">
               <circle className="arc" cx="150" cy="150" r="138" strokeDasharray="240 620" />
@@ -572,12 +600,12 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           </div>
         </div>
 
-        <div className="wordmark entrance-text">
+        <div className={`wordmark entrance-text${assetsReady ? ' is-ready' : ''}`}>
           TARA
           <div className="shimmer-effect" />
         </div>
 
-        <div className="badge entrance-badge">
+        <div className={`badge entrance-badge${assetsReady ? ' is-ready' : ''}`}>
           Powered by{' '}
           <img
             alt="Kapruka"
@@ -587,6 +615,7 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
           <b>Kapruka</b>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }

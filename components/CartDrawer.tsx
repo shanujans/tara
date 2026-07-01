@@ -32,19 +32,20 @@ const inp = 'cart-input';
 export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
   const { items, removeItem, updateQty, total, clearCart,
           giftMessage, setGiftMessage, deliveryDate, setDeliveryDate,
-          district, setDistrict } = useCart();
+          district, setDistrict,
+          recipientName, setRecipientName,
+          recipientPhone, setRecipientPhone,
+          addressLine1, setAddressLine1,
+          occasion, setOccasion,
+          senderName, setSenderName,
+          senderEmail, setSenderEmail,
+          locationType, setLocationType,
+        } = useCart();
   const s = STRINGS[lang];
   const [mode,           setMode]           = useState<'guest'|'signin'>('guest');
   const [orderPurpose,   setOrderPurpose]   = useState<'gift'|'self'|'pickup'>('gift');
   const [pickupLocation, setPickupLocation] = useState<PickupId>('mirihana');
-  const [recipientName,  setRecipientName]  = useState('');
-  const [recipientPhone, setRecipientPhone] = useState('');
-  const [addressLine1,   setAddressLine1]   = useState('');
   const [addressLine2,   setAddressLine2]   = useState('');
-  const [occasion,       setOccasion]       = useState('');
-  const [senderName,     setSenderName]     = useState('');
-  const [senderEmail,    setSenderEmail]    = useState('');
-  const [locationType,   setLocationType]   = useState('HOUSE OR RESIDENCE');
   const [voucherCode,    setVoucherCode]    = useState('');
   const [cityInput,      setCityInput]      = useState('');
   const [citySuggestions,setCitySuggestions]= useState<CityOption[]>([]);
@@ -101,32 +102,15 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
     if (!district || !deliveryDate) { setDeliveryInfo(null); return; }
     let cancelled = false;
     setDeliveryChecking(true);
-    const pids = items.map(i => i.id).filter(Boolean);
-    fetch('/api/validate-delivery', {
+    const pid = items[0]?.id;
+    fetch('/api/delivery', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        city:        district,
-        date:        deliveryDate,
-        ...(pids.length ? { product_ids: pids } : {}),
-      }),
+      body: JSON.stringify({ city: district, delivery_date: deliveryDate, ...(pid ? { product_id: pid } : {}) }),
     })
       .then(r => r.json())
-      .then(d => {
-        if (cancelled) return;
-        // Map validate-delivery response → DeliveryInfo shape
-        const available = d.delivery_available ?? d.available ?? false;
-        const fee       = typeof d.rate === 'number' ? d.rate : undefined;
-        const message   = d.error ?? d.reason ?? (d.perishable_warning ? `⚠️ ${d.perishable_warning}` : undefined);
-        // Update district to canonical city if the user typed a fuzzy match
-        if (d.canonical_city && d.canonical_city !== district) {
-          setDistrict(d.canonical_city);
-          setCityInput(d.canonical_city);
-        }
-        setDeliveryInfo({ available, fee, message });
-        setSelectedType('express');
-      })
-      .catch(() => { if (!cancelled) setDeliveryInfo({ available: false, message: 'Could not check delivery.' }); })
-      .finally(() => { if (!cancelled) setDeliveryChecking(false); });
+      .then(d  => { if (!cancelled) { setDeliveryInfo(d); setSelectedType('express'); }})
+      .catch(()=> { if (!cancelled) setDeliveryInfo({ available: false, message: 'Could not check delivery.' }); })
+      .finally(()=> { if (!cancelled) setDeliveryChecking(false); });
     return () => { cancelled = true; };
   }, [district, deliveryDate, items]);
 
@@ -186,13 +170,29 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
           }
         } catch { /* */ }
         try {
-          localStorage.setItem('tara_last_order', JSON.stringify({
-            order_id: data.orderId ?? 'ORDER',
+          // Generate a readable order ID if MCP returns empty/generic
+          const rawId = data.orderId;
+          const orderId = (!rawId || rawId === 'ORDER')
+            ? `ORDERMCP${Date.now().toString().slice(-6)}`
+            : rawId;
+
+          const entry = {
+            order_id: orderId,
             items: items.map(i => ({ id: i.id, name: i.name, price: i.price, image: i.image || PLACEHOLDER })),
             date: new Date().toISOString(),
-          }));
+            city: district,
+            recipient: recipientName,
+          };
+
+          // Maintain full history array (most recent first, cap at 20)
+          let history: typeof entry[] = [];
+          try { history = JSON.parse(localStorage.getItem('tara_order_history') ?? '[]'); } catch { /* */ }
+          history = [entry, ...history].slice(0, 20);
+          localStorage.setItem('tara_order_history', JSON.stringify(history));
+          // Keep last-order key for reorder feature in ChatPanel
+          localStorage.setItem('tara_last_order', JSON.stringify(entry));
+          setOrderId(orderId);
         } catch { /* */ }
-        setOrderId(data.orderId);
         setCheckoutUrl(data.checkoutUrl);
         clearCart();
       } else {

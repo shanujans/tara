@@ -196,6 +196,7 @@ Highlight same-day Colombo delivery, gift wrapping, personal messages.
 
   // ── Proactive occasion awareness — current month injected at request time ──
   const _now = new Date();
+  const _today = _now.toISOString().split('T')[0]; // e.g. "2026-07-01"
   const OCCASION_HINTS: Record<number, string> = {
     0:  'New Year is here — wish customers warmly and suggest gifts for loved ones when gifting comes up.',
     1:  'Valentine\'s Day is coming (Feb 14) — when gifting topics arise, proactively suggest flowers, chocolates, and romantic gifts.',
@@ -487,6 +488,54 @@ If user mentions being abroad or overseas:
 ## ORDERING
 Target: order done in under 3 minutes.
 On checkout redirect: "Done! Just tap to complete payment on Kapruka's secure page. 30 seconds. 🔒"
+
+## CHECKOUT PRE-FILL — auto-fill the cart form from chat
+TODAY: ${_today} — use this to resolve relative delivery dates.
+
+When the user provides delivery details (even partially), emit a <checkout_fill> tag as the LAST line of your reply:
+<checkout_fill>{"recipient_name":"Priya","recipient_phone":"0771234567","city":"Colombo 07","address":"23 Galle Road","delivery_date":"2026-07-05","occasion":"Birthday","sender_name":"Shanu","sender_email":"shanu@gmail.com","location_type":"HOUSE OR RESIDENCE"}</checkout_fill>
+
+RELATIVE DATE RESOLUTION (today is ${_today}):
+  "tomorrow"      → add 1 day to today
+  "Saturday"      → next upcoming Saturday as YYYY-MM-DD
+  "next week"     → 7 days from today
+  "in 2 days"     → add 2 days to today
+
+FIELD RULES:
+  - Only include fields the user actually mentioned — never invent details
+  - recipient_name: the person RECEIVING the gift (not the sender)
+  - recipient_phone: Sri Lanka format, accept with or without +94 prefix
+  - city: the DELIVERY CITY / ZONE only — NOT the street address
+      • "colombo 7" or "colombo7"   → "Colombo 07"
+      • "colombo 3" or "colombo 03" → "Colombo 03"
+      • "colombo 15" etc.           → "Colombo 15"
+      • Always use SPACE + TWO DIGITS format: "Colombo 07" not "Colombo 7"
+      • "Kandy" → "Kandy", "Galle" → "Galle" (non-Colombo cities as-is)
+      • If user says "at 23 Galle Road Colombo 3" — city="Colombo 03", address="23 Galle Road"
+      • NEVER put a city name in the address field
+  - address: street address ONLY — house/flat number + road name
+      • Strip city name from address: "23 Galle Road Colombo 3" → address="23 Galle Road"
+      • Omit if user only mentioned a city, no street details
+  - delivery_date: YYYY-MM-DD only, omit if no date mentioned
+  - occasion: one of Birthday | Anniversary | Wedding | New Baby | Get Well | Thank You | Festival | Just Because
+  - sender_name: the person who is ordering (the user themselves)
+  - sender_email: any email address mentioned — include as-is
+  - location_type: map to one of these EXACT strings based on what user says:
+      • "house" / "home" / "residence"           → "HOUSE OR RESIDENCE"
+      • "apartment" / "flat" / "condo"           → "APARTMENT"
+      • "office" / "work" / "company"            → "OFFICE"
+      • "hospital"                               → "HOSPITAL"
+      • "school" / "university" / "college"      → "SCHOOL"
+      • "hotel" / "other"                        → "OTHER (INCLUDING HOTELS)"
+      • If not mentioned, omit this field entirely
+
+NEVER emit <checkout_fill> for:
+  - Order tracking questions
+  - General delivery availability checks ("can you deliver to Kandy?")
+  - When no name, phone, or city is mentioned at all
+
+WARM CONFIRMATION (say this before the tag):
+  "Got it! I've filled in the details — just open your cart to review and place the order 🛒"
 
 ## ORDER TRACKING
 Order number mentioned (e.g. KP12345) → "Checking that for you now!"

@@ -46,53 +46,77 @@ const LANG_OPTIONS: { key: Lang; label: string }[] = [
   { key: 'tl', label: '🇱🇰 Tanglish' },
 ];
 
-interface LastOrder { order_id?: string; items: { id: string; name: string; price: number; image: string }[]; date?: string; }
+interface OrderEntry {
+  order_id?: string;
+  items: { id: string; name: string; price: number; image: string }[];
+  date?: string;
+  city?: string;
+  recipient?: string;
+}
 
 function HistoryPanel({ lang }: { lang: Lang }) {
-  const [order, setOrder] = useState<LastOrder | null>(null);
+  const [orders, setOrders] = useState<OrderEntry[]>([]);
+  const [expanded, setExpanded] = useState<number | null>(0);
+
   useEffect(() => {
     try {
-      const raw = localStorage.getItem('tara_last_order');
-      if (raw) setOrder(JSON.parse(raw));
+      // Try full history first, fall back to legacy last-order key
+      const raw = localStorage.getItem('tara_order_history');
+      if (raw) { setOrders(JSON.parse(raw)); return; }
+      const legacy = localStorage.getItem('tara_last_order');
+      if (legacy) setOrders([JSON.parse(legacy)]);
     } catch { /* */ }
   }, []);
 
-  if (!order || order.items.length === 0) {
+  if (orders.length === 0) {
     return (
       <div style={{ padding: 24, textAlign: 'center' }}>
         <PackageIcon size={40} style={{ color: 'var(--c-outline)', margin: '0 auto 12px', display: 'block' }} />
         <p style={{ color: 'var(--c-on-surface-variant)', fontSize: 14 }}>No order history yet.</p>
-        <p style={{ color: 'var(--c-outline)', fontSize: 12, marginTop: 4 }}>Your last order will appear here after checkout.</p>
+        <p style={{ color: 'var(--c-outline)', fontSize: 12, marginTop: 4 }}>Your orders will appear here after checkout.</p>
       </div>
     );
   }
 
   return (
     <div style={{ padding: 16 }}>
-      <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--c-outline)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
-        Last Order {order.date ? `· ${new Date(order.date).toLocaleDateString()}` : ''}
-      </p>
-      {order.items.map((item, i) => (
-        <div key={i} style={{
-          display: 'flex', gap: 10, alignItems: 'center',
-          padding: '10px 12px', borderRadius: 10, marginBottom: 6,
-          background: 'var(--c-surface-container)',
-          border: '1px solid rgba(74,68,81,0.25)',
-        }}>
-          <div style={{ width: 40, height: 40, borderRadius: 8, background: 'var(--c-surface-container-high)', flexShrink: 0, overflow: 'hidden' }}>
-            {item.image && <img src={`/api/img?url=${encodeURIComponent(item.image)}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--c-on-surface)', lineHeight: 1.3 }} className="line-clamp-2">{item.name}</p>
-            <p style={{ fontSize: 12, color: 'var(--c-secondary)', fontWeight: 700, marginTop: 2 }}>Rs. {item.price.toLocaleString('si-LK')}</p>
-          </div>
+      {orders.map((order, idx) => (
+        <div key={idx} style={{ marginBottom: 10, background: 'var(--c-surface-container)', borderRadius: 12, border: '1px solid rgba(74,68,81,0.25)', overflow: 'hidden' }}>
+          {/* Order header — always visible, click to expand */}
+          <button onClick={() => setExpanded(expanded === idx ? null : idx)}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+            <PackageIcon size={16} style={{ color: 'var(--c-primary)', flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--c-on-surface)', fontFamily: 'monospace', letterSpacing: '0.03em' }}>
+                {order.order_id ?? '—'}
+              </p>
+              <p style={{ fontSize: 11, color: 'var(--c-outline)', marginTop: 1 }}>
+                {order.date ? new Date(order.date).toLocaleDateString('en-LK', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
+                {order.city ? ` · ${order.city}` : ''}
+                {order.recipient ? ` · ${order.recipient}` : ''}
+              </p>
+            </div>
+            <span style={{ fontSize: 10, color: 'var(--c-outline)', transition: 'transform 0.15s', transform: expanded === idx ? 'rotate(90deg)' : 'rotate(0deg)', display: 'inline-block' }}>▶</span>
+          </button>
+
+          {/* Order items — shown when expanded */}
+          {expanded === idx && (
+            <div style={{ padding: '0 12px 12px' }}>
+              {order.items.map((item, i) => (
+                <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '8px 10px', borderRadius: 8, marginBottom: 5, background: 'var(--c-surface-container-high)' }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 6, overflow: 'hidden', flexShrink: 0, background: 'var(--c-surface-container)' }}>
+                    {item.image && <img src={`/api/img?url=${encodeURIComponent(item.image)}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--c-on-surface)', lineHeight: 1.3 }} className="line-clamp-2">{item.name}</p>
+                    <p style={{ fontSize: 11, color: 'var(--c-secondary)', fontWeight: 700, marginTop: 2 }}>Rs. {item.price.toLocaleString('si-LK')}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       ))}
-      {order.order_id && (
-        <p style={{ fontSize: 11, color: 'var(--c-outline)', marginTop: 8, textAlign: 'center' }}>
-          Order ID: {order.order_id}
-        </p>
-      )}
     </div>
   );
 }
