@@ -153,9 +153,9 @@ Fonts: Manrope (headings) + Hanken Grotesk (body). No external icon fonts — al
 
 | Variable | Required | Description |
 |---|---|---|
-| `AIML_API_KEY` | ✅ | AIML API key for claude-sonnet-4.6 + gemini |
+| `AIML_API_KEY` | ✅ | AIML API key for claude-sonnet-4.6 + gemini-3.1-pro |
 | `MCP_URL` | ✅ | Kapruka MCP endpoint |
-| `GEMINI_API_KEY` | ✅ | AIML API key for vision search |
+| `GEMINI_API_KEY` | ✅ | GEMINI API (Google AI Studio) key for vision search |
 
 ---
 

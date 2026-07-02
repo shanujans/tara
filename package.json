@@ -8,6 +8,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "@google/genai": "^2.10.0",
     "@paper-design/shaders-react": "^0.0.76",
     "framer-motion": "^12.42.0",
     "motion": "^12.42.1",

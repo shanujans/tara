@@ -4,7 +4,7 @@ import { useCart, Product } from '@/context/CartContext';
 import { STRINGS, Lang } from '@/lib/strings';
 import { SendIcon, CheckIcon } from './Icons';
 
-interface ProductModalProps { productId: string; productUrl: string; lang: Lang; onClose: () => void; }
+interface ProductModalProps { productId: string; productUrl: string; lang: Lang; onClose: () => void; allProducts?: (Product & { url?: string; category?: string })[]; }
 
 interface FullProduct {
   id: string; name: string; price: number; image?: string; image_url?: string;
@@ -13,7 +13,7 @@ interface FullProduct {
 }
 interface Msg { role: 'user' | 'assistant'; content: string; }
 
-type Tab = 'overview' | 'summary' | 'ask';
+type Tab = 'overview' | 'summary' | 'ask' | 'compare';
 
 const QUICK_QS = [
   'Is this good as a gift?',
@@ -56,7 +56,7 @@ function renderMd(text: string): React.ReactNode {
   );
 }
 
-export default function ProductModal({ productId, productUrl, lang, onClose }: ProductModalProps) {
+export default function ProductModal({ productId, productUrl, lang, onClose, allProducts }: ProductModalProps) {
   const { addItem, items } = useCart();
   const s = STRINGS[lang];
 
@@ -113,6 +113,30 @@ export default function ProductModal({ productId, productUrl, lang, onClose }: P
     .slice(0, 10);
   const desc = product?.description || product?.summary || '';
 
+  /* Compare — state for MCP-fetched comparison products */
+  const [compareData,    setCompareData]    = useState<(Product & { url?: string; category?: string; in_stock?: boolean })[]>([]);
+  const [compareLoading, setCompareLoading] = useState(false);
+  const [compareFetched, setCompareFetched] = useState(false);
+
+  const fetchCompare = async () => {
+    if (compareFetched || compareLoading || !product) return;
+    setCompareLoading(true);
+    try {
+      const r = await fetch('/api/compare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          product_id:   product.id,
+          category:     product.category,
+          product_name: product.name,
+        }),
+      });
+      const d = await r.json() as { products: (Product & { url?: string; category?: string; in_stock?: boolean })[] };
+      setCompareData(d.products ?? []);
+    } catch { setCompareData([]); }
+    finally { setCompareLoading(false); setCompareFetched(true); }
+  };
+
   const handleAdd = () => {
     if (!product) return;
     addItem({ id: product.id, name: product.name, price: product.price, image: imgSrc } as Product);
@@ -156,7 +180,7 @@ export default function ProductModal({ productId, productUrl, lang, onClose }: P
   /* ── Tab bar ──────────────────────────────────────── */
   const TabBtn = ({ id, label, emoji }: { id: Tab; label: string; emoji: string }) => (
     <button
-      onClick={() => { setTab(id); if (id === 'summary') fetchSummary(); }}
+      onClick={() => { setTab(id); if (id === 'summary') fetchSummary(); if (id === 'compare') fetchCompare(); }}
       style={{
         flex: 1, padding: '8px 4px', fontSize: 12, fontWeight: tab === id ? 700 : 500, cursor: 'pointer',
         border: 'none', borderBottom: `2px solid ${tab === id ? 'var(--c-primary-container)' : 'transparent'}`,
@@ -202,6 +226,7 @@ export default function ProductModal({ productId, productUrl, lang, onClose }: P
             <TabBtn id="overview" label="Overview"   emoji="📦"/>
             <TabBtn id="summary"  label="AI Summary" emoji="✨"/>
             <TabBtn id="ask"      label="Ask AI"     emoji="💬"/>
+            <TabBtn id="compare" label="Compare" emoji="⚖️"/>
           </div>
 
           {/* Body */}
@@ -397,6 +422,88 @@ export default function ProductModal({ productId, productUrl, lang, onClose }: P
               </div>
             )}
           </div>
+
+          {/* COMPARE TAB ─────────────────────────── */}
+          {tab === 'compare' && (() => {
+            // Helper: render one table row (shared for current + comparison products)
+            const TableRow = ({ p, isCurrent, idx }: {
+              p: { id:string; name:string; price:number; image?:string; url?:string; category?:string; in_stock?:boolean; stock?:string|boolean };
+              isCurrent: boolean; idx: number;
+            }) => {
+              const ok    = p.in_stock === true || (typeof p.stock === 'string' && /in.?stock/i.test(p.stock ?? ''));
+              const thumb = p.image ? proxyImg(p.image) : '';
+              return (
+                <tr style={{ borderBottom:'1px solid rgba(74,68,81,0.15)', background: isCurrent?'rgba(189,147,249,0.10)':idx%2===0?'transparent':'rgba(255,255,255,0.015)', outline:isCurrent?'1px solid rgba(189,147,249,0.28)':'none' }}>
+                  <td style={{ padding:'8px 8px 8px 0', verticalAlign:'middle' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                      <div style={{ width:44, height:44, borderRadius:8, overflow:'hidden', flexShrink:0, background:'rgba(34,28,49,0.70)', border:`1px solid ${isCurrent?'rgba(189,147,249,0.40)':'rgba(74,68,81,0.25)'}` }}>
+                        {thumb ? <img src={thumb} alt={p.name} loading="lazy" style={{ width:'100%', height:'100%', objectFit:'cover' }}/> : <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, opacity:0.22 }}>📦</div>}
+                      </div>
+                      <div>
+                        <p style={{ fontSize:12, fontWeight:isCurrent?700:600, color:isCurrent?'var(--c-primary)':'var(--c-on-surface)', lineHeight:1.3, maxWidth:150, overflow:'hidden', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical' }}>{p.name}</p>
+                        {isCurrent && <span style={{ fontSize:9, fontWeight:700, color:'var(--c-primary)', background:'rgba(189,147,249,0.15)', padding:'1px 6px', borderRadius:20, marginTop:3, display:'inline-block', letterSpacing:'0.04em' }}>VIEWING</span>}
+                      </div>
+                    </div>
+                  </td>
+                  <td style={{ padding:'8px', verticalAlign:'middle', color:'var(--c-on-surface-variant)', fontSize:11, whiteSpace:'nowrap' }}>{p.category || product?.category || '—'}</td>
+                  <td style={{ padding:'8px', verticalAlign:'middle', textAlign:'right', fontWeight:700, color:'var(--c-secondary)', whiteSpace:'nowrap', fontVariantNumeric:'tabular-nums' }}>{s.lkr}&nbsp;{p.price.toLocaleString('si-LK')}</td>
+                  <td style={{ padding:'8px', verticalAlign:'middle', textAlign:'center' }}>
+                    <span style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'2px 8px', borderRadius:20, fontSize:11, fontWeight:600, whiteSpace:'nowrap', background:ok?'rgba(74,222,128,0.12)':'rgba(248,113,113,0.12)', color:ok?'#4ade80':'#f87171', border:`1px solid ${ok?'rgba(74,222,128,0.30)':'rgba(248,113,113,0.30)'}` }}>
+                      <span style={{ width:5, height:5, borderRadius:'50%', background:'currentColor', flexShrink:0 }}/>{ok?'In Stock':'Out'}
+                    </span>
+                  </td>
+                  <td style={{ padding:'8px', verticalAlign:'middle', textAlign:'center' }}>
+                    {p.url ? <a href={p.url} target="_blank" rel="noopener noreferrer" style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:28, height:28, borderRadius:8, border:'1px solid rgba(189,147,249,0.30)', color:'var(--c-primary)', textDecoration:'none', fontSize:13, transition:'all 0.15s' }} onMouseOver={e=>e.currentTarget.style.background='rgba(189,147,249,0.15)'} onMouseOut={e=>e.currentTarget.style.background='transparent'}>→</a> : <span style={{ color:'var(--c-outline)' }}>—</span>}
+                  </td>
+                </tr>
+              );
+            };
+
+            // Skeleton row while loading
+            const SkeletonRow = () => (
+              <tr style={{ borderBottom:'1px solid rgba(74,68,81,0.10)' }}>
+                <td style={{ padding:'8px 8px 8px 0' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <div className="skeleton" style={{ width:44, height:44, borderRadius:8, flexShrink:0 }}/>
+                    <div style={{ flex:1 }}>
+                      <div className="skeleton" style={{ height:12, width:'80%', borderRadius:4, marginBottom:5 }}/>
+                      <div className="skeleton" style={{ height:10, width:'50%', borderRadius:4 }}/>
+                    </div>
+                  </div>
+                </td>
+                {[1,2,3,4].map(i => <td key={i} style={{ padding:'8px' }}><div className="skeleton" style={{ height:12, borderRadius:4, width:i===2?40:i===3?60:24 }}/></td>)}
+              </tr>
+            );
+
+            const total = 1 + compareData.length;
+            return (
+              <div className="flex-1 overflow-y-auto" style={{ padding:16 }}>
+                <p style={{ fontSize:11, fontWeight:700, color:'var(--c-outline)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:14 }}>
+                  {compareLoading ? 'Loading comparison…' : `${total} product${total!==1?'s':''} · ${product?.category ?? 'Same Category'}`}
+                </p>
+                <div style={{ overflowX:'auto' }}>
+                  <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
+                    <thead>
+                      <tr style={{ borderBottom:'1px solid rgba(74,68,81,0.35)' }}>
+                        {['Product','Category','Price','Stock','Link'].map(h => (
+                          <th key={h} style={{ textAlign:h==='Price'?'right':h==='Stock'||h==='Link'?'center':'left', padding:'6px 8px 8px', fontWeight:700, color:'var(--c-outline)', fontSize:10, textTransform:'uppercase', letterSpacing:'0.08em', whiteSpace:'nowrap', fontFamily:'var(--font-body)' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {/* Row 1: always the product currently being viewed */}
+                      {product && <TableRow p={product} isCurrent={true} idx={0}/>}
+                      {/* Rows 2-5: MCP comparison results */}
+                      {compareLoading
+                        ? Array.from({ length: 4 }).map((_, i) => <SkeletonRow key={i}/>)
+                        : compareData.map((p, i) => <TableRow key={p.id} p={p} isCurrent={false} idx={i+1}/>)
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Footer CTAs */}
           <div style={{ display:'flex', gap:10, padding:'12px 16px', flexShrink:0, borderTop:'1px solid rgba(74,68,81,0.25)' }}>

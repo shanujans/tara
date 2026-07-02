@@ -236,6 +236,7 @@ export default function ProductPanel({ products, lang, loading, quantum }: Produ
           productId={selectedId}
           productUrl={selectedUrl}
           lang={lang}
+          allProducts={filtered}
           onClose={() => { setSelectedId(null); setSelectedUrl(''); }}
         />
       )}

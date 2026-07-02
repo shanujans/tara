@@ -7,7 +7,8 @@ import ExpatBanner from './ExpatBanner';
 import { MicIcon, SendIcon, AttachIcon, AddCartIcon, CheckIcon, GlobeIcon, ThumbsUpIcon, ThumbsDownIcon, ChevronRightIcon } from './Icons';
 
 /* ── Types ─────────────────────────────────────────────────── */
-interface Message { role: 'user' | 'assistant'; content: string; products?: Product[]; imagePreview?: string; }
+interface ThinkingData { intent: string; goal: string; constraints: string[]; plan: string[]; }
+interface Message { role: 'user' | 'assistant'; content: string; products?: Product[]; imagePreview?: string; thinking?: ThinkingData; }
 interface PendingImage { base64: string; mimeType: string; preview: string; }
 interface ChatPanelProps {
   lang: Lang;
@@ -49,6 +50,7 @@ function detectLangClient(text: string, currentLang: Lang = 'en'): Lang {
 }
 function cleanResponse(t: string) {
   return t
+    .replace(/<tara_thinking>[\s\S]*?<\/tara_thinking>/g,'')
     .replace(/<search_query>[\s\S]*?<\/search_query>/g,'')
     .replace(/<checkout_fill>[\s\S]*?<\/checkout_fill>/g,'')
     .replace(/<[^>]+>/g,'').replace(/```[\s\S]*?```/g,'')
@@ -151,6 +153,113 @@ function InlineChatCard({ product, lang, onViewDetail }: {
   );
 }
 
+
+/* ── ThinkingPulse — animated indicator while TARA is generating ───────── */
+function ThinkingPulse() {
+  const phases = [
+    '✦ Analyzing request…',
+    '✦ Searching catalog…',
+    '✦ Building recommendation…',
+  ];
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setIdx(i => (i + 1) % phases.length), 1300);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+      <span style={{
+        width:7, height:7, borderRadius:'50%', flexShrink:0,
+        background:'var(--c-primary)',
+        animation:'quantum-pulse 1s ease-in-out infinite',
+      }}/>
+      <span style={{ fontSize:13, color:'var(--c-primary)', fontWeight:600, letterSpacing:'0.02em' }}>
+        {phases[idx]}
+      </span>
+    </div>
+  );
+}
+
+/* ── ThinkingDrawer — collapsible reasoning panel shown after response ───── */
+function ThinkingDrawer({ data }: { data: ThinkingData }) {
+  const [visibleSteps, setVisibleSteps] = useState(0);
+  // Strip any upsell / gift-chain steps — these are internal business logic, not for customers
+  const cleanPlan = data.plan.filter(s =>
+    !/upsell|cross.sell|gift.chain|suggest.*after|chain.*step/i.test(s)
+  );
+  useEffect(() => {
+    cleanPlan.forEach((_, i) => {
+      setTimeout(() => setVisibleSteps(v => Math.max(v, i + 1)), i * 300 + 80);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cleanPlan.length]);
+  return (
+    <div className="animate-slide-in-left" style={{
+      marginTop:8, padding:'14px 16px',
+      background:'rgba(21,16,36,0.88)',
+      border:'1px solid rgba(215,186,255,0.18)',
+      borderRadius:14,
+      backdropFilter:'blur(14px)',
+    }}>
+      {/* Intent + Goal */}
+      <div style={{ display:'flex', gap:16, marginBottom:12, flexWrap:'wrap' }}>
+        <div style={{ flex:'1 1 100px' }}>
+          <p style={{ fontSize:9, color:'var(--c-outline)', textTransform:'uppercase', letterSpacing:'0.10em', fontWeight:700, marginBottom:3 }}>Intent</p>
+          <p style={{ fontSize:13, color:'var(--c-on-surface)', fontWeight:600, lineHeight:1.35 }}>{data.intent}</p>
+        </div>
+        <div style={{ flex:'1 1 100px' }}>
+          <p style={{ fontSize:9, color:'var(--c-outline)', textTransform:'uppercase', letterSpacing:'0.10em', fontWeight:700, marginBottom:3 }}>Goal</p>
+          <p style={{ fontSize:13, color:'var(--c-on-surface)', fontWeight:600, lineHeight:1.35 }}>{data.goal}</p>
+        </div>
+      </div>
+      {/* Constraints */}
+      {data.constraints?.length > 0 && (
+        <div style={{ marginBottom:12 }}>
+          <p style={{ fontSize:9, color:'var(--c-outline)', textTransform:'uppercase', letterSpacing:'0.10em', fontWeight:700, marginBottom:6 }}>Constraints</p>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:5 }}>
+            {data.constraints.map((c, i) => (
+              <span key={i} style={{
+                padding:'2px 10px', borderRadius:20, fontSize:11, fontWeight:600,
+                color:'var(--c-primary)',
+                background:'rgba(215,186,255,0.10)',
+                border:'1px solid rgba(215,186,255,0.22)',
+              }}>{c}</span>
+            ))}
+          </div>
+        </div>
+      )}
+      {/* Plan steps */}
+      <div>
+        <p style={{ fontSize:9, color:'var(--c-outline)', textTransform:'uppercase', letterSpacing:'0.10em', fontWeight:700, marginBottom:8 }}>Plan</p>
+        <div style={{ display:'flex', flexDirection:'column', gap:7 }}>
+          {cleanPlan.map((step, i) => (
+            <div key={i} style={{
+              display:'flex', alignItems:'flex-start', gap:8,
+              opacity: i < visibleSteps ? 1 : 0.22,
+              transform: i < visibleSteps ? 'translateX(0)' : 'translateX(-6px)',
+              transition:'opacity 0.35s ease, transform 0.35s ease',
+            }}>
+              <span style={{
+                width:18, height:18, borderRadius:'50%', flexShrink:0, marginTop:1,
+                display:'flex', alignItems:'center', justifyContent:'center',
+                fontSize:9, fontWeight:700, transition:'all 0.35s ease',
+                background: i < visibleSteps ? 'rgba(74,222,128,0.18)' : 'rgba(215,186,255,0.07)',
+                border:`1px solid ${i < visibleSteps ? 'rgba(74,222,128,0.45)' : 'rgba(215,186,255,0.18)'}`,
+                color: i < visibleSteps ? '#4ade80' : 'var(--c-outline)',
+              }}>
+                {i < visibleSteps ? '✓' : i + 1}
+              </span>
+              <span style={{ fontSize:12.5, color:'var(--c-on-surface-variant)', lineHeight:1.45, flex:1 }}>
+                {step}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Main ChatPanel ─────────────────────────────────────────── */
 export default function ChatPanel({
   lang, onLangChange, onProductsFound, onSearching,
@@ -183,6 +292,7 @@ export default function ChatPanel({
   const [visionLoading,setVisionLoading]= useState(false);
   /* Feedback state */
   const [feedback, setFeedback] = useState<Record<number,'up'|'down'>>({});
+  const [expandedThinking, setExpandedThinking] = useState<Record<number, boolean>>({});
   const [fbModal,  setFbModal]  = useState<{open:boolean;msgIdx:number;category:string;text:string;submitting:boolean;done:boolean}|null>(null);
   const [hiddenProducts, setHiddenProducts] = useState<Record<number, boolean>>({});
 
@@ -271,10 +381,11 @@ export default function ChatPanel({
 
       const desc = d.description || 'product';
       const query = d.query || 'gift';
+      const upsell = d.upsell ? ` ${d.upsell}` : '';
 
       setMessages(prev => {
         const c = [...prev];
-        c[c.length-1] = { role:'assistant', content:`I can see **${desc}**. Searching Kapruka for similar products…` };
+        c[c.length-1] = { role:'assistant', content:`I can see ${desc}. Searching Kapruka for similar products…` };
         return c;
       });
 
@@ -290,7 +401,7 @@ export default function ChatPanel({
           const c = [...prev];
           c[c.length-1] = {
             ...c[c.length-1],
-            content: `I can see **${desc}**. Here are matching products on Kapruka:`,
+            content: `I can see ${desc}. Here are matching products on Kapruka:${upsell}`,
             products: sd.products.slice(0,4),
           };
           return c;
@@ -298,7 +409,7 @@ export default function ChatPanel({
       } else {
         setMessages(prev => {
           const c = [...prev];
-          c[c.length-1] = { role:'assistant', content:`I can see **${desc}**, but couldn't find an exact match. Try describing it in the chat!` };
+          c[c.length-1] = { role:'assistant', content:`I can see ${desc}, but couldn't find an exact match. Try describing it in the chat!` };
           return c;
         });
       }
@@ -337,17 +448,26 @@ export default function ChatPanel({
       });
       if (!res.ok) throw new Error('API error');
 
+      // Read TARA's internal reasoning from response header (set by chat route)
+      let thinkingData: ThinkingData | null = null;
+      const thinkingHeader = res.headers.get('X-Tara-Thinking');
+      if (thinkingHeader) {
+        try { thinkingData = JSON.parse(decodeURIComponent(thinkingHeader)); } catch { /* invalid JSON — ignore */ }
+      }
+
       const reader = res.body!.getReader(); const decoder = new TextDecoder(); let full = '';
       setMessages(prev => [...prev, { role:'assistant', content:'' }]);
 
       while (true) {
         const { done, value } = await reader.read(); if (done) break;
         full += decoder.decode(value, { stream:true });
-        setMessages(prev => { const c=[...prev]; c[c.length-1]={role:'assistant',content:full}; return c; });
+        // Strip thinking block from live display (full kept intact for processing below)
+        const disp = full.replace(/<tara_thinking>[\s\S]*?<\/tara_thinking>/gi,'').trim();
+        setMessages(prev => { const c=[...prev]; c[c.length-1]={role:'assistant',content:disp}; return c; });
       }
 
       const visible = cleanResponse(full);
-      setMessages(prev => { const c=[...prev]; c[c.length-1]={role:'assistant',content:visible}; return c; });
+      setMessages(prev => { const c=[...prev]; c[c.length-1]={role:'assistant',content:visible,...(thinkingData?{thinking:thinkingData}:{})}; return c; });
 
       /* Search + attach inline products */
       const query = extractQuery(full);
@@ -473,6 +593,23 @@ export default function ChatPanel({
                     </>
                   )}
                 </div>
+                {/* 🧠 Reasoning drawer — show pill on completed messages with thinking data */}
+                {msg.role==='assistant' && msg.thinking && !(streaming && i===messages.length-1) && (
+                  <div style={{marginBottom:2}}>
+                    <button
+                      onClick={()=>setExpandedThinking(p=>({...p,[i]:!p[i]}))}
+                      style={{display:'flex',alignItems:'center',gap:5,padding:'3px 10px 3px 8px',borderRadius:20,border:'none',cursor:'pointer',fontFamily:'var(--font-body)',transition:'all 0.15s',
+                        background:expandedThinking[i]?'rgba(215,186,255,0.18)':'rgba(215,186,255,0.08)',
+                        color:'var(--c-primary)',fontSize:11,fontWeight:600}}>
+                      <span>🧠</span>
+                      <span>{expandedThinking[i]?'Hide Reasoning':"Show TARA's Reasoning"}</span>
+                      <span style={{display:'inline-flex',transform:expandedThinking[i]?'rotate(90deg)':'rotate(0deg)',transition:'transform 0.2s'}}>
+                        <ChevronRightIcon size={11}/>
+                      </span>
+                    </button>
+                    {expandedThinking[i] && <ThinkingDrawer data={msg.thinking!}/>}
+                  </div>
+                )}
                 {/* 👍 👎 feedback — only on completed (non-streaming) assistant messages */}
                 {msg.role==='assistant' && msg.content && !(streaming && i===messages.length-1) && (
                   <div style={{display:'flex',gap:1,marginTop:5,paddingLeft:2,width:'fit-content',background:'rgba(34,28,49,0.72)',border:'0.5px solid rgba(215,186,255,0.14)',borderRadius:20,padding:'2px 4px',backdropFilter:'blur(6px)'}}>
@@ -501,7 +638,7 @@ export default function ChatPanel({
                 style={{width:28,height:28,borderRadius:'50%',objectFit:'contain',flexShrink:0,background:'var(--c-secondary)',padding:3}}
                 onError={e=>{(e.target as HTMLImageElement).style.display='none';}}
               />
-              <div className="bubble-tara" style={{padding:'12px 15px'}}>{TypingDots}</div>
+              <div className="bubble-tara" style={{padding:'10px 14px'}}><ThinkingPulse/></div>
             </div>
           )}
 
