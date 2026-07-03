@@ -11,42 +11,6 @@ const LOG = {
   error: (...a: unknown[]) => console.error('[TARA:VISION] ❌', ...a),
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// UPSELL PAIRINGS — mirrors the gifting-completion logic used elsewhere in TARA,
-// keyed to THIS file's own category/subcategory taxonomy (see prompt below).
-// Checked subcategory first (more specific), then falls back to category-level.
-// Returns null when there's no natural pairing (e.g. groceries, medicine).
-// ─────────────────────────────────────────────────────────────────────────────
-const SUBCATEGORY_UPSELL: Record<string, string> = {
-  mobile_phones:                'a phone case, screen guard, or power bank',
-  computers_and_accessories:    'a laptop bag, wireless mouse, or USB hub',
-  tablets_and_accessories:      'a tablet case or stylus',
-  wearable_technology:          'a charger or an extra strap',
-  audio_and_home_entertainment: 'a protective case or stand',
-  gaming:                       'a controller or gaming headset',
-  engine_oils_and_lubricants:   'auto care or cleaning products',
-};
-
-const CATEGORY_UPSELL: Record<string, string> = {
-  cakes:      'flowers or chocolates to go with it',
-  flowers:    'chocolates or a greeting card',
-  chocolates: 'flowers or a soft toy',
-  softtoy:    'chocolates or flowers',
-  giftset:    'a greeting card',
-  perfumes:   'a gift box or chocolates',
-  cosmetics:  'a gift box or matching skincare',
-  baby:       'a soft toy or baby clothing',
-  jewellery:  'a gift box',
-  clothing:   'matching accessories',
-};
-
-function getUpsell(category: string, subcategory: string): string | null {
-  const sub = subcategory.toLowerCase().trim();
-  const cat = category.toLowerCase().trim();
-  const suggestion = SUBCATEGORY_UPSELL[sub] ?? CATEGORY_UPSELL[cat] ?? null;
-  return suggestion ? `Want me to also find ${suggestion} to go with it?` : null;
-}
-
 export async function POST(req: NextRequest) {
   const ip = req.headers.get('x-forwarded-for') ?? 'unknown';
   if (!rateLimit(ip, 20, 60_000))
@@ -72,7 +36,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const response = await client.models.generateContent({
-      model: 'gemini-3.5-flash',
+      model: 'gemini-3.1-flash-lite',
       contents: [{
         role: 'user',
         parts: [
@@ -165,15 +129,11 @@ Respond ONLY with valid JSON (no markdown, no backticks):
       LOG.warn('regex fallback result:', parsed);
     }
 
-    const category    = parsed.category || 'other';
-    const subcategory = parsed.subcategory || '';
-
     const result = {
       query: parsed.query || 'gift',
       description: parsed.description || '',
-      category,
-      subcategory,
-      upsell: getUpsell(category, subcategory),
+      category: parsed.category || 'other',
+      subcategory: parsed.subcategory || '',
     };
     LOG.info('final response:', result);
     return NextResponse.json(result);

@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useCart } from '@/context/CartContext';
 import { Lang, STRINGS } from '@/lib/strings';
 import type { DeliveryOption } from '@/lib/mcp';
+import InvoiceTemplate, { type InvoiceData } from './InvoiceTemplate';
 
 const PLACEHOLDER = 'https://placehold.co/48x48/110b2e/6b4dab?text=?';
 const OCCASIONS = ['Birthday','Anniversary','Wedding','New Baby','Get Well','Thank You','Festival','Just Because'];
@@ -40,6 +41,7 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
           senderName, setSenderName,
           senderEmail, setSenderEmail,
           locationType, setLocationType,
+          specialInstructions, setSpecialInstructions,
         } = useCart();
   const s = STRINGS[lang];
   const [mode,           setMode]           = useState<'guest'|'signin'>('guest');
@@ -60,7 +62,77 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
   const [checkoutUrl,    setCheckoutUrl]    = useState('');
   const [orderTime,      setOrderTime]      = useState('');
   const [error,          setError]          = useState('');
+  /* Invoice PDF state */
+  const [invoiceSnap,  setInvoiceSnap]  = useState<InvoiceData | null>(null);
+  const [pendingPdf,   setPendingPdf]   = useState<InvoiceData | null>(null);
+  const [pdfLoading,   setPdfLoading]   = useState(false);
+  const [pdfAction,    setPdfAction]    = useState<'download' | 'share'>('download'); // NEW
+  const invoiceRef  = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /* ── Invoice PDF generation ────────────────────────────────────────────── */
+  // Runs after React commits the hidden InvoiceTemplate to the DOM
+  useEffect(() => {
+    if (!pendingPdf || !invoiceRef.current) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        // Small pause — ensures the browser has painted the hidden template
+        await new Promise(r => setTimeout(r, 120));
+        if (cancelled || !invoiceRef.current) return;
+        const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+          import('html2canvas'),
+          import('jspdf'),
+        ]);
+        if (cancelled || !invoiceRef.current) return;
+        const canvas = await html2canvas(invoiceRef.current, {
+          scale: 2, useCORS: true, allowTaint: false,
+          backgroundColor: '#FDFDFD', logging: false,
+        });
+        if (cancelled) return;
+        const pxW = canvas.width / 2;
+        const pxH = canvas.height / 2;
+        const img = canvas.toDataURL('image/jpeg', 0.95);
+        const pdf = new jsPDF({ unit: 'px', format: [pxW, pxH], orientation: 'portrait' });
+        pdf.addImage(img, 'JPEG', 0, 0, pxW, pxH);
+        // Add transparent clickable link over the CTA section (bottom ~28% of page)
+        if (pendingPdf.checkoutUrl) {
+          const linkTop = pxH * 0.72;
+          pdf.link(20, linkTop, pxW - 40, pxH - linkTop - 40, { url: pendingPdf.checkoutUrl });
+        }
+        // ── NEW: share or download based on pdfAction ──────────────────────
+        if (pdfAction === 'share') {
+          const blob = pdf.output('blob');
+          const file = new File(
+            [blob],
+            `kapruka-order-${pendingPdf.orderId}.pdf`,
+            { type: 'application/pdf' }
+          );
+          try {
+            if (navigator.canShare?.({ files: [file] })) {
+              await navigator.share({
+                files: [file],
+                title: `Kapruka Order ${pendingPdf.orderId}`,
+                text: 'Your Kapruka order details — tap to open or forward.',
+              });
+            } else {
+              pdf.save(`kapruka-order-${pendingPdf.orderId}.pdf`);
+            }
+          } catch (shareError) {
+            console.warn('Share failed, falling back to download:', shareError);
+            pdf.save(`kapruka-order-${pendingPdf.orderId}.pdf`);
+          }
+        } else {
+          pdf.save(`kapruka-order-${pendingPdf.orderId}.pdf`);
+        }
+      } catch (e) {
+        console.error('[TARA:INVOICE] PDF generation failed:', e);
+      } finally {
+        if (!cancelled) { setPdfLoading(false); setPendingPdf(null); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [pendingPdf, pdfAction]); // added pdfAction dependency
 
   const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
   const maxDate  = new Date(); maxDate.setDate(maxDate.getDate() + 30);
@@ -153,7 +225,8 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
               : `${addressLine1.trim()}${addressLine2.trim() ? ', ' + addressLine2.trim() : ''}`,
           },
           sender: { name: senderName.trim() || 'Guest', email: senderEmail.trim() || undefined },
-          locationType, voucherCode: voucherCode.trim() || undefined,
+          locationType, specialInstructions: specialInstructions.trim() || undefined,
+          voucherCode: voucherCode.trim() || undefined,
         }),
       });
       const data = await r.json();
@@ -191,6 +264,39 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
           localStorage.setItem('tara_order_history', JSON.stringify(history));
           // Keep last-order key for reorder feature in ChatPanel
           localStorage.setItem('tara_last_order', JSON.stringify(entry));
+          // Generate QR code for the payment URL (requires: npm install qrcode @types/qrcode)
+          let qrCode: string | undefined;
+          if (data.checkoutUrl) {
+            try {
+              const QRCode = (await import('qrcode')).default;
+              qrCode = await QRCode.toDataURL(data.checkoutUrl, {
+                width: 150, margin: 1,
+                color: { dark: '#422B75', light: '#FFFFFF' },
+              });
+            } catch { /* qrcode not installed — skip */ }
+          }
+
+          // Capture all invoice fields BEFORE clearCart() wipes context values
+          setInvoiceSnap({
+            state:          'unpaid',
+            orderId,
+            orderDate:      new Date().toISOString(),
+            checkoutUrl:    data.checkoutUrl,
+            qrCode,
+            items:          items.map(i => ({ id: i.id, name: i.name, price: i.price, qty: i.qty, image: i.image })),
+            recipientName:  recipientName.trim(),
+            recipientPhone: recipientPhone.trim(),
+            address:        `${addressLine1.trim()}${addressLine2.trim() ? ', ' + addressLine2.trim() : ''}`,
+            city:           district,
+            deliveryDate,
+            deliveryFee,
+            grandTotal,
+            occasion,
+            giftMessage,
+            specialInstructions: specialInstructions.trim() || undefined,
+            senderName:     senderName.trim() || 'Guest',
+            senderEmail:    senderEmail.trim() || undefined,
+          });
           setOrderId(orderId);
         } catch { /* */ }
         setCheckoutUrl(data.checkoutUrl);
@@ -209,6 +315,13 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
 
   return (
     <>
+      {/* Hidden invoice render target — captured by html2canvas, never visible to user */}
+      <div style={{ position: 'fixed', left: -9999, top: 0, opacity: 0, pointerEvents: 'none', zIndex: -1 }}>
+        <div ref={invoiceRef}>
+          {pendingPdf && <InvoiceTemplate data={pendingPdf} />}
+        </div>
+      </div>
+
       {/* Backdrop */}
       <div onClick={onClose}
         className={`fixed inset-0 z-40 transition-opacity duration-300 ${open ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
@@ -324,7 +437,89 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
                 </div>
               )}
 
-              <button onClick={() => { setOrderId(''); setCheckoutUrl(''); setOrderTime(''); onClose(); }}
+              {/* Download Order Info (unpaid invoice PDF) */}
+              {invoiceSnap && (
+                <div className="w-full space-y-2">
+                  <button
+                    onClick={() => {
+                      if (!invoiceSnap) return;
+                      setPdfAction('download');
+                      setPdfLoading(true);
+                      // Auto-generate gift card, then trigger PDF
+                      (async () => {
+                        let giftCardImage: string | undefined;
+                        try {
+                          const r = await fetch('/api/generate-gift-card', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              occasion:  invoiceSnap.occasion  ?? '',
+                              recipient: invoiceSnap.recipientName ?? '',
+                            }),
+                          });
+                          if (r.ok) {
+                            const d = await r.json() as { image?: string };
+                            if (d.image) giftCardImage = d.image;
+                          }
+                        } catch { /* PDF still generates — gift card slot shows placeholder */ }
+                        setPendingPdf({ ...invoiceSnap, giftCardImage });
+                      })();
+                    }}
+                    disabled={pdfLoading}
+                    className="w-full py-3 rounded-xl text-sm font-semibold transition-all"
+                    style={{
+                      background: 'rgba(64,41,112,0.15)',
+                      border: '1px solid rgba(107,77,171,0.40)',
+                      color: pdfLoading ? 'var(--t-text-4)' : '#c7abff',
+                      cursor: pdfLoading ? 'not-allowed' : 'pointer',
+                      opacity: pdfLoading ? 0.7 : 1,
+                      fontFamily: 'var(--font-body)',
+                    }}>
+                    {pdfLoading && pdfAction === 'download' ? '⏳ Generating PDF…' : '📄 Download Order Info'}
+                  </button>
+
+                  {/* Share Order Info (Web Share API) */}
+                  <button
+                    onClick={() => {
+                      if (!invoiceSnap) return;
+                      setPdfAction('share');
+                      setPdfLoading(true);
+                      // Same gift card generation for share
+                      (async () => {
+                        let giftCardImage: string | undefined;
+                        try {
+                          const r = await fetch('/api/generate-gift-card', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              occasion:  invoiceSnap.occasion  ?? '',
+                              recipient: invoiceSnap.recipientName ?? '',
+                            }),
+                          });
+                          if (r.ok) {
+                            const d = await r.json() as { image?: string };
+                            if (d.image) giftCardImage = d.image;
+                          }
+                        } catch { /* */ }
+                        setPendingPdf({ ...invoiceSnap, giftCardImage });
+                      })();
+                    }}
+                    disabled={pdfLoading}
+                    className="w-full py-3 rounded-xl text-sm font-semibold transition-all"
+                    style={{
+                      background: 'rgba(64,41,112,0.15)',
+                      border: '1px solid rgba(107,77,171,0.40)',
+                      color: pdfLoading ? 'var(--t-text-4)' : '#c7abff',
+                      cursor: pdfLoading ? 'not-allowed' : 'pointer',
+                      opacity: pdfLoading ? 0.7 : 1,
+                      fontFamily: 'var(--font-body)',
+                    }}>
+                    {pdfLoading && pdfAction === 'share' ? '⏳ Preparing…' : '↗ Share Order Info'}
+                  </button>
+                </div>
+              )}
+
+              <button onClick={() => { setOrderId(''); setCheckoutUrl(''); setOrderTime(''); setInvoiceSnap(null); onClose(); }}
                 className="text-xs transition-colors"
                 style={{ color: 'var(--t-text-3)' }}>
                 Continue Shopping
@@ -507,6 +702,25 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
                             { value: 'OTHER (INCLUDING HOTELS)', label: 'Other (Hotels, Hospitals...)' },
                           ].map(lt => <option key={lt.value} value={lt.value}>{lt.label}</option>)}
                         </select>
+                      </div>
+                      <div>
+                        <p className="text-xs mb-1" style={{ color: 'var(--t-text-4)' }}>
+                          Special Instructions <span style={{ color: 'var(--t-text-5)', fontWeight: 400 }}>(optional)</span>
+                        </p>
+                        <textarea
+                          value={specialInstructions}
+                          onChange={e => setSpecialInstructions(e.target.value)}
+                          placeholder="e.g. Leave at the gate, call before delivery…"
+                          rows={2}
+                          maxLength={250}
+                          className={inp}
+                          style={{ resize: 'none', lineHeight: 1.5 }}
+                        />
+                        {specialInstructions.length > 200 && (
+                          <p className="text-xs mt-0.5" style={{ color: 'var(--t-text-4)' }}>
+                            {250 - specialInstructions.length} chars remaining
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>

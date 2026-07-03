@@ -39,11 +39,12 @@ interface CartCtx {
   senderName: string;     setSenderName: (v: string) => void;
   senderEmail: string;    setSenderEmail: (v: string) => void;
   locationType: string;   setLocationType: (v: string) => void;
+  specialInstructions: string; setSpecialInstructions: (v: string) => void;
   prefillCheckout: (data: {
     recipient_name?: string; recipient_phone?: string;
     city?: string; address?: string; delivery_date?: string;
     occasion?: string; sender_name?: string;
-    sender_email?: string; location_type?: string;
+    sender_email?: string; location_type?: string; special_instructions?: string;
   }) => void;
 }
 
@@ -61,12 +62,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [senderName,     setSenderName]     = useState('');
   const [senderEmail,    setSenderEmail]    = useState('');
   const [locationType,   setLocationType]   = useState('HOUSE OR RESIDENCE');
+  const [specialInstructions, setSpecialInstructions] = useState('');
 
   const prefillCheckout = useCallback((data: {
     recipient_name?: string; recipient_phone?: string;
     city?: string; address?: string; delivery_date?: string;
     occasion?: string; sender_name?: string;
     sender_email?: string; location_type?: string;
+    special_instructions?: string;
   }) => {
     // Always wipe all checkout fields first so stale data never persists
     setRecipientName('');
@@ -78,6 +81,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     setSenderName('');
     setSenderEmail('');
     setLocationType('HOUSE OR RESIDENCE');
+    setSpecialInstructions('');
     // Then set only what was provided in this message
     if (data.recipient_name)  setRecipientName(data.recipient_name);
     if (data.recipient_phone) setRecipientPhone(data.recipient_phone);
@@ -90,7 +94,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
     if (data.occasion)        setOccasion(data.occasion);
     if (data.sender_name)     setSenderName(data.sender_name);
     if (data.sender_email)    setSenderEmail(data.sender_email);
-    if (data.location_type)   setLocationType(data.location_type);
+    if (data.location_type)       setLocationType(data.location_type);
+    if (data.special_instructions) setSpecialInstructions(data.special_instructions);
   }, []);
 
   const addItem = useCallback((p: Product) => {
@@ -134,6 +139,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       senderName, setSenderName,
       senderEmail, setSenderEmail,
       locationType, setLocationType,
+      specialInstructions, setSpecialInstructions,
       prefillCheckout,
     }}>
       {children}

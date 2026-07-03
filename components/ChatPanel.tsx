@@ -366,6 +366,7 @@ export default function ChatPanel({
     setVisionLoading(true);
     setPendingImg(null);
     const userMsg: Message = { role:'user', content:'Find similar products for this image', imagePreview: img.preview };
+    const historyBase = [...messages, userMsg];
     setMessages(prev => [...prev, userMsg]);
     const thinkingMsg: Message = { role:'assistant', content:'🔍 Analysing your image…' };
     setMessages(prev => [...prev, thinkingMsg]);
@@ -381,37 +382,54 @@ export default function ChatPanel({
 
       const desc = d.description || 'product';
       const query = d.query || 'gift';
-      const upsell = d.upsell ? ` ${d.upsell}` : '';
 
       setMessages(prev => {
         const c = [...prev];
-        c[c.length-1] = { role:'assistant', content:`I can see ${desc}. Searching Kapruka for similar products…` };
+        c[c.length-1] = { role:'assistant', content:'Searching Kapruka for similar products…' };
         return c;
       });
 
+      // Feed the identified product into TARA's normal chat pipeline — same as a
+      // typed message — so occasion hints, upsell pairing, and tone rules apply
+      // automatically (see RULE 1B in chat/route.ts) instead of being duplicated here.
+      const apiText = `[IMAGE_SEARCH] Detected: ${desc} | Suggested search: ${query}`;
+      const apiHistory = [...historyBase.slice(0, -1), { role:'user' as const, content: apiText }];
+
       onSearching(true);
-      const sr = await fetch('/api/search', {
+      const res = await fetch('/api/chat', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ primary: query }),
+        body: JSON.stringify({ messages: apiHistory, expatMode, lang: convLang }),
       });
-      const sd = await sr.json();
-      if (sd.products?.length) {
-        onProductsFound(sd.products, sd.quantum);
-        setMessages(prev => {
-          const c = [...prev];
-          c[c.length-1] = {
-            ...c[c.length-1],
-            content: `I can see ${desc}. Here are matching products on Kapruka:${upsell}`,
-            products: sd.products.slice(0,4),
-          };
-          return c;
+      if (!res.ok) throw new Error('API error');
+
+      let thinkingData: ThinkingData | null = null;
+      const thinkingHeader = res.headers.get('X-Tara-Thinking');
+      if (thinkingHeader) {
+        try { thinkingData = JSON.parse(decodeURIComponent(thinkingHeader)); } catch { /* invalid JSON — ignore */ }
+      }
+
+      const reader = res.body!.getReader(); const decoder = new TextDecoder(); let full = '';
+      while (true) {
+        const { done, value } = await reader.read(); if (done) break;
+        full += decoder.decode(value, { stream:true });
+        const disp = full.replace(/<tara_thinking>[\s\S]*?<\/tara_thinking>/gi,'').trim();
+        setMessages(prev => { const c=[...prev]; c[c.length-1]={role:'assistant',content:disp}; return c; });
+      }
+
+      const visible = cleanResponse(full);
+      setMessages(prev => { const c=[...prev]; c[c.length-1]={role:'assistant',content:visible,...(thinkingData?{thinking:thinkingData}:{})}; return c; });
+
+      const extractedQuery = extractQuery(full);
+      if (extractedQuery) {
+        const sr = await fetch('/api/search', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ primary: extractedQuery }),
         });
-      } else {
-        setMessages(prev => {
-          const c = [...prev];
-          c[c.length-1] = { role:'assistant', content:`I can see ${desc}, but couldn't find an exact match. Try describing it in the chat!` };
-          return c;
-        });
+        const sd = await sr.json();
+        if (sd.products?.length) {
+          onProductsFound(sd.products, sd.quantum);
+          setMessages(prev => { const c=[...prev]; c[c.length-1]={...c[c.length-1],products:sd.products.slice(0,4)}; return c; });
+        }
       }
     } catch (err) {
       setMessages(prev => {
@@ -420,7 +438,7 @@ export default function ChatPanel({
         return c;
       });
     } finally { setVisionLoading(false); onSearching(false); }
-  }, [onProductsFound, onSearching]);
+  }, [messages, expatMode, convLang, onProductsFound, onSearching]);
 
   /* ── Send text message ──────────────────────────────────── */
   const sendMessage = useCallback(async (text: string, forcedLang?: Lang) => {
@@ -763,7 +781,7 @@ export default function ChatPanel({
               ? <div style={{textAlign:'center',padding:'20px 0'}}>
                   <span style={{fontSize:32}}>✅</span>
                   <p style={{marginTop:10,color:'var(--c-on-surface)',fontSize:15,fontWeight:700}}>Thanks for the feedback!</p>
-                  <p style={{fontSize:12,color:'var(--c-on-surface-variant)',marginTop:5}}>Saved to <code style={{background:'rgba(215,186,255,0.12)',padding:'1px 6px',borderRadius:4}}>mistakes.md</code> for the dev team.</p>
+                  <p style={{fontSize:12,color:'var(--c-on-surface-variant)',marginTop:5}}>Sent to <code style={{background:'rgba(215,186,255,0.12)',padding:'1px 6px',borderRadius:4}}>issue</code> for the dev team for review.</p>
                 </div>
               : <>
                   <p style={{fontSize:15,fontWeight:700,color:'var(--c-on-surface)',marginBottom:14}}>What went wrong? 🐛</p>

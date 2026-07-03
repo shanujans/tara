@@ -118,15 +118,17 @@ export async function POST(req: NextRequest) {
   const {
     items, giftMessage, deliveryDate, district,
     recipient, sender, locationType, deliveryType,
+    specialInstructions,
   } = body as {
-    items:         { id: string; qty?: number; quantity?: number }[];
-    giftMessage?:  string;
-    deliveryDate:  string;
-    district:      string;
-    locationType?: string;
-    deliveryType?: string;
-    recipient:     { name: string; phone: string; address?: string };
-    sender?:       { name: string };
+    items:                { id: string; qty?: number; quantity?: number }[];
+    giftMessage?:         string;
+    deliveryDate:         string;
+    district:             string;
+    locationType?:        string;
+    deliveryType?:        string;
+    specialInstructions?: string;
+    recipient:            { name: string; phone: string; address?: string };
+    sender?:              { name: string };
   };
 
   const isPickup = deliveryType === 'pickup';
@@ -255,6 +257,7 @@ export async function POST(req: NextRequest) {
         city:          canonicalCity,   // ← use canonicalised name
         date:          deliveryDate,
         location_type: locationTypeValue,
+        instructions:  specialInstructions ? clean(specialInstructions, 250) : null,
       },
       sender: {
         name: clean(sender?.name ?? 'Guest', 80) || 'Guest',
