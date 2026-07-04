@@ -50,9 +50,15 @@
   }
 
   // ── Product context extraction ─────────────────────────────────────────────
+  // Kapruka's real product URL scheme is /buyonline/{slug}/kid/{id} (verified
+  // against the live site 2026-07-04) — it never contains "/product". The old
+  // gate below (`/\/product(s)?[/-]/i`) matched zero real Kapruka pages, so
+  // context extraction has never fired in production. Kept as a secondary
+  // check in case some page templates differ.
   function extractContext() {
     const url = window.location.href;
-    if (!/\/product(s)?[/-]/i.test(url)) return null;
+    const isProductPage = /\/buyonline\//i.test(url) || /\/product(s)?[/-]/i.test(url);
+    if (!isProductPage) return null;
 
     const nameEl =
       document.querySelector('h1.product-title') ||
@@ -66,21 +72,35 @@
       document.querySelector('[itemprop="price"]') ||
       document.querySelector('[class*="price"]:not([class*="old"]):not([class*="was"])');
 
+    // Kapruka's real ID lives after /kid/ and is alphanumeric with underscores
+    // (e.g. "cake00ka002105", "ef_pc_elec0v701pod00603" — verified live across
+    // both cakes and electronics categories), not the purely-numeric ID a
+    // generic /product/123 scheme would have.
     const idMatch =
+      url.match(/\/kid\/([a-z0-9_]+)/i) ||
       url.match(/\/products?\/(\d+)/i) ||
       url.match(/[?&]id=(\d+)/i) ||
       url.match(/\/(\d{5,})(?:[\/?#]|$)/);
 
     const idEl = document.querySelector('[data-product-id],[data-id],[data-pid]');
 
-    const name  = nameEl?.textContent?.trim();
-    const price = priceEl?.textContent?.trim()?.match(/[\d,]+(?:\.\d+)?/)?.[0];
-    const id    = idMatch?.[1] || idEl?.dataset?.productId || idEl?.dataset?.id;
+    const name = nameEl?.textContent?.trim();
+    // Kapruka shows different currencies on its regional domains (verified
+    // live: the base kapruka.com/buyonline page displayed "US$11.73", not
+    // LKR) — capture whatever currency symbol/code is actually present
+    // instead of assuming LKR. Only fall back to an LKR label when the
+    // matched text has no currency marker of its own.
+    const rawPrice = priceEl?.textContent?.trim();
+    const priceMatch = rawPrice?.match(/(LKR|Rs\.?|US\$|A\$|C\$|£|\$)?\s?[\d,]+(?:\.\d+)?/i);
+    const price = priceMatch
+      ? (priceMatch[1] ? priceMatch[0].trim() : `LKR ${priceMatch[0].trim()}`)
+      : undefined;
+    const id = idMatch?.[1] || idEl?.dataset?.productId || idEl?.dataset?.id;
 
     if (!name) return null;
     return {
       name:  encodeURIComponent(name.slice(0, 100)),
-      price: price ? encodeURIComponent(`LKR ${price}`) : '',
+      price: price ? encodeURIComponent(price) : '',
       id:    id    ? encodeURIComponent(id)             : '',
     };
   }
