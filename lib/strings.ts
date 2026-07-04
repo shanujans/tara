@@ -22,7 +22,8 @@ export const STRINGS = {
     inStock: 'In Stock', outOfStock: 'Out of Stock',
     reorderPrompt: 'Last time you ordered — want to reorder? 🔄',
     reorderBtn: 'Reorder in one tap', reorderAdded: 'Cart rebuilt! Choose a delivery date.',
-    fathersDayHint: "Father's Day is this month 👨 — want to send something special to your thaththa?",
+    // Updated: Father's Day → Friendship Day (August 2)
+    friendshipDayHint: "Friendship Day is coming up on August 2nd 👫 — want to send something special to your bestie?",
     orderSpeedPrefix: '✦ Order placed in', orderSpeedSuffix: '⚡ — faster than typing it yourself!',
   },
   si: {
@@ -46,10 +47,11 @@ export const STRINGS = {
     inStock: 'තොගයේ ඇත', outOfStock: 'නොමැත',
     reorderPrompt: 'ඉකුත්වර ඔබ order කළ දේ නැවත order කරනවද? 🔄',
     reorderBtn: 'නැවත order කරන්න', reorderAdded: 'කාට් සකස් කළා! දිනයක් තෝරන්න.',
-    fathersDayHint: 'මේ මාසේ තාත්තාගේ දිනයයි 👨 — ඔබේ තාත්තාට විශේෂ දෙයක් යැවිය හැකිද?',
+    // Updated: Father's Day → Friendship Day (August 2)
+    friendshipDayHint: 'අගෝස්තු 2 වෙනිදා මිතුරන්ගේ දිනයයි 👫 — ඔබේ හොඳම යාළුවාට විශේෂ දෙයක් යැවිය හැකිද?',
     orderSpeedPrefix: '✦ Order දුන්නේ', orderSpeedSuffix: '⚡ — ඉක්මනින්!',
   },
-  // Sihalish — romanized Sinhala + English. How Sri Lankans actually WhatsApp.
+  // Sihalish — romanized Sinhala + English.
   sl: {
     headerTitle: 'TARA ✦', langBadge: 'SL',
     chatPlaceholder: 'Mokada ona kiyanna… (type what you need)',
@@ -71,7 +73,8 @@ export const STRINGS = {
     inStock: 'Thiyanawa', outOfStock: 'Nehe',
     reorderPrompt: 'Kalin order ekak dunna — nawa ekak gamu da? 🔄',
     reorderBtn: 'Nawa order karanna', reorderAdded: 'Cart eka hadala! Dina eka thoro ganna.',
-    fathersDayHint: 'Me maase thaththa ge dina 👨 — thaththa ta mokak hari yawamu da?',
+    // Updated: Father's Day → Friendship Day (August 2)
+    friendshipDayHint: 'August 2 wenida friendz day 👫 — oyage bestie ta mokak hari yawamu da?',
     orderSpeedPrefix: '✦ Order dunne', orderSpeedSuffix: '⚡ — wada igenma!',
   },
   ta: {
@@ -95,7 +98,8 @@ export const STRINGS = {
     inStock: 'கையிருப்பில் உள்ளது', outOfStock: 'இல்லை',
     reorderPrompt: 'முன்பு ஆர்டர் செய்தீர்களா? மீண்டும் ஆர்டர் செய்யலாமா? 🔄',
     reorderBtn: 'மீண்டும் ஆர்டர் செய்', reorderAdded: 'கார்ட் தயார்! தேதி தேர்ந்தெடுக்கவும்.',
-    fathersDayHint: 'இந்த மாதம் தந்தையர் தினம் 👨 — உங்கள் அப்பாவிற்கு ஏதாவது அனுப்பலாமா?',
+    // Updated: Father's Day → Friendship Day (August 2)
+    friendshipDayHint: 'ஆகஸ்ட் 2 அன்று நண்பர்கள் தினம் 👫 — உங்கள் நண்பருக்கு ஏதாவது அனுப்பலாமா?',
     orderSpeedPrefix: '✦ Order செய்யப்பட்டது', orderSpeedSuffix: '⚡ — வேகமாக!',
   },
   tl: {
@@ -119,7 +123,8 @@ export const STRINGS = {
     inStock: 'Iruku', outOfStock: 'Illa la',
     reorderPrompt: 'Last time order panninga — reorder pannuvoma la? 🔄',
     reorderBtn: 'Reorder pannunga la', reorderAdded: 'Cart ready la! Date select pannunga machang.',
-    fathersDayHint: "Intha maasam Father's Day la 👨 — appaku ethachum anuppuvoma?",
+    // Updated: Father's Day → Friendship Day (August 2)
+    friendshipDayHint: "August 2 Friendship Day da 👫 — unga bestie ku ethachum anuppuvoma?",
     orderSpeedPrefix: '✦ Order panni', orderSpeedSuffix: '⚡ — semma fast la!',
   },
 };
@@ -131,7 +136,7 @@ export function detectLang(t: string): Lang {
   if (/[\u0B80-\u0BFF]/.test(t)) return 'ta';
   if (/\b(machang|machan|aiyo|oneda|aney|yako)\b/i.test(t)) return 'tl';
   if (/\b(la|neh|ne|da)\s*[.!?,]?\s*$/im.test(t.trim())) return 'tl';
-  // Sihalish — romanized Sinhala (must check before English default)
+  // Sihalish — romanized Sinhala
   if (/\b(mama|api|eka|ekak|ona|nehe|koheda|mokada|puluwan|bohoma|hariyata|hadanna|karanna|balanna|ganna|denna|yanawa|thiyenawa|gedara|amma|thaththa|akka|aiya|nangi|malli|hondai|hari|tika|godak|wela|isthuti|ayubowan|subha)\b/i.test(t)) return 'sl';
   return 'en';
 }

@@ -15,7 +15,23 @@ function parseSSE(text: string): Record<string, unknown> {
   try { return JSON.parse(text); } catch { return {}; }
 }
 
-export async function mcpSession(): Promise<string> {
+// ─── Session cache ─────────────────────────────────────────────────────────
+// The Kapruka MCP server appears to rate-limit new session creation. Previously every
+// single tool call (search, delivery, product, categories, checkout...) minted a brand
+// new session via a fresh `initialize` handshake — across a busy app that's a LOT of
+// `initialize` calls, and is almost certainly what was tripping "Rate limit exceeded"
+// upstream. Cache the session ID and reuse it; only re-initialize when we don't have
+// one, it's stale, or a caller explicitly needs a fresh one (e.g. after a failed call).
+//
+// NOTE: this cache is module-scoped, so it's reused across calls within the same warm
+// serverless instance, but not shared across cold starts / other concurrent instances.
+// That's a real limitation of this environment (same tradeoff lib/cache.ts already
+// makes) — it cuts `initialize` calls dramatically without needing external storage.
+let cachedSid: string | null = null;
+let cachedAt  = 0;
+const SESSION_TTL_MS = 5 * 60_000; // conservative guess — tune if Kapruka documents a real TTL
+
+async function initSession(): Promise<string> {
   const r = await fetch(MCP_URL, {
     method: 'POST',
     headers: H,
@@ -31,6 +47,18 @@ export async function mcpSession(): Promise<string> {
   const sid = r.headers.get('mcp-session-id');
   await r.text();
   if (!sid) throw new Error('MCP: no session ID');
+  return sid;
+}
+
+/** Returns a cached MCP session ID, reusing it across calls. Pass `forceNew` to bypass
+ *  the cache — e.g. when a previous call using the cached session just failed and might
+ *  be due to an expired/invalid session. */
+export async function mcpSession(forceNew = false): Promise<string> {
+  const isFresh = cachedSid !== null && (Date.now() - cachedAt) < SESSION_TTL_MS;
+  if (!forceNew && isFresh) return cachedSid as string;
+  const sid = await initSession();
+  cachedSid = sid;
+  cachedAt  = Date.now();
   return sid;
 }
 
@@ -74,9 +102,17 @@ async function callToolRaw(
   return data?.result?.content?.[0]?.text ?? '';
 }
 
-async function mcp<T>(name: string, params: Record<string, unknown>): Promise<T> {
-  const sid = await mcpSession();
-  return callTool<T>(sid, name, params);
+async function mcp<T>(name: string, params: Record<string, unknown>, _retrying = false): Promise<T> {
+  const sid = await mcpSession(_retrying);
+  try {
+    return await callTool<T>(sid, name, params);
+  } catch (err) {
+    if (_retrying) throw err;
+    // One bounded retry with a guaranteed-fresh session — covers both a stale cached
+    // session and a transient upstream hiccup (e.g. rate limiting).
+    await new Promise(res => setTimeout(res, 300));
+    return mcp<T>(name, params, true);
+  }
 }
 
 // ─── Shared types ────────────────────────────────────────────────────────────
@@ -212,16 +248,31 @@ export async function listDeliveryCities(query: string, limit = 10): Promise<{ c
 }
 
 // ─── Tool 5 — Check delivery (returns Markdown, not JSON) ─────────────────────
+const MCP_UPSTREAM_ERROR_RE = /rate limit|too many requests|internal server error|service unavailable|please try again|temporarily unavailable/i;
+
 export async function checkDelivery(params: {
   city: string; delivery_date: string; product_id?: string;
-}): Promise<MDelivery> {
-  const sid = await mcpSession();
+}, _retrying = false): Promise<MDelivery> {
+  const sid = await mcpSession(_retrying);
   const raw = await callToolRaw(sid, 'kapruka_check_delivery', params);
-
-  if (!raw) return { available: false, message: 'No response from delivery service.' };
 
   // Log raw so we can see exactly what Kapruka returns
   console.log('[delivery raw]', raw.slice(0, 400));
+
+  // BUG FIX: an upstream error/rate-limit response (plain text, not real Markdown) used to
+  // fall straight into parseDeliveryMarkdown() and silently become a fabricated "not
+  // available" answer — which the caller then CACHED, serving a wrong delivery result to
+  // real customers until the cache entry expired. Detect it and retry once with a
+  // guaranteed-fresh session before giving up, since the upstream error text itself usually
+  // asks to "wait a moment before retrying".
+  const looksLikeUpstreamError = !raw || MCP_UPSTREAM_ERROR_RE.test(raw);
+  if (looksLikeUpstreamError) {
+    if (!_retrying) {
+      await new Promise(res => setTimeout(res, 400));
+      return checkDelivery(params, true);
+    }
+    throw new Error(`MCP delivery check failed: ${raw ? raw.slice(0, 120) : 'empty response'}`);
+  }
 
   // Try JSON first (in case MCP starts returning it)
   try {

@@ -36,12 +36,7 @@ function detectLangClient(text: string, currentLang: Lang = 'en'): Lang {
     if (SL_WORDS.has(w)) slScore++;
     if (TL_WORDS.has(w)) tlScore++;
   }
-  // No keyword signal at all (e.g. order numbers, gibberish, plain names) —
-  // stay on whatever language the conversation is already in instead of
-  // silently resetting to English.
   if (slScore === 0 && tlScore === 0) return currentLang;
-  // Tied signal — don't flip-flop an established sl/tl conversation on a
-  // single ambiguous message; only break ties when starting fresh.
   if (slScore === tlScore) {
     if (currentLang === 'sl' || currentLang === 'tl') return currentLang;
     return 'tl';
@@ -70,7 +65,7 @@ const LANG_OPTS: { key:Lang; label:string }[] = [
   {key:'ta',label:'🇱🇰 த'},{key:'tl',label:'🇱🇰 TL'},{key:'en',label:'🇬🇧 EN'},
 ];
 
-/* ── Inline chat card — with lazy image fetch ───────────────── */
+/* ── Inline chat card ─────────────────────────────────────── */
 function InlineChatCard({ product, lang, onViewDetail }: {
   product: Product & { url?: string };
   lang: Lang;
@@ -84,7 +79,6 @@ function InlineChatCard({ product, lang, onViewDetail }: {
   const cardRef = useRef<HTMLDivElement>(null);
   const inCart  = items.some(i => i.id === product.id);
 
-  /* Lazy-fetch image from /api/product if search result has no image */
   useEffect(() => {
     const src = proxyImg(product.image || lazyImg);
     if (src || !product.id) return;
@@ -154,7 +148,7 @@ function InlineChatCard({ product, lang, onViewDetail }: {
 }
 
 
-/* ── ThinkingPulse — animated indicator while TARA is generating ───────── */
+/* ── ThinkingPulse ────────────────────────────────────────── */
 function ThinkingPulse() {
   const phases = [
     '✦ Analyzing request…',
@@ -180,10 +174,9 @@ function ThinkingPulse() {
   );
 }
 
-/* ── ThinkingDrawer — collapsible reasoning panel shown after response ───── */
+/* ── ThinkingDrawer ───────────────────────────────────────── */
 function ThinkingDrawer({ data }: { data: ThinkingData }) {
   const [visibleSteps, setVisibleSteps] = useState(0);
-  // Strip any upsell / gift-chain steps — these are internal business logic, not for customers
   const cleanPlan = data.plan.filter(s =>
     !/upsell|cross.sell|gift.chain|suggest.*after|chain.*step/i.test(s)
   );
@@ -191,7 +184,6 @@ function ThinkingDrawer({ data }: { data: ThinkingData }) {
     cleanPlan.forEach((_, i) => {
       setTimeout(() => setVisibleSteps(v => Math.max(v, i + 1)), i * 300 + 80);
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cleanPlan.length]);
   return (
     <div className="animate-slide-in-left" style={{
@@ -201,7 +193,6 @@ function ThinkingDrawer({ data }: { data: ThinkingData }) {
       borderRadius:14,
       backdropFilter:'blur(14px)',
     }}>
-      {/* Intent + Goal */}
       <div style={{ display:'flex', gap:16, marginBottom:12, flexWrap:'wrap' }}>
         <div style={{ flex:'1 1 100px' }}>
           <p style={{ fontSize:9, color:'var(--c-outline)', textTransform:'uppercase', letterSpacing:'0.10em', fontWeight:700, marginBottom:3 }}>Intent</p>
@@ -212,7 +203,6 @@ function ThinkingDrawer({ data }: { data: ThinkingData }) {
           <p style={{ fontSize:13, color:'var(--c-on-surface)', fontWeight:600, lineHeight:1.35 }}>{data.goal}</p>
         </div>
       </div>
-      {/* Constraints */}
       {data.constraints?.length > 0 && (
         <div style={{ marginBottom:12 }}>
           <p style={{ fontSize:9, color:'var(--c-outline)', textTransform:'uppercase', letterSpacing:'0.10em', fontWeight:700, marginBottom:6 }}>Constraints</p>
@@ -228,7 +218,6 @@ function ThinkingDrawer({ data }: { data: ThinkingData }) {
           </div>
         </div>
       )}
-      {/* Plan steps */}
       <div>
         <p style={{ fontSize:9, color:'var(--c-outline)', textTransform:'uppercase', letterSpacing:'0.10em', fontWeight:700, marginBottom:8 }}>Plan</p>
         <div style={{ display:'flex', flexDirection:'column', gap:7 }}>
@@ -270,7 +259,21 @@ export default function ChatPanel({
 
   const buildInitial = useCallback((l: Lang): Message[] => {
     const msgs: Message[] = [{ role:'assistant', content:STRINGS[l].welcomeMsg }];
-    if (new Date().getMonth() === 5) msgs.push({ role:'assistant', content:STRINGS[l].fathersDayHint });
+    const month = new Date().getMonth();
+
+    // July → Esala season message (hardcoded, no API)
+    if (month === 6) {
+      msgs.push({
+        role: 'assistant',
+        content: "Happy Esala Season! 🪔 As the Perahera festivities begin, let's get you ready for the long holiday weekend. I can track down the best deals on modest white temple wear, travel essentials, and festive gift bundles available right now on Kapruka."
+      });
+    }
+
+    // August → Friendship Day hint (uses translations)
+    if (month === 7) {
+      msgs.push({ role:'assistant', content:STRINGS[l].friendshipDayHint });
+    }
+
     return msgs;
   }, []);
 
@@ -287,10 +290,8 @@ export default function ChatPanel({
   const [reorderDone,  setReorderDone]  = useState(false);
   const [modalId,      setModalId]      = useState<string|null>(null);
   const [modalUrl,     setModalUrl]     = useState('');
-  /* Image upload state */
   const [pendingImg,   setPendingImg]   = useState<PendingImage|null>(null);
   const [visionLoading,setVisionLoading]= useState(false);
-  /* Feedback state */
   const [feedback, setFeedback] = useState<Record<number,'up'|'down'>>({});
   const [expandedThinking, setExpandedThinking] = useState<Record<number, boolean>>({});
   const [fbModal,  setFbModal]  = useState<{open:boolean;msgIdx:number;category:string;text:string;submitting:boolean;done:boolean}|null>(null);
@@ -302,7 +303,6 @@ export default function ChatPanel({
   const recRef      = useRef<unknown>(null);
   const fileInputRef= useRef<HTMLInputElement>(null);
 
-  /* Expose clear to parent */
   useEffect(() => {
     if (onClearRef) onClearRef.current = () => {
       setMessages(buildInitial(lang)); setReorderDone(false); setExpatMode(false); setShowExpat(false); setPendingImg(null);
@@ -314,14 +314,11 @@ export default function ChatPanel({
     try { const raw = localStorage.getItem('tara_last_order'); if (raw) setLastOrder(JSON.parse(raw)); } catch { /**/ }
   }, []);
 
-  /* Sync convLang on lang change. If the user hasn't typed anything yet
-     (still showing only the auto-generated welcome/occasion bubbles),
-     re-translate those bubbles into the newly selected language. */
   useEffect(() => {
     setConvLang(lang);
     setMessages(prev => {
       const userHasTyped = prev.some(m => m.role === 'user');
-      if (userHasTyped) return prev; // never touch an active conversation
+      if (userHasTyped) return prev;
       return buildInitial(lang);
     });
   }, [lang, buildInitial]);
@@ -332,7 +329,6 @@ export default function ChatPanel({
     ta.style.height = 'auto'; ta.style.height = `${Math.min(ta.scrollHeight, 112)}px`;
   }, [input]);
 
-  /* Auto-send from Browse panel */
   useEffect(() => {
     if (autoSend?.trim()) { sendMessage(autoSend); onAutoSendDone?.(); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -389,9 +385,6 @@ export default function ChatPanel({
         return c;
       });
 
-      // Feed the identified product into TARA's normal chat pipeline — same as a
-      // typed message — so occasion hints, upsell pairing, and tone rules apply
-      // automatically (see RULE 1B in chat/route.ts) instead of being duplicated here.
       const apiText = `[IMAGE_SEARCH] Detected: ${desc} | Suggested search: ${query}`;
       const apiHistory = [...historyBase.slice(0, -1), { role:'user' as const, content: apiText }];
 
@@ -444,9 +437,6 @@ export default function ChatPanel({
   const sendMessage = useCallback(async (text: string, forcedLang?: Lang) => {
     if (!text.trim() || streaming) return;
 
-    // forcedLang = caller already knows the language (e.g. a pre-translated
-    // quick-action chip) — skip auto-detection, which can misread short
-    // idiomatic Singlish/Tanglish chip text.
     const detected = forcedLang ?? detectLangClient(text, convLang);
     setConvLang(detected);
     if (detected !== lang) onLangChange(detected);
@@ -466,7 +456,6 @@ export default function ChatPanel({
       });
       if (!res.ok) throw new Error('API error');
 
-      // Read TARA's internal reasoning from response header (set by chat route)
       let thinkingData: ThinkingData | null = null;
       const thinkingHeader = res.headers.get('X-Tara-Thinking');
       if (thinkingHeader) {
@@ -479,7 +468,6 @@ export default function ChatPanel({
       while (true) {
         const { done, value } = await reader.read(); if (done) break;
         full += decoder.decode(value, { stream:true });
-        // Strip thinking block from live display (full kept intact for processing below)
         const disp = full.replace(/<tara_thinking>[\s\S]*?<\/tara_thinking>/gi,'').trim();
         setMessages(prev => { const c=[...prev]; c[c.length-1]={role:'assistant',content:disp}; return c; });
       }
@@ -487,7 +475,6 @@ export default function ChatPanel({
       const visible = cleanResponse(full);
       setMessages(prev => { const c=[...prev]; c[c.length-1]={role:'assistant',content:visible,...(thinkingData?{thinking:thinkingData}:{})}; return c; });
 
-      /* Search + attach inline products */
       const query = extractQuery(full);
       if (query) {
         onSearching(true);
@@ -501,7 +488,6 @@ export default function ChatPanel({
         } catch {/***/} finally { onSearching(false); }
       }
 
-      /* Order tracking */
       const om = text.match(/\b([A-Z]{2,6}\d{4,}[A-Z0-9]*)\b/);
       if (om) {
         try {
@@ -510,17 +496,12 @@ export default function ChatPanel({
         } catch {/***/}
       }
 
-      /* NL Checkout pre-fill — parse <checkout_fill> tag and open cart drawer */
       const checkoutData = extractCheckoutFill(full);
       if (checkoutData) {
         prefillCheckout(checkoutData);
-        // Only auto-open cart if user already has items — otherwise wait for
-        // them to add a product first (avoids opening an empty cart drawer)
         if (cartItems.length > 0) {
           window.dispatchEvent(new CustomEvent('tara:opencart'));
         } else {
-          // Store the intent; page.tsx will open cart on next addItem via a
-          // separate listener registered in CartContext-aware code
           window.sessionStorage.setItem('tara_opencart_pending', '1');
         }
       }
@@ -579,7 +560,6 @@ export default function ChatPanel({
               )}
 
               <div style={{display:'flex',flexDirection:'column',gap:4,maxWidth:msg.role==='user'?480:undefined,flex:msg.role==='assistant'?1:undefined,minWidth:0}}>
-                {/* User image preview */}
                 {msg.role==='user' && msg.imagePreview && (
                   <div style={{display:'flex',justifyContent:'flex-end',marginBottom:4}}>
                     <img src={msg.imagePreview} alt="Uploaded"
@@ -589,7 +569,6 @@ export default function ChatPanel({
                 <div className={msg.role==='user'?'bubble-user':'bubble-tara'}
                   style={{padding:'12px 15px',fontSize:15,lineHeight:1.6,wordBreak:'break-word'}}>
                   {msg.content || (streaming && i===messages.length-1 ? TypingDots : '')}
-                  {/* Inline products */}
                   {msg.role==='assistant' && msg.products && msg.products.length>0 && (
                     <>
                       <button
@@ -611,7 +590,6 @@ export default function ChatPanel({
                     </>
                   )}
                 </div>
-                {/* 🧠 Reasoning drawer — show pill on completed messages with thinking data */}
                 {msg.role==='assistant' && msg.thinking && !(streaming && i===messages.length-1) && (
                   <div style={{marginBottom:2}}>
                     <button
@@ -628,7 +606,6 @@ export default function ChatPanel({
                     {expandedThinking[i] && <ThinkingDrawer data={msg.thinking!}/>}
                   </div>
                 )}
-                {/* 👍 👎 feedback — only on completed (non-streaming) assistant messages */}
                 {msg.role==='assistant' && msg.content && !(streaming && i===messages.length-1) && (
                   <div style={{display:'flex',gap:1,marginTop:5,paddingLeft:2,width:'fit-content',background:'rgba(34,28,49,0.72)',border:'0.5px solid rgba(215,186,255,0.14)',borderRadius:20,padding:'2px 4px',backdropFilter:'blur(6px)'}}>
                     <button
@@ -649,7 +626,6 @@ export default function ChatPanel({
             </div>
           ))}
 
-          {/* Typing */}
           {(streaming||visionLoading) && messages[messages.length-1]?.role!=='assistant' && (
             <div className="flex gap-3 animate-slide-in-left" style={{marginBottom:12}}>
               <img src="/kapruka-logo.png" alt="TARA"
@@ -660,7 +636,6 @@ export default function ChatPanel({
             </div>
           )}
 
-          {/* Reorder card */}
           {!hasUserMsgs && !reorderDone && lastOrder && lastOrder.items.length>0 && (
             <div className="flex gap-3 animate-slide-in-left" style={{animationDelay:'400ms',marginBottom:12}}>
               <img src="/kapruka-logo.png" alt="TARA"
@@ -681,7 +656,6 @@ export default function ChatPanel({
             </div>
           )}
 
-          {/* Quick chips */}
           {!hasUserMsgs && !streaming && (
             <div style={{display:'flex',flexWrap:'wrap',gap:8,paddingLeft:40,paddingBottom:8}} className="animate-slide-in-left">
               {s.quickChips.map((chip,idx)=>(
@@ -709,7 +683,7 @@ export default function ChatPanel({
         </div>
       </div>
 
-      {/* ── Input bar ─────────────────────────────────────────── */}
+      {/* ── Input bar ── NEW LAYOUT ────────────────────────── */}
       <div style={{flexShrink:0,padding:'10px 16px',paddingBottom:'max(10px,env(safe-area-inset-bottom))',borderTop:'1px solid rgba(74,68,81,0.15)',background:'rgba(21,16,36,0.65)',backdropFilter:'blur(12px)'}}>
         <div style={{maxWidth:760,margin:'0 auto'}}>
 
@@ -726,44 +700,110 @@ export default function ChatPanel({
             </div>
           )}
 
-          <div className="chat-input-bar" style={{display:'flex',alignItems:'flex-end',gap:6,padding:'10px 14px'}}>
-            {/* Hidden file input */}
-            <input ref={fileInputRef} type="file" accept="image/*" style={{display:'none'}}
-              onChange={e=>{ const f=e.target.files?.[0]; if(f) handleFileSelect(f); e.target.value=''; }}/>
-
-            {/* Camera / attach icon — clicks file input */}
-            <button
-              title="Upload or paste an image to search"
-              onClick={()=>fileInputRef.current?.click()}
-              style={{color:pendingImg?'var(--c-secondary)':'var(--c-on-surface-variant)',cursor:'pointer',flexShrink:0,background:'transparent',border:'none',padding:2,display:'flex',transition:'color 0.15s'}}>
-              {pendingImg
-                ? <span style={{fontSize:18}}>🖼️</span>
-                : <AttachIcon/>}
-            </button>
-
+          {/* ── Rounded rectangle container ── */}
+          <div style={{
+            background:'var(--c-surface-container-high)',
+            borderRadius:16,
+            padding:'8px 12px',
+            border:'1px solid rgba(215,186,255,0.15)',
+            boxShadow:'0 2px 8px rgba(0,0,0,0.15)',
+          }}>
+            {/* Textarea at top */}
             <textarea ref={textareaRef} value={input}
               onChange={e=>setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
               placeholder={pendingImg ? 'Add a note (optional) or press Send…' : s.chatPlaceholder}
-              disabled={streaming||visionLoading} rows={1}
-              style={{flex:1,background:'transparent',border:'none',outline:'none',resize:'none',fontSize:15,lineHeight:1.5,color:'var(--c-on-surface)',scrollbarWidth:'none',minHeight:24,fontFamily:'var(--font-body)',paddingBottom:2}}/>
+              disabled={streaming||visionLoading}
+              rows={1}
+              style={{
+                width:'100%',
+                background:'transparent',
+                border:'none',
+                outline:'none',
+                resize:'none',
+                fontSize:15,
+                lineHeight:1.5,
+                color:'var(--c-on-surface)',
+                scrollbarWidth:'none',
+                minHeight:24,
+                maxHeight:112,
+                fontFamily:'var(--font-body)',
+                padding:0,
+                marginBottom:6,
+              }}
+            />
 
-            {voiceOk && !pendingImg && (
-              <button onClick={listening?()=>{(recRef.current as {stop:()=>void})?.stop();setListening(false);}:startListening}
-                disabled={streaming}
-                style={{width:36,height:36,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',background:listening?'#ef4444':'transparent',color:listening?'white':'var(--c-on-surface-variant)',cursor:'pointer',flexShrink:0,border:'none',position:'relative',transition:'all 0.18s'}}>
-                {listening&&<span style={{position:'absolute',inset:0,borderRadius:'50%',background:'rgba(239,68,68,0.4)',animation:'quantum-pulse 1s ease-in-out infinite'}}/>}
-                <MicIcon size={18}/>
+            {/* Action row: attach left, mic+send right */}
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+              {/* Hidden file input */}
+              <input ref={fileInputRef} type="file" accept="image/*" style={{display:'none'}}
+                onChange={e=>{ const f=e.target.files?.[0]; if(f) handleFileSelect(f); e.target.value=''; }}/>
+
+              <button
+                title="Upload or paste an image to search"
+                onClick={()=>fileInputRef.current?.click()}
+                style={{
+                  color:pendingImg?'var(--c-secondary)':'var(--c-on-surface-variant)',
+                  cursor:'pointer',
+                  background:'transparent',
+                  border:'none',
+                  padding:'4px 6px',
+                  display:'flex',
+                  alignItems:'center',
+                  transition:'color 0.15s',
+                  borderRadius:6,
+                }}>
+                {pendingImg
+                  ? <span style={{fontSize:18}}>🖼️</span>
+                  : <AttachIcon />}
               </button>
-            )}
 
-            <button onClick={handleSend}
-              disabled={(!input.trim()&&!pendingImg)||streaming||visionLoading}
-              className="btn-primary"
-              style={{width:36,height:36,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,opacity:((!input.trim()&&!pendingImg)||streaming||visionLoading)?0.4:1,boxShadow:(input.trim()||pendingImg)&&!streaming?'0 4px 12px rgba(189,147,249,0.30)':'none'}}>
-              <SendIcon size={18}/>
-            </button>
+              <div style={{display:'flex', gap:6, alignItems:'center'}}>
+                {voiceOk && !pendingImg && (
+                  <button onClick={listening?()=>{(recRef.current as {stop:()=>void})?.stop();setListening(false);}:startListening}
+                    disabled={streaming}
+                    style={{
+                      width:32,
+                      height:32,
+                      borderRadius:'50%',
+                      display:'flex',
+                      alignItems:'center',
+                      justifyContent:'center',
+                      background:listening?'#ef4444':'transparent',
+                      color:listening?'white':'var(--c-on-surface-variant)',
+                      cursor:'pointer',
+                      border:'none',
+                      position:'relative',
+                      transition:'all 0.18s',
+                    }}>
+                    {listening&&<span style={{position:'absolute',inset:0,borderRadius:'50%',background:'rgba(239,68,68,0.4)',animation:'quantum-pulse 1s ease-in-out infinite'}}/>}
+                    <MicIcon size={16}/>
+                  </button>
+                )}
+
+                <button onClick={handleSend}
+                  disabled={(!input.trim()&&!pendingImg)||streaming||visionLoading}
+                  className="btn-primary"
+                  style={{
+                    width:32,
+                    height:32,
+                    borderRadius:'50%',
+                    display:'flex',
+                    alignItems:'center',
+                    justifyContent:'center',
+                    opacity:((!input.trim()&&!pendingImg)||streaming||visionLoading)?0.4:1,
+                    boxShadow:(input.trim()||pendingImg)&&!streaming?'0 4px 12px rgba(189,147,249,0.30)':'none',
+                    background:((!input.trim()&&!pendingImg)||streaming||visionLoading)?'var(--c-surface-container-low)':'var(--c-primary)',
+                    color:'var(--c-on-primary)',
+                    border:'none',
+                    cursor:((!input.trim()&&!pendingImg)||streaming||visionLoading)?'default':'pointer',
+                    transition:'all 0.15s',
+                  }}>
+                  <SendIcon size={16}/>
+                </button>
+              </div>
+            </div>
           </div>
 
           <p style={{textAlign:'center',fontSize:10,color:'var(--c-outline)',marginTop:5,letterSpacing:'0.08em',textTransform:'uppercase',fontWeight:700}}>

@@ -165,6 +165,7 @@ async function mcpSearch(
   sid:    string,
   limit = 50,
   label = 'PRIMARY',                 // ← label for debug output
+  _retrying = false,                 // ← internal: true after one retry with a fresh session
 ): Promise<Record<string, unknown>[]> {
 
   const key = cacheKey('search', p.q, p.category, p.min_price, p.max_price, p.in_stock_only, limit);
@@ -219,6 +220,19 @@ async function mcpSearch(
 
     // Log raw MCP response snippet for debugging
     LOG.info(`MCP raw response (first 300 chars): ${raw.slice(0, 300).replace(/\n/g, ' ')}`);
+
+    // BUG FIX: Kapruka's MCP occasionally returns a plain-text upstream error (e.g. rate
+    // limiting) instead of JSON or Markdown. This used to fall straight into the markdown
+    // parser, extract 0 items, and get silently treated as "genuinely zero results" —
+    // relying entirely on the TIER-2/TIER-3 fallback to save the request. Detect it
+    // explicitly and retry once with a fresh session + short backoff first.
+    const UPSTREAM_ERROR_RE = /rate limit|too many requests|internal server error|service unavailable|please try again|temporarily unavailable|invalid session|session.*expired/i;
+    if (!_retrying && UPSTREAM_ERROR_RE.test(raw)) {
+      LOG.warn(`Upstream error detected (label=${label}) — retrying once with a fresh session`, raw.slice(0, 120));
+      await new Promise(res => setTimeout(res, 400));
+      const freshSid = await mcpSession(true);
+      return mcpSearch(p, freshSid, limit, label, true);
+    }
 
     try {
       const parsed     = JSON.parse(raw);
@@ -371,7 +385,7 @@ export async function POST(req: NextRequest) {
           ?? req.headers.get('x-forwarded-for')?.split(',')[0].trim()
           ?? 'unknown';
 
-  if (!LOOPBACK.has(ip) && !rateLimit(ip, 30, 60_000)) {
+  if (!LOOPBACK.has(ip) && !rateLimit(`search:${ip}`, 30, 60_000)) {
     LOG.warn(`Rate limit hit for IP: ${ip}`);
     return NextResponse.json({ products: [] }, { status: 429 });
   }
