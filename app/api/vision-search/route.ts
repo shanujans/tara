@@ -11,31 +11,38 @@ const LOG = {
   error: (...a: unknown[]) => console.error('[TARA:VISION] ❌', ...a),
 };
 
-export async function POST(req: NextRequest) {
-  const ip = req.headers.get('x-forwarded-for') ?? 'unknown';
-  if (!rateLimit(ip, 20, 60_000))
-    return NextResponse.json({ error: 'Rate limited' }, { status: 429 });
+// ─── Two-key fallback for gemini-3.1-flash-lite ────────────────────────────
+// Mirrors the retry pattern used in /api/chat: try GEMINI_API_KEY first; if it
+// errors or times out, retry once with GEMINI_API_VISION_FALLBACK. If both fail,
+// degrade to a safe default result (200) instead of surfacing a raw 500 — the
+// user never sees a broken vision search, worst case it just skips straight to
+// a generic "gift" query.
+const PRIMARY_TIMEOUT_MS = 9_000;
+const BACKUP_TIMEOUT_MS  = 7_000;
 
-  const { imageBase64, mimeType } = await req.json();
-  if (!imageBase64 || !mimeType)
-    return NextResponse.json({ error: 'Missing image' }, { status: 400 });
-  if (imageBase64.length > MAX_B64)
-    return NextResponse.json({ error: 'Image too large (max 2 MB)' }, { status: 413 });
+const SAFE_DEFAULT = { query: 'gift', description: '', category: 'other', subcategory: '' };
 
-  const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-  if (!ALLOWED_TYPES.includes(mimeType))
-    return NextResponse.json({ error: 'Unsupported image type' }, { status: 415 });
-
-  LOG.info('incoming image', { mimeType, b64Length: imageBase64.length });
-
-  /* Lazy-init client — avoids module-level credential error at build time */
-  const { GoogleGenAI } = await import('@google/genai');
-  const client = new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY ?? '',
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    promise.then(
+      (val) => { clearTimeout(timer); resolve(val); },
+      (err) => { clearTimeout(timer); reject(err); }
+    );
   });
+}
 
-  try {
-    const response = await client.models.generateContent({
+/** Runs the Gemini vision call with a specific API key; throws on any failure or timeout. */
+async function callGeminiVision(
+  apiKey: string,
+  imageBase64: string,
+  mimeType: string,
+  timeoutMs: number
+) {
+  const { GoogleGenAI } = await import('@google/genai');
+  const client = new GoogleGenAI({ apiKey });
+
+  const call = client.models.generateContent({
       model: 'gemini-3.1-flash-lite',
       contents: [{
         role: 'user',
@@ -103,8 +110,52 @@ Respond ONLY with valid JSON (no markdown, no backticks):
           required: ['query', 'description', 'category', 'subcategory'],
         },
       },
-    });
+  });
 
+  return withTimeout(call, timeoutMs, 'Gemini vision call');
+}
+
+export async function POST(req: NextRequest) {
+  const ip = req.headers.get('x-forwarded-for') ?? 'unknown';
+  if (!rateLimit(ip, 20, 60_000))
+    return NextResponse.json({ error: 'Rate limited' }, { status: 429 });
+
+  const { imageBase64, mimeType } = await req.json();
+  if (!imageBase64 || !mimeType)
+    return NextResponse.json({ error: 'Missing image' }, { status: 400 });
+  if (imageBase64.length > MAX_B64)
+    return NextResponse.json({ error: 'Image too large (max 2 MB)' }, { status: 413 });
+
+  const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+  if (!ALLOWED_TYPES.includes(mimeType))
+    return NextResponse.json({ error: 'Unsupported image type' }, { status: 415 });
+
+  LOG.info('incoming image', { mimeType, b64Length: imageBase64.length });
+
+  const primaryKey = process.env.GEMINI_API_KEY ?? '';
+  const backupKey  = process.env.GEMINI_API_VISION_FALLBACK ?? '';
+
+  let response: Awaited<ReturnType<typeof callGeminiVision>>;
+  try {
+    if (!primaryKey) throw new Error('GEMINI_API_KEY not configured');
+    LOG.info('trying primary Gemini key');
+    response = await callGeminiVision(primaryKey, imageBase64, mimeType, PRIMARY_TIMEOUT_MS);
+  } catch (primaryErr) {
+    LOG.warn('primary Gemini vision call failed, trying backup key', primaryErr);
+    if (!backupKey) {
+      LOG.error('no GEMINI_API_VISION_FALLBACK configured — returning safe default');
+      return NextResponse.json(SAFE_DEFAULT);
+    }
+    try {
+      response = await callGeminiVision(backupKey, imageBase64, mimeType, BACKUP_TIMEOUT_MS);
+      LOG.info('backup Gemini key succeeded');
+    } catch (backupErr) {
+      LOG.error('backup Gemini vision call also failed — returning safe default', backupErr);
+      return NextResponse.json(SAFE_DEFAULT);
+    }
+  }
+
+  try {
     const raw = response.text ?? '{}';
     LOG.info('finish_reason:', response.candidates?.[0]?.finishReason, '| usage:', response.usageMetadata);
     LOG.info('raw model output:', raw);
@@ -138,7 +189,7 @@ Respond ONLY with valid JSON (no markdown, no backticks):
     LOG.info('final response:', result);
     return NextResponse.json(result);
   } catch (err) {
-    LOG.error('vision-search error:', err);
-    return NextResponse.json({ error: 'Vision analysis failed' }, { status: 500 });
+    LOG.error('vision-search parse error:', err);
+    return NextResponse.json(SAFE_DEFAULT);
   }
 }

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { XIcon, PackageIcon, RewardsIcon, BrowseIcon, SettingsIcon, HelpIcon, ChevronRightIcon, TrashIcon } from './Icons';
 import { Lang, STRINGS } from '@/lib/strings';
 
-export type PanelId = 'none' | 'history' | 'rewards' | 'browse' | 'settings' | 'help' | 'notifications';
+export type PanelId = 'none' | 'history' | 'rewards' | 'browse' | 'settings' | 'help' | 'notifications' | 'menu';
 
 interface SidePanelProps {
   panel: PanelId;
@@ -12,6 +12,9 @@ interface SidePanelProps {
   onCategorySearch: (query: string) => void;
   onLangChange: (l: Lang) => void;
   onClearChat: () => void;
+  onNavigate: (panel: Exclude<PanelId, 'none' | 'menu'>) => void;
+  speakerOn: boolean;
+  onSpeakerToggle: () => void;
 }
 
 const FALLBACK_CATEGORIES = [
@@ -653,6 +656,77 @@ function HelpPanel() {
   );
 }
 
+/* ─── Menu row — used by the mobile "Menu" directory panel ─────────────── */
+function MenuRow({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 12,
+        width: '100%', padding: '12px 14px', borderRadius: 12, marginBottom: 6,
+        cursor: 'pointer', textAlign: 'left',
+        background: 'var(--c-surface-container)',
+        border: '1px solid rgba(74,68,81,0.25)',
+        color: 'var(--c-on-surface)', fontSize: 14, fontWeight: 600,
+        transition: 'all 0.15s', fontFamily: 'var(--font-body)',
+      }}
+      onMouseOver={e => { e.currentTarget.style.background = 'var(--c-surface-container-high)'; e.currentTarget.style.borderColor = 'rgba(215,186,255,0.30)'; }}
+      onMouseOut={e => { e.currentTarget.style.background = 'var(--c-surface-container)'; e.currentTarget.style.borderColor = 'rgba(74,68,81,0.25)'; }}
+    >
+      <span style={{ color: 'var(--c-primary)', flexShrink: 0, display: 'flex' }}>{icon}</span>
+      <span style={{ flex: 1 }}>{label}</span>
+      <ChevronRightIcon size={14} style={{ color: 'var(--c-outline)', flexShrink: 0 }} />
+    </button>
+  );
+}
+
+/* ─── Menu panel — mobile-only directory to everything the desktop
+   sidebar exposes (History, Rewards, Browse, Settings, Help, Notifications)
+   plus the voice toggle that has no other home on small screens ────────── */
+function MenuPanel({ onNavigate, speakerOn, onSpeakerToggle }: {
+  onNavigate: (panel: Exclude<PanelId, 'none' | 'menu'>) => void;
+  speakerOn: boolean;
+  onSpeakerToggle: () => void;
+}) {
+  return (
+    <div style={{ padding: 16 }}>
+      <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--c-outline)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+        Explore
+      </p>
+      <MenuRow icon={<PackageIcon  size={18} />} label="Order History"     onClick={() => onNavigate('history')} />
+      <MenuRow icon={<RewardsIcon  size={18} />} label="Rewards"           onClick={() => onNavigate('rewards')} />
+      <MenuRow icon={<BrowseIcon   size={18} />} label="Browse Categories" onClick={() => onNavigate('browse')} />
+      <MenuRow icon={<BellIcon     size={18} />} label="Notifications"     onClick={() => onNavigate('notifications')} />
+
+      <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--c-outline)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '18px 0 10px' }}>
+        Support
+      </p>
+      <MenuRow icon={<SettingsIcon size={18} />} label="Settings"   onClick={() => onNavigate('settings')} />
+      <MenuRow icon={<HelpIcon     size={18} />} label="Help & FAQ" onClick={() => onNavigate('help')} />
+
+      <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid rgba(74,68,81,0.25)' }}>
+        <button
+          onClick={onSpeakerToggle}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 12, width: '100%',
+            padding: '12px 14px', borderRadius: 12, cursor: 'pointer', textAlign: 'left',
+            background: speakerOn ? 'rgba(189,147,249,0.12)' : 'var(--c-surface-container)',
+            border: `1px solid ${speakerOn ? 'rgba(189,147,249,0.30)' : 'rgba(74,68,81,0.25)'}`,
+            color: 'var(--c-on-surface)', fontSize: 14, fontWeight: 600,
+            fontFamily: 'var(--font-body)',
+          }}
+        >
+          <span style={{ fontSize: 18, flexShrink: 0 }}>{speakerOn ? '🔊' : '🔇'}</span>
+          <span style={{ flex: 1 }}>TARA voice replies</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: speakerOn ? 'var(--c-primary)' : 'var(--c-outline)' }}>
+            {speakerOn ? 'On' : 'Off'}
+          </span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const PANEL_META: Record<Exclude<PanelId,'none'>, { title: string; icon: React.ReactNode }> = {
   history:       { title: 'Order History',   icon: <PackageIcon  size={18} /> },
   rewards:       { title: 'Rewards',          icon: <RewardsIcon  size={18} /> },
@@ -660,10 +734,11 @@ const PANEL_META: Record<Exclude<PanelId,'none'>, { title: string; icon: React.R
   settings:      { title: 'Settings',         icon: <SettingsIcon size={18} /> },
   help:          { title: 'Help & FAQ',        icon: <HelpIcon     size={18} /> },
   notifications: { title: 'Notifications',    icon: <BellIcon     size={18} /> },
+  menu:          { title: 'Menu',              icon: <MenuIcon     size={18} /> },
 };
-import { BellIcon } from './Icons';
+import { BellIcon, MenuIcon } from './Icons';
 
-export default function SidePanel({ panel, lang, onClose, onCategorySearch, onLangChange, onClearChat }: SidePanelProps) {
+export default function SidePanel({ panel, lang, onClose, onCategorySearch, onLangChange, onClearChat, onNavigate, speakerOn, onSpeakerToggle }: SidePanelProps) {
   const visible = panel !== 'none';
 
   return (
@@ -718,6 +793,7 @@ export default function SidePanel({ panel, lang, onClose, onCategorySearch, onLa
               {panel === 'browse'        && <BrowsePanel onCategorySearch={onCategorySearch} onClose={onClose} />}
               {panel === 'settings'      && <SettingsPanel lang={lang} onLangChange={onLangChange} onClearChat={onClearChat} onClose={onClose} />}
               {panel === 'help'          && <HelpPanel />}
+              {panel === 'menu'          && <MenuPanel onNavigate={onNavigate} speakerOn={speakerOn} onSpeakerToggle={onSpeakerToggle} />}
               {panel === 'notifications' && (
                 <div style={{ padding: 24, textAlign: 'center' }}>
                   <BellIcon size={40} style={{ color: 'var(--c-outline)', margin: '0 auto 12px', display: 'block' }} />

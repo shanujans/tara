@@ -296,7 +296,7 @@ function AppContent({ user }: { user: UserInfo }) {
           { key:'menu',     icon:<MenuIcon    size={22}/>, label:'Menu' },
         ] as {key:MobileTab;icon:React.ReactNode;label:string;badge?:number}[]).map(tab=>(
           <button key={tab.key}
-            onClick={()=>{ if(tab.key==='menu'){setPanel('settings');return;} if(tab.key==='discover'){setPanel('browse');return;} setMobileTab(tab.key); }}
+            onClick={()=>{ if(tab.key==='menu'){setPanel('menu');return;} if(tab.key==='discover'){setPanel('browse');return;} setMobileTab(tab.key); }}
             style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', paddingTop:10, paddingBottom:6, gap:2, color:mobileTab===tab.key?'var(--c-primary-container)':'var(--c-outline)', cursor:'pointer', position:'relative', transition:'color 0.18s', background:'transparent', border:'none', fontFamily:'var(--font-body)' }}>
             {tab.icon}
             <span style={{ fontSize:'0.67rem', fontWeight:mobileTab===tab.key?700:500 }}>{tab.label}</span>
@@ -308,7 +308,8 @@ function AppContent({ user }: { user: UserInfo }) {
 
       <CartDrawer open={cartOpen} onClose={()=>setCartOpen(false)} lang={lang}/>
       <SidePanel panel={panel} lang={lang} onClose={()=>setPanel('none')}
-        onCategorySearch={handleCategorySearch} onLangChange={setLang} onClearChat={handleClearChat}/>
+        onCategorySearch={handleCategorySearch} onLangChange={setLang} onClearChat={handleClearChat}
+        onNavigate={setPanel} speakerOn={speakerOn} onSpeakerToggle={()=>setSpeakerOn(v=>!v)}/>
     </div>
   );
 }

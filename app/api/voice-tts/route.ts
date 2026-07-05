@@ -20,8 +20,8 @@ const MAX_CHARS   = 600;
 const VOICE       = 'Kore';
 
 // Stay under maxDuration (30s) – reserve some time for network and processing
-const TOTAL_BUDGET_MS    = 26_000; // 26s total for all attempts
-const MAX_PER_KEY_MS     = 8_000; // each key gets at most 20s (but may be less if budget runs low)
+const TOTAL_BUDGET_MS    = 25_000; // 25s total for all attempts, 5s safety margin under maxDuration
+const MAX_PER_KEY_MS     = 15_000; // each key gets at most 15s (but may be less if budget runs low)
 
 const LOG = {
   info:  (...a: unknown[]) => console.log('[TARA:VOICE-TTS]', ...a),
