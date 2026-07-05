@@ -14,7 +14,7 @@ const STT_TIMEOUT_MS = 20_000;
 // call stack to "unlock" this <audio> element for later programmatic play() calls
 // that happen after an async gap (which is otherwise blocked by autoplay policy,
 // especially on iOS Safari).
-const SILENT_WAV = 'data:audio/wav;base64,UklGRmQGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YUAGAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
+const SILENT_WAV = 'data:audio/wav;base64,UklGRmQGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YUAGAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
 
 interface UseVoiceModeArgs {
   onTranscript: (text: string) => void;   // called with the transcribed text — caller sends it to chat
@@ -38,7 +38,7 @@ export function useVoiceMode({ onTranscript, getLang, micDeniedMessage }: UseVoi
   const silenceTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
   const maxTimerRef       = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rafRef            = useRef<number | null>(null);
-  const playerRef         = useRef<HTMLAudioElement | null>(null);   // only used for silent unlock & fallback
+  const playerRef         = useRef<HTMLAudioElement | null>(null);   // used for silent unlock, AND now for streamed English TTS playback
   const voiceModeOnRef    = useRef(false);
   const discardRef        = useRef(false);
   const sttAbortRef       = useRef<AbortController | null>(null);
@@ -59,16 +59,33 @@ export function useVoiceMode({ onTranscript, getLang, micDeniedMessage }: UseVoi
     el.play().then(() => { el.pause(); el.currentTime = 0; }).catch(() => { /* fine — best effort */ });
   }, []);
 
-  const cleanupStream = useCallback(() => {
+  // Stops the silence-detection RAF loop + timers only. Does NOT touch the
+  // MediaStream/AudioContext — those are kept alive across recordings (see
+  // startRecording below) so repeat taps don't pay the full getUserMedia
+  // hardware-acquisition cost again. Tearing the stream down after every single
+  // recording (the old behaviour) is what caused the multi-second delay before
+  // recording actually started on each tap.
+  const cleanupTimers = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
     if (maxTimerRef.current) clearTimeout(maxTimerRef.current);
+    rafRef.current = null;
+    silenceTimerRef.current = null;
+    maxTimerRef.current = null;
+  }, []);
+
+  // Fully releases the mic + AudioContext. Only call on unmount (or anywhere you
+  // deliberately want the browser's mic-in-use indicator to turn off) — NOT after
+  // every recording, or startRecording has to re-acquire the device from scratch
+  // on every tap again.
+  const releaseStream = useCallback(() => {
+    cleanupTimers();
     streamRef.current?.getTracks().forEach(t => t.stop());
     audioCtxRef.current?.close().catch(() => {});
     streamRef.current = null;
     audioCtxRef.current = null;
     analyserRef.current = null;
-  }, []);
+  }, [cleanupTimers]);
 
   const stopRecording = useCallback(() => {
     discardRef.current = false;
@@ -109,32 +126,44 @@ export function useVoiceMode({ onTranscript, getLang, micDeniedMessage }: UseVoi
     if (!micSupported || isRecording) return;
     primeAudioElement();
     discardRef.current = false;
-    let stream: MediaStream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch {
-      alert(micDeniedMessage ?? 'Allow microphone access to use voice mode.');
-      return;
-    }
-    streamRef.current = stream;
 
-    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    const ctx = new AudioCtx();
-    const source = ctx.createMediaStreamSource(stream);
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 512;
-    source.connect(analyser);
-    audioCtxRef.current = ctx;
-    analyserRef.current = analyser;
+    // Reuse the existing stream/AudioContext if one from an earlier recording in
+    // this session is still live — this is the fix for the ~5-10s startup delay,
+    // which was caused by fully releasing (and therefore having to re-acquire)
+    // the mic hardware after every single recording.
+    let stream = streamRef.current;
+    const streamIsLive = !!stream && stream.getAudioTracks().some(t => t.readyState === 'live');
+
+    if (!streamIsLive) {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch {
+        alert(micDeniedMessage ?? 'Allow microphone access to use voice mode.');
+        return;
+      }
+      streamRef.current = stream;
+
+      audioCtxRef.current?.close().catch(() => {});
+      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const ctx = new AudioCtx();
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+      audioCtxRef.current = ctx;
+      analyserRef.current = analyser;
+    } else if (audioCtxRef.current?.state === 'suspended') {
+      await audioCtxRef.current.resume();
+    }
 
     const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
-    const recorder = new MediaRecorder(stream, { mimeType });
+    const recorder = new MediaRecorder(stream as MediaStream, { mimeType });
     chunksRef.current = [];
     recorder.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
     recorder.onstop = () => {
       const blob = new Blob(chunksRef.current, { type: mimeType });
       const wasDiscarded = discardRef.current;
-      cleanupStream();
+      cleanupTimers(); // stream/AudioContext stay open for the next recording
       setIsRecording(false);
       if (!wasDiscarded && blob.size > 500) void sendAudio(blob);
     };
@@ -144,7 +173,8 @@ export function useVoiceMode({ onTranscript, getLang, micDeniedMessage }: UseVoi
 
     maxTimerRef.current = setTimeout(stopRecording, MAX_RECORD_MS);
 
-    if (voiceModeOnRef.current) {
+    const analyser = analyserRef.current;
+    if (voiceModeOnRef.current && analyser) {
       const data = new Uint8Array(analyser.fftSize);
       let speechStartedAt: number | null = null;
       let armed = false;
@@ -166,76 +196,154 @@ export function useVoiceMode({ onTranscript, getLang, micDeniedMessage }: UseVoi
       };
       rafRef.current = requestAnimationFrame(tick);
     }
-  }, [micSupported, isRecording, cleanupStream, sendAudio, stopRecording, micDeniedMessage, primeAudioElement]);
+  }, [micSupported, isRecording, cleanupTimers, sendAudio, stopRecording, micDeniedMessage, primeAudioElement]);
 
-  // ---------- UPDATED speak() using Web Audio API ----------
-  const speak = useCallback((text: string): Promise<void> => {
-    return new Promise(async (resolve) => {
-      const clean = text.replace(/[*_#]/g, '').trim();
-      if (!clean) return resolve();
-      setIsPreparingSpeech(true);
+  // Browser-native fallback — used for English when streamed Speechmatics
+  // playback fails, since the server route has no Gemini fallback for 'en' by design.
+  const speakWithWebSpeechAPI = useCallback((text: string): Promise<void> => {
+    return new Promise((resolve) => {
+      if (typeof window === 'undefined' || !window.speechSynthesis) { resolve(); return; }
       try {
-        const res = await fetch('/api/voice-tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: clean, lang: getLang() }),
-        });
-
-        if (!res.ok) {
-          let errorMsg = 'TTS unavailable';
-          try {
-            const errData = await res.json();
-            errorMsg = errData.error || errorMsg;
-          } catch (_) { /* ignore */ }
-          setIsPreparingSpeech(false);
-          console.warn('[voice] TTS unavailable:', errorMsg);
-          return resolve();
-        }
-
-        const arrayBuffer = await res.arrayBuffer();
-        if (arrayBuffer.byteLength === 0) {
-          setIsPreparingSpeech(false);
-          return resolve();
-        }
-
-        // Create AudioContext and decode the WAV
-        const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-        const ctx = new AudioCtx();
-        if (ctx.state === 'suspended') {
-          await ctx.resume(); // resume if autoplay blocked
-        }
-
-        const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-        const source = ctx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(ctx.destination);
-
-        setIsPreparingSpeech(false);
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = 'en-US';
         setIsSpeaking(true);
-
-        source.onended = () => {
-          setIsSpeaking(false);
-          // Optionally close the context after a short delay to free resources
-          // but we keep it alive for potential future use.
-          resolve();
-        };
-
-        source.start();
-      } catch (err) {
-        console.warn('[voice] TTS playback failed:', err);
-        setIsPreparingSpeech(false);
+        utter.onend = () => { setIsSpeaking(false); resolve(); };
+        utter.onerror = () => { setIsSpeaking(false); resolve(); };
+        window.speechSynthesis.speak(utter);
+      } catch {
         setIsSpeaking(false);
         resolve();
       }
     });
-  }, [getLang]);
-  // ---------- end of updated speak ----------
+  }, []);
+
+  // ---------- speak(): streamed <audio> for en/si/ta, Web Audio decode as fallback ----------
+  const speak = useCallback((text: string): Promise<void> => {
+    return new Promise(async (resolve) => {
+      const clean = text.replace(/[*_#]/g, '').replace(/\p{Extended_Pictographic}/gu, '').trim();
+      if (!clean) return resolve();
+      const lang = getLang();
+      setIsPreparingSpeech(true);
+
+      // Buffered path (POST + decodeAudioData) — used directly for sl/tl
+      // (Gemini only, not wired for streaming), and as the fallback if
+      // streaming fails for si/ta (Web Speech API has no real si/ta voices
+      // in most browsers, so we fall back to the known-working buffered call
+      // instead of Web Speech API for those two).
+      const playBuffered = async (): Promise<void> => {
+        try {
+          const res = await fetch('/api/voice-tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: clean, lang }),
+          });
+
+          if (!res.ok) {
+            setIsPreparingSpeech(false);
+            console.warn('[voice] TTS unavailable (buffered path)');
+            return;
+          }
+
+          const arrayBuffer = await res.arrayBuffer();
+          if (arrayBuffer.byteLength === 0) { setIsPreparingSpeech(false); return; }
+
+          const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+          const ctx = new AudioCtx();
+          if (ctx.state === 'suspended') await ctx.resume();
+
+          const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+          const bufferSource = ctx.createBufferSource();
+          bufferSource.buffer = audioBuffer;
+          bufferSource.connect(ctx.destination);
+
+          setIsPreparingSpeech(false);
+          setIsSpeaking(true);
+
+          await new Promise<void>(res2 => {
+            bufferSource.onended = () => { setIsSpeaking(false); res2(); };
+            bufferSource.start();
+          });
+        } catch (err) {
+          console.warn('[voice] buffered TTS playback failed:', err);
+          setIsPreparingSpeech(false);
+          setIsSpeaking(false);
+        }
+      };
+
+      // Streamed path — English (Speechmatics) and Sinhala/Tamil (Azure).
+      // Guarded by URL-length: non-Latin script inflates ~3x per byte once
+      // percent-encoded, so very long si/ta replies skip streaming and go
+      // straight to the buffered path instead of risking an oversized URL.
+      const encoded = encodeURIComponent(clean);
+      const SAFE_URL_CHARS = 4000;
+      const canStream =
+        lang === 'en' ||
+        ((lang === 'si' || lang === 'ta') && encoded.length <= SAFE_URL_CHARS);
+
+      if (canStream) {
+        if (!playerRef.current) playerRef.current = new Audio();
+        const el = playerRef.current;
+        let settled = false;
+
+        const cleanupHandlers = () => { el.onplaying = null; el.onended = null; el.onerror = null; };
+
+        el.onplaying = () => { setIsPreparingSpeech(false); setIsSpeaking(true); };
+        el.onended = () => {
+          if (settled) return;
+          settled = true;
+          cleanupHandlers();
+          setIsSpeaking(false);
+          resolve();
+        };
+        el.onerror = async () => {
+          if (settled) return;
+          settled = true;
+          cleanupHandlers();
+          setIsSpeaking(false);
+          console.warn(`[voice] streamed TTS failed (lang=${lang})`);
+          if (lang === 'en') {
+            await speakWithWebSpeechAPI(clean);
+          } else {
+            await playBuffered();
+          }
+          resolve();
+        };
+
+        try {
+          el.src = `/api/voice-tts?text=${encoded}&lang=${lang}`;
+          await el.play();
+        } catch (err) {
+          if (!settled) {
+            settled = true;
+            cleanupHandlers();
+            console.warn('[voice] streamed TTS playback failed:', err);
+            if (lang === 'en') {
+              await speakWithWebSpeechAPI(clean);
+            } else {
+              await playBuffered();
+            }
+            resolve();
+          }
+        }
+        return;
+      }
+
+      // sl / tl, or si/ta with an unusually long reply — buffered path only.
+      await playBuffered();
+      resolve();
+    });
+  }, [getLang, speakWithWebSpeechAPI]);
+  // ---------- end of speak ----------
 
   const stopSpeaking = useCallback(() => {
-    // Not easily supported with Web Audio, but we can close the context?
-    // We'll just set state and ignore the ongoing playback (it will finish).
-    // For a proper stop, you'd need to keep a reference to the source and call stop().
-    // Since this is rarely used, we'll just silence the state.
+    // English streamed path: we hold a real element reference now, so we can
+    // actually stop it (unlike the old Web-Audio-only path, which could only
+    // clear state and let playback finish naturally).
+    if (playerRef.current && !playerRef.current.paused) {
+      playerRef.current.pause();
+      playerRef.current.currentTime = 0;
+    }
     setIsSpeaking(false);
   }, []);
 
@@ -247,7 +355,7 @@ export function useVoiceMode({ onTranscript, getLang, micDeniedMessage }: UseVoi
     });
   }, [stopRecording]);
 
-  useEffect(() => () => cleanupStream(), [cleanupStream]);
+  useEffect(() => () => releaseStream(), [releaseStream]);
 
   return {
     isRecording, isSending, isSpeaking, isPreparingSpeech, voiceModeOn, micSupported,

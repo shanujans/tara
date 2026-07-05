@@ -304,6 +304,7 @@ export default function ChatPanel({
   const speakPromiseRef = useRef<Promise<void> | null>(null); // TTS kicked off as soon as reply text is ready
   const messagesRef = useRef<Message[]>(messages); // always-current — avoids stale closures in the voice-mode auto-loop
   useEffect(() => { messagesRef.current = messages; }, [messages]);
+  const convLangRef = useRef<Lang>(lang); // always-current — getLang() reads this, not the convLang state snapshot
 
   useEffect(() => {
     if (onClearRef) onClearRef.current = () => {
@@ -323,12 +324,13 @@ export default function ChatPanel({
     startRecording, stopRecording, cancelRecording, speak, stopSpeaking, toggleVoiceMode, analyserRef,
   } = useVoiceMode({
     onTranscript: (text) => sendMessage(text),
-    getLang: () => convLang,
+    getLang: () => convLangRef.current,
     micDeniedMessage: s.micPermissionDenied,
   });
 
   useEffect(() => {
     setConvLang(lang);
+    convLangRef.current = lang;
     setMessages(prev => {
       const userHasTyped = prev.some(m => m.role === 'user');
       if (userHasTyped) return prev;
@@ -428,12 +430,15 @@ export default function ChatPanel({
 
       const extractedQuery = extractQuery(full);
       if (extractedQuery) {
+        const searchStart = Date.now();
         const sr = await fetch('/api/search', {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({ primary: extractedQuery }),
         });
         const sd = await sr.json();
         if (sd.products?.length) {
+          const remaining = 1000 - (Date.now() - searchStart);
+          if (remaining > 0) await new Promise(resolve => setTimeout(resolve, remaining));
           onProductsFound(sd.products, sd.quantum);
           setMessages(prev => { const c=[...prev]; c[c.length-1]={...c[c.length-1],products:sd.products.slice(0,4)}; return c; });
         }
@@ -453,6 +458,7 @@ export default function ChatPanel({
 
     const detected = forcedLang ?? detectLangClient(text, convLang);
     setConvLang(detected);
+    convLangRef.current = detected;
     if (detected !== lang) onLangChange(detected);
 
     const isNewExpat = !expatMode && detectExpat(text);
@@ -494,10 +500,17 @@ export default function ChatPanel({
       const query = extractQuery(full);
       if (query) {
         onSearching(true);
+        const searchStart = Date.now();
         try {
           const r2 = await fetch('/api/search', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({primary:query}) });
           const d = await r2.json();
           if (d.products?.length) {
+            // Sync product-card reveal with TARA's voice: wait out the remainder
+            // of a 1s window (measured from when the search request was sent) so
+            // cards land close to when speak() actually starts playing, instead
+            // of popping in before or well after audio begins.
+            const remaining = 1000 - (Date.now() - searchStart);
+            if (remaining > 0) await new Promise(resolve => setTimeout(resolve, remaining));
             onProductsFound(d.products, d.quantum);
             setMessages(prev => { const c=[...prev]; c[c.length-1]={...c[c.length-1],products:d.products.slice(0,4)}; return c; });
           }
@@ -689,7 +702,7 @@ export default function ChatPanel({
           <GlobeIcon style={{color:'var(--c-outline)',flexShrink:0}}/>
           <div style={{display:'flex',gap:6,flexShrink:0}}>
             {LANG_OPTS.map(o=>(
-              <button key={o.key} onClick={()=>{onLangChange(o.key);setConvLang(o.key);}}
+              <button key={o.key} onClick={()=>{onLangChange(o.key);setConvLang(o.key);convLangRef.current=o.key;}}
                 className={`lang-pill${convLang===o.key?' active':''}`}
                 style={{transform:convLang===o.key?'scale(1.05)':'scale(1)',whiteSpace:'nowrap'}}>
                 {o.label}
@@ -781,16 +794,16 @@ export default function ChatPanel({
                 {micSupported && !pendingImg && (
                   <>
                     {isRecording && <AudioVisualizer analyser={analyserRef.current} />}
-                    {isRecording && voiceModeOn && (
+                    {isRecording && (
                       <button onClick={stopRecording} title="Finish talking & send now"
                         style={{width:32,height:32,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',background:'var(--c-primary)',color:'var(--c-on-primary)',border:'none',cursor:'pointer'}}>
                         <SendIcon size={14}/>
                       </button>
                     )}
                     <button
-                      onClick={() => { if (isSpeaking) { stopSpeaking(); return; } if (isRecording) { voiceModeOn ? cancelRecording() : stopRecording(); return; } void startRecording(); }}
+                      onClick={() => { if (isSpeaking) { stopSpeaking(); return; } if (isRecording) { cancelRecording(); return; } void startRecording(); }}
                       disabled={streaming || sttSending}
-                      title={isRecording && voiceModeOn ? s.cancelListeningTitle : voiceModeOn ? s.voiceModeStopTitle : s.tapToSpeak}
+                      title={isRecording ? s.cancelListeningTitle : voiceModeOn ? s.voiceModeStopTitle : s.tapToSpeak}
                       style={{
                         width:32,
                         height:32,

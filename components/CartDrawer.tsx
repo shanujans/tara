@@ -675,7 +675,7 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
                     <p className="text-xs mt-1 flex items-start gap-1"
                       style={{ color: 'rgba(250,229,85,0.60)' }}>
                       <span>⚠️</span>
-                      <span>Write in English or Sihalish — Tamil/Sinhala script won't display on Kapruka.</span>
+                      <span>Write in English / Singlish / Tanglish  — Tamil/Sinhala script won't display on Kapruka.</span>
                     </p>
                   </div>
 
