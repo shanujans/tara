@@ -101,3 +101,22 @@ The user wants:
   > **TARA:** On it! Searching for laptops under LKR 500,000 and saving John's delivery details for the 6th of July 🛒
 
 ---
+
+## Issue #5 — Jul 5, 2026, 4:32 PM
+
+**Category:** Wrong products
+**Language:** TA
+
+**User reported:**
+> (no description provided)
+
+**TARA response that triggered this:**
+> நிச்சயமாக, உங்கள் பேட்மின்டன் விளையாட்டுக்கு ஏற்ற சிறந்த இன்டோர் ஷூக்களை நான் தேடித் தருகிறேன்! 🏸 விளையாடும்போது நண்பர்களுடனும் நேரத்தை செலவிட இது நல்ல வாய்ப்பு, இந்த ஜூலை மாதம் நட்பு தினத்தை முன்னிட்டு உங்கள் விளையாட்டு நண்பர்களுக்கு ஏதேனும் பரிசுகள் வழங்க வேண்டுமா? 😊
+
+**Conversation context (last 4 messages):**
+  > **TARA:** Hey! I'm TARA — your personal shopping agent for Kapruka 🛍️ Whether you're hunting for the perfect gift, sending love to family back home, or need something fast — just tell me what you're after!
+  > **TARA:** Happy Esala Season! 🪔 As the Perahera festivities begin, let's get you ready for the long holiday weekend. I can track down the best deals on modest white temple wear, travel essentials, and festive gift bundles available right now on Kapruka.
+  > **User:** எனக்கு ஒரு இன்டோர் ஷூ வேணும். எப்படி எனா நான் மார்க்கிங் ஷூ வேணும். பேட்மின்டன் விளையாட போறதுக்கு. சோ பாத்து ரிசர்ச் பண்ணி ஒரு ₹10,000க்குள்ள பாத்து எடுத்தாங்களே.
+  > **TARA:** நிச்சயமாக, உங்கள் பேட்மின்டன் விளையாட்டுக்கு ஏற்ற சிறந்த இன்டோர் ஷூக்களை நான் தேடித் தருகிறேன்! 🏸 விளையாடும்போது நண்பர்களுடனும் நேரத்தை செலவிட இது நல்ல வாய்ப்பு, இந்த ஜூலை மாதம் நட்பு தினத்தை முன்னிட்டு உங்கள் விளையாட்டு நண்பர்களுக்கு ஏதேனும் பரிசுகள் வழங்க வேண்டுமா? 😊
+
+---

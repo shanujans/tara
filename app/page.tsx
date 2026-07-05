@@ -161,6 +161,7 @@ function AppContent({ user }: { user: UserInfo }) {
   const [searching,   setSearching]   = useState(false);
   const [quantum,     setQuantum]     = useState(false);
   const [cartOpen,    setCartOpen]    = useState(false);
+  const [speakerOn,   setSpeakerOn]   = useState(true);
   const { totalQty } = useCart();
 
   /* Open cart drawer when ChatPanel detects a <checkout_fill> tag */
@@ -237,6 +238,11 @@ function AppContent({ user }: { user: UserInfo }) {
               onMouseOut={e=>{ e.currentTarget.style.background='transparent'; e.currentTarget.style.color='var(--c-on-surface-variant)'; }}
             >{l.icon} {l.label}</button>
           ))}
+          <button onClick={()=>setSpeakerOn(v=>!v)} title={speakerOn?'Mute TARA voice replies':'Unmute TARA voice replies'}
+            style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 12px', borderRadius:8, color:'var(--c-on-surface-variant)', fontSize:14, fontWeight:500, background:'transparent', border:'none', cursor:'pointer', transition:'all 0.15s', fontFamily:'var(--font-body)' }}
+            onMouseOver={e=>{ e.currentTarget.style.background='var(--c-surface-container-high)'; e.currentTarget.style.color='var(--c-on-surface)'; }}
+            onMouseOut={e=>{ e.currentTarget.style.background='transparent'; e.currentTarget.style.color='var(--c-on-surface-variant)'; }}
+          >{speakerOn?'🔊':'🔇'}</button>
         </div>
 
         {/* Right controls */}
@@ -269,7 +275,7 @@ function AppContent({ user }: { user: UserInfo }) {
         <div style={{ flex:1, minWidth:0, flexDirection:'column', overflow:'hidden', display:mobileTab==='chat'?'flex':'none' }} className="md:!flex">
           <ChatPanel lang={lang} onLangChange={setLang} onProductsFound={handleProducts} onSearching={setSearching}
             autoSend={autoSend} onAutoSendDone={()=>setAutoSend('')} onClearRef={chatClearRef}
-            speakerOn={false} onSpeakerToggle={()=>{}}/>
+            speakerOn={speakerOn} onSpeakerToggle={()=>setSpeakerOn(v=>!v)}/>
         </div>
 
         {/* Products panel */}

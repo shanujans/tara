@@ -25,6 +25,11 @@ export const STRINGS = {
     // Updated: Father's Day → Friendship Day (August 2)
     friendshipDayHint: "Friendship Day is coming up on August 2nd 👫 — want to send something special to your bestie?",
     orderSpeedPrefix: '✦ Order placed in', orderSpeedSuffix: '⚡ — faster than typing it yourself!',
+    tapToSpeak: 'Tap to speak', voiceModeTitle: 'Hands-free voice mode (auto-listens after each reply)',
+    voiceModeStopTitle: 'Voice mode is on — tap to stop listening',
+    listeningStatus: '🎙 Listening…', transcribingStatus: '✦ Transcribing…', speakingStatus: '🔊 Speaking…', preparingSpeechStatus: '✦ TARA is preparing to speak…',
+    micPermissionDenied: 'Allow microphone access to use voice mode.',
+    cancelListeningTitle: 'Tap to cancel — won\'t be sent',
   },
   si: {
     headerTitle: 'TARA ✦', langBadge: 'සිං',
@@ -50,6 +55,11 @@ export const STRINGS = {
     // Updated: Father's Day → Friendship Day (August 2)
     friendshipDayHint: 'අගෝස්තු 2 වෙනිදා මිතුරන්ගේ දිනයයි 👫 — ඔබේ හොඳම යාළුවාට විශේෂ දෙයක් යැවිය හැකිද?',
     orderSpeedPrefix: '✦ Order දුන්නේ', orderSpeedSuffix: '⚡ — ඉක්මනින්!',
+    tapToSpeak: 'කතා කරන්න තට්ටු කරන්න', voiceModeTitle: 'අතින් නොසිරෑ voice mode (පිළිතුරෙන් පසු ස්වයංක්‍රීයව අහයි)',
+    voiceModeStopTitle: 'Voice mode ක්‍රියාත්මකයි — නැවැත්වීමට තට්ටු කරන්න',
+    listeningStatus: '🎙 අහගෙන සිටියි…', transcribingStatus: '✦ පරිවර්තනය කරමින්…', speakingStatus: '🔊 කථා කරමින්…', preparingSpeechStatus: '✦ TARA කථා කිරීමට සූදානම් වෙයි…',
+    micPermissionDenied: 'Voice mode භාවිතයට මයික්‍රොෆෝන් අවසර දෙන්න.',
+    cancelListeningTitle: 'අවලංගු කිරීමට තට්ටු කරන්න — යවන්නේ නැත',
   },
   // Sihalish — romanized Sinhala + English.
   sl: {
@@ -76,6 +86,11 @@ export const STRINGS = {
     // Updated: Father's Day → Friendship Day (August 2)
     friendshipDayHint: 'August 2 wenida friendz day 👫 — oyage bestie ta mokak hari yawamu da?',
     orderSpeedPrefix: '✦ Order dunne', orderSpeedSuffix: '⚡ — wada igenma!',
+    tapToSpeak: 'Katha karanna tap karanna', voiceModeTitle: 'Hands-free voice mode (reply eken passe automatic ahanawa)',
+    voiceModeStopTitle: 'Voice mode on tiyenne — nawathanna tap karanna',
+    listeningStatus: '🎙 Ahagena innawa…', transcribingStatus: '✦ Type karamin…', speakingStatus: '🔊 Katha karamin…', preparingSpeechStatus: '✦ TARA katha karanna heduwannawa…',
+    micPermissionDenied: 'Voice mode use karanna mic access denna.',
+    cancelListeningTitle: 'Cancel karanna tap karanna — send wenne na',
   },
   ta: {
     headerTitle: 'TARA ✦', langBadge: 'தமிழ்',
@@ -101,6 +116,11 @@ export const STRINGS = {
     // Updated: Father's Day → Friendship Day (August 2)
     friendshipDayHint: 'ஆகஸ்ட் 2 அன்று நண்பர்கள் தினம் 👫 — உங்கள் நண்பருக்கு ஏதாவது அனுப்பலாமா?',
     orderSpeedPrefix: '✦ Order செய்யப்பட்டது', orderSpeedSuffix: '⚡ — வேகமாக!',
+    tapToSpeak: 'பேச தட்டவும்', voiceModeTitle: 'கைகள் இல்லாத voice mode (பதிலுக்குப் பிறகு தானாக கேட்கும்)',
+    voiceModeStopTitle: 'Voice mode ஆன் — நிறுத்த தட்டவும்',
+    listeningStatus: '🎙 கேட்கிறது…', transcribingStatus: '✦ எழுதுகிறது…', speakingStatus: '🔊 பேசுகிறது…', preparingSpeechStatus: '✦ TARA பேச தயாராகிறது…',
+    micPermissionDenied: 'Voice mode பயன்படுத்த மைக் அனுமதி கொடுங்கள்.',
+    cancelListeningTitle: 'ரத்து செய்ய தட்டவும் — அனுப்பப்படாது',
   },
   tl: {
     headerTitle: 'TARA ✦', langBadge: 'TL',
@@ -126,6 +146,11 @@ export const STRINGS = {
     // Updated: Father's Day → Friendship Day (August 2)
     friendshipDayHint: "August 2 Friendship Day da 👫 — unga bestie ku ethachum anuppuvoma?",
     orderSpeedPrefix: '✦ Order panni', orderSpeedSuffix: '⚡ — semma fast la!',
+    tapToSpeak: 'Pesa tap pannunga', voiceModeTitle: 'Hands-free voice mode la (reply-ku apram automatic-a kekkum)',
+    voiceModeStopTitle: 'Voice mode on-la iruku — stop panna tap pannunga',
+    listeningStatus: '🎙 Kekkitu iruku…', transcribingStatus: '✦ Type panniten…', speakingStatus: '🔊 Pesikitu iruku…', preparingSpeechStatus: '✦ TARA pesa prepare aaguthu…',
+    micPermissionDenied: 'Voice mode use panna mic access kudunga la.',
+    cancelListeningTitle: 'Cancel panna tap pannunga — send aagadhu',
   },
 };
 

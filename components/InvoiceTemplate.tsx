@@ -76,10 +76,10 @@ export default function InvoiceTemplate({ data }: { data: InvoiceData }) {
     }}>
 
       {/* ── HEADER ─────────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #e2e8f0', paddingBottom: 20, marginBottom: 20 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16, borderBottom: '1px solid #e2e8f0', paddingBottom: 20, marginBottom: 20 }}>
 
         {/* Left: brand mark */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: '1 1 auto', minWidth: 250 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/kapruka-logo.png" crossOrigin="anonymous" alt="K"
             style={{ width: 42, height: 42, borderRadius: 10, objectFit: 'cover', flexShrink: 0 }} />
@@ -87,9 +87,22 @@ export default function InvoiceTemplate({ data }: { data: InvoiceData }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 16, fontWeight: 800, color: PURPLE, letterSpacing: '-0.01em' }}>KAPRUKA</span>
               <span style={{ color: '#94a3b8', fontSize: 13 }}>×</span>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/cartoon.jpg" crossOrigin="anonymous" alt="TARA"
-                style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+              
+              {/* TARA Avatar - Widened wrapper so it centers horizontally without overlapping text */}
+              <div style={{ width: 50, height: 28, position: 'relative', flexShrink: 0 }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/cartoon.jpg" crossOrigin="anonymous" alt="TARA"
+                  style={{ 
+                    position: 'absolute', 
+                    bottom: 0, 
+                    left: 0, 
+                    width: 50,       
+                    height: 50,      
+                    borderRadius: '50%', 
+                    objectFit: 'cover'
+                  }} />
+              </div>
+
               <span style={{ fontSize: 14, fontWeight: 700, color: PURPLE }}>TARA AI Shopping Agent</span>
             </div>
             <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>Order Confirmation &amp; Payment Sheet</div>
@@ -97,18 +110,29 @@ export default function InvoiceTemplate({ data }: { data: InvoiceData }) {
         </div>
 
         {/* Right: badge + order info */}
-        <div style={{ textAlign: 'right' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', flexShrink: 0 }}>
           <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            borderRadius: 999, border: `1px solid ${isPaid ? '#6ee7b7' : '#fcd34d'}`,
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            gap: 6,
+            borderRadius: 999, 
+            border: `1px solid ${isPaid ? '#6ee7b7' : '#fcd34d'}`,
             background: isPaid ? '#ecfdf5' : '#fffbeb',
             color: isPaid ? '#065f46' : '#78350f',
-            padding: '5px 14px', fontSize: 10, fontWeight: 700, letterSpacing: '0.03em', marginBottom: 8,
+            padding: '6px 16px', // Adjusted padding for a better pill shape
+            fontSize: 10, 
+            fontWeight: 700, 
+            letterSpacing: '0.03em', 
+            marginBottom: 8,
+            whiteSpace: 'nowrap',
+            lineHeight: 1 // This stops the text from sitting too high/low
           }}>
-            <span>{isPaid ? '✓' : '⚠'}</span>
-            {isPaid ? 'PAID' : 'UNPAID — PENDING SYSTEM PAY'}
+            <span style={{ fontSize: 12 }}>{isPaid ? '✓' : '⚠'}</span>
+            <span>{isPaid ? 'PAID' : 'UNPAID — PENDING SYSTEM PAY'}</span>
           </span>
-          <div style={{ fontSize: 11, color: '#475569', lineHeight: 1.8 }}>
+          
+          <div style={{ textAlign: 'right', fontSize: 11, color: '#475569', lineHeight: 1.8 }}>
             <div>Order No. <b style={{ color: '#0f172a', fontWeight: 700 }}>{data.orderId}</b></div>
             <div>Placed: {fmtDateTime(data.orderDate)}</div>
           </div>

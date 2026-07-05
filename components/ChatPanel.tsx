@@ -4,7 +4,9 @@ import { STRINGS, Lang } from '@/lib/strings';
 import { useCart, Product } from '@/context/CartContext';
 import { detectExpat, detectExpatCountry } from '@/lib/expat';
 import ExpatBanner from './ExpatBanner';
-import { MicIcon, SendIcon, AttachIcon, AddCartIcon, CheckIcon, GlobeIcon, ThumbsUpIcon, ThumbsDownIcon, ChevronRightIcon } from './Icons';
+import { MicIcon, SendIcon, AttachIcon, AddCartIcon, CheckIcon, GlobeIcon, ThumbsUpIcon, ThumbsDownIcon, ChevronRightIcon, VoiceSparkleIcon } from './Icons';
+import { useVoiceMode } from '@/lib/useVoiceMode';
+import AudioVisualizer from './AudioVisualizer';
 
 /* ── Types ─────────────────────────────────────────────────── */
 interface ThinkingData { intent: string; goal: string; constraints: string[]; plan: string[]; }
@@ -59,7 +61,6 @@ function extractCheckoutFill(t: string): Record<string,string>|null {
   try { return JSON.parse(m[1].trim()); } catch { return null; }
 }
 function proxyImg(url: string) { if (!url) return ''; return url.includes('kapruka.com') ? `/api/img?url=${encodeURIComponent(url)}` : url; }
-const SPEECH_LANG: Record<Lang,string> = { si:'si-LK',sl:'si-LK',ta:'ta-IN',tl:'en-US',en:'en-US' };
 const LANG_OPTS: { key:Lang; label:string }[] = [
   {key:'si',label:'🇱🇰 සිං'},{key:'sl',label:'🇱🇰 SL'},
   {key:'ta',label:'🇱🇰 த'},{key:'tl',label:'🇱🇰 TL'},{key:'en',label:'🇬🇧 EN'},
@@ -252,7 +253,7 @@ function ThinkingDrawer({ data }: { data: ThinkingData }) {
 /* ── Main ChatPanel ─────────────────────────────────────────── */
 export default function ChatPanel({
   lang, onLangChange, onProductsFound, onSearching,
-  autoSend, onAutoSendDone, onClearRef,
+  speakerOn, onSpeakerToggle, autoSend, onAutoSendDone, onClearRef,
 }: ChatPanelProps) {
   const s = STRINGS[lang];
   const { addItem, prefillCheckout, items: cartItems } = useCart();
@@ -281,8 +282,6 @@ export default function ChatPanel({
   const [input,        setInput]        = useState('');
   const [streaming,    setStreaming]     = useState(false);
   const [convLang,     setConvLang]     = useState<Lang>(lang);
-  const [listening,    setListening]    = useState(false);
-  const [voiceOk,      setVoiceOk]      = useState(false);
   const [expatMode,    setExpatMode]    = useState(false);
   const [expatCountry, setExpatCountry] = useState('');
   const [showExpat,    setShowExpat]    = useState(false);
@@ -300,8 +299,11 @@ export default function ChatPanel({
   const bottomRef   = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef    = useRef<AbortController|null>(null);
-  const recRef      = useRef<unknown>(null);
   const fileInputRef= useRef<HTMLInputElement>(null);
+  const lastReplyRef= useRef('');   // holds the just-finished assistant reply for TTS handoff
+  const speakPromiseRef = useRef<Promise<void> | null>(null); // TTS kicked off as soon as reply text is ready
+  const messagesRef = useRef<Message[]>(messages); // always-current — avoids stale closures in the voice-mode auto-loop
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
 
   useEffect(() => {
     if (onClearRef) onClearRef.current = () => {
@@ -310,9 +312,20 @@ export default function ChatPanel({
   }, [onClearRef, lang, buildInitial]);
 
   useEffect(() => {
-    setVoiceOk(!!(typeof window !== 'undefined' && ((window as unknown as Record<string,unknown>).SpeechRecognition || (window as unknown as Record<string,unknown>).webkitSpeechRecognition)));
     try { const raw = localStorage.getItem('tara_last_order'); if (raw) setLastOrder(JSON.parse(raw)); } catch { /**/ }
   }, []);
+
+  // Gemini-based voice mode (STT + TTS). onTranscript fires once transcription completes;
+  // sendMessage is defined further below but this closure isn't invoked until the user
+  // actually finishes speaking, by which point sendMessage is already assigned.
+  const {
+    isRecording, isSending: sttSending, isSpeaking, isPreparingSpeech, voiceModeOn, micSupported,
+    startRecording, stopRecording, cancelRecording, speak, stopSpeaking, toggleVoiceMode, analyserRef,
+  } = useVoiceMode({
+    onTranscript: (text) => sendMessage(text),
+    getLang: () => convLang,
+    micDeniedMessage: s.micPermissionDenied,
+  });
 
   useEffect(() => {
     setConvLang(lang);
@@ -324,6 +337,7 @@ export default function ChatPanel({
   }, [lang, buildInitial]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior:'smooth' }); }, [messages, streaming]);
+  useEffect(() => { if (!speakerOn && isSpeaking) stopSpeaking(); }, [speakerOn, isSpeaking, stopSpeaking]);
   useEffect(() => {
     const ta = textareaRef.current; if (!ta) return;
     ta.style.height = 'auto'; ta.style.height = `${Math.min(ta.scrollHeight, 112)}px`;
@@ -362,7 +376,7 @@ export default function ChatPanel({
     setVisionLoading(true);
     setPendingImg(null);
     const userMsg: Message = { role:'user', content:'Find similar products for this image', imagePreview: img.preview };
-    const historyBase = [...messages, userMsg];
+    const historyBase = [...messagesRef.current, userMsg];
     setMessages(prev => [...prev, userMsg]);
     const thinkingMsg: Message = { role:'assistant', content:'🔍 Analysing your image…' };
     setMessages(prev => [...prev, thinkingMsg]);
@@ -444,7 +458,7 @@ export default function ChatPanel({
     const isNewExpat = !expatMode && detectExpat(text);
     if (isNewExpat) { setExpatMode(true); setExpatCountry(detectExpatCountry(text)); setShowExpat(true); }
 
-    const history = [...messages, { role:'user' as const, content:text }];
+    const history = [...messagesRef.current, { role:'user' as const, content:text }];
     setMessages(history); setInput(''); setStreaming(true);
     abortRef.current = new AbortController();
 
@@ -474,6 +488,8 @@ export default function ChatPanel({
 
       const visible = cleanResponse(full);
       setMessages(prev => { const c=[...prev]; c[c.length-1]={role:'assistant',content:visible,...(thinkingData?{thinking:thinkingData}:{})}; return c; });
+      lastReplyRef.current = visible;
+      if (speakerOn) speakPromiseRef.current = speak(visible); // fire now — don't wait on search/tracking/checkout-fill below
 
       const query = extractQuery(full);
       if (query) {
@@ -507,19 +523,19 @@ export default function ChatPanel({
       }
     } catch (err: unknown) {
       if ((err as Error).name!=='AbortError') setMessages(prev=>[...prev,{role:'assistant',content:'⚠️ Something went wrong. Please try again.'}]);
-    } finally { setStreaming(false); }
-  }, [messages, streaming, lang, convLang, expatMode, onLangChange, onProductsFound, onSearching]);
-
-  const startListening = async () => {
-    if (!voiceOk) return;
-    try { await navigator.mediaDevices.getUserMedia({ audio:true }); } catch { alert('Allow microphone access.'); return; }
-    const SR = (window as unknown as Record<string,unknown>).SpeechRecognition ?? (window as unknown as Record<string,unknown>).webkitSpeechRecognition;
-    const rec = new (SR as new() => { lang:string; interimResults:boolean; onresult:unknown; onerror:unknown; onend:unknown; start:()=>void })();
-    rec.lang = SPEECH_LANG[convLang]; rec.interimResults = false;
-    rec.onresult = (e:{results:ArrayLike<ArrayLike<{transcript:string}>>}) => { setListening(false); sendMessage((e.results[0] as ArrayLike<{transcript:string}>)[0].transcript); };
-    rec.onerror = () => setListening(false); rec.onend = () => setListening(false);
-    recRef.current = rec; (rec as {start:()=>void}).start(); setListening(true);
-  };
+    } finally {
+      setStreaming(false);
+      const pending = speakPromiseRef.current;
+      speakPromiseRef.current = null;
+      lastReplyRef.current = '';
+      if (pending) {
+        void (async () => {
+          await pending;                                          // no-op/non-fatal if TTS is unavailable
+          if (voiceModeOn) setTimeout(() => { void startRecording(); }, 500);
+        })();
+      }
+    }
+  }, [messages, streaming, lang, convLang, expatMode, onLangChange, onProductsFound, onSearching, speak, startRecording, voiceModeOn]);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input.trim()); }
@@ -759,27 +775,59 @@ export default function ChatPanel({
                   : <AttachIcon />}
               </button>
 
+
+
               <div style={{display:'flex', gap:6, alignItems:'center'}}>
-                {voiceOk && !pendingImg && (
-                  <button onClick={listening?()=>{(recRef.current as {stop:()=>void})?.stop();setListening(false);}:startListening}
-                    disabled={streaming}
-                    style={{
-                      width:32,
-                      height:32,
-                      borderRadius:'50%',
-                      display:'flex',
-                      alignItems:'center',
-                      justifyContent:'center',
-                      background:listening?'#ef4444':'transparent',
-                      color:listening?'white':'var(--c-on-surface-variant)',
-                      cursor:'pointer',
-                      border:'none',
-                      position:'relative',
-                      transition:'all 0.18s',
-                    }}>
-                    {listening&&<span style={{position:'absolute',inset:0,borderRadius:'50%',background:'rgba(239,68,68,0.4)',animation:'quantum-pulse 1s ease-in-out infinite'}}/>}
-                    <MicIcon size={16}/>
-                  </button>
+                {micSupported && !pendingImg && (
+                  <>
+                    {isRecording && <AudioVisualizer analyser={analyserRef.current} />}
+                    {isRecording && voiceModeOn && (
+                      <button onClick={stopRecording} title="Finish talking & send now"
+                        style={{width:32,height:32,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',background:'var(--c-primary)',color:'var(--c-on-primary)',border:'none',cursor:'pointer'}}>
+                        <SendIcon size={14}/>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => { if (isSpeaking) { stopSpeaking(); return; } if (isRecording) { voiceModeOn ? cancelRecording() : stopRecording(); return; } void startRecording(); }}
+                      disabled={streaming || sttSending}
+                      title={isRecording && voiceModeOn ? s.cancelListeningTitle : voiceModeOn ? s.voiceModeStopTitle : s.tapToSpeak}
+                      style={{
+                        width:32,
+                        height:32,
+                        borderRadius:'50%',
+                        display:'flex',
+                        alignItems:'center',
+                        justifyContent:'center',
+                        background:isRecording?'#ef4444':isSpeaking?'var(--c-primary-container)':'transparent',
+                        color:(isRecording||isSpeaking)?'white':'var(--c-on-surface-variant)',
+                        cursor:'pointer',
+                        border:'none',
+                        position:'relative',
+                        transition:'all 0.18s',
+                      }}>
+                      {isRecording&&<span style={{position:'absolute',inset:0,borderRadius:'50%',background:'rgba(239,68,68,0.4)',animation:'quantum-pulse 1s ease-in-out infinite'}}/>}
+                      <MicIcon size={16}/>
+                    </button>
+                    
+                    <button
+                      onClick={toggleVoiceMode}
+                      title={s.voiceModeTitle}
+                      style={{
+                        padding:'6px',
+                        borderRadius:'50%',
+                        border:'none',
+                        cursor:'pointer',
+                        background:voiceModeOn?'var(--c-primary-container)':'transparent',
+                        color:voiceModeOn?'var(--c-on-primary-container)':'var(--c-on-surface-variant)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition:'all 0.18s',
+                      }}>
+                      {/* Using your new waveform+sparkle icon */}
+                      <VoiceSparkleIcon size={16} />
+                    </button>
+                  </>
                 )}
 
                 <button onClick={handleSend}
@@ -807,7 +855,7 @@ export default function ChatPanel({
           </div>
 
           <p style={{textAlign:'center',fontSize:10,color:'var(--c-outline)',marginTop:5,letterSpacing:'0.08em',textTransform:'uppercase',fontWeight:700}}>
-            {listening?<span style={{color:'#ef4444'}}>🎙 Listening…</span>:visionLoading?<span style={{color:'var(--c-primary)'}}>✦ Analysing image…</span>:'Paste image or Shift+Enter for new line • TARA Protocol'}
+            {isRecording?<span style={{color:'#ef4444'}}>{s.listeningStatus}</span>:sttSending?<span style={{color:'var(--c-primary)'}}>{s.transcribingStatus}</span>:isPreparingSpeech?<span style={{color:'var(--c-primary)'}}>{s.preparingSpeechStatus}</span>:isSpeaking?<span style={{color:'var(--c-primary)'}}>{s.speakingStatus}</span>:visionLoading?<span style={{color:'var(--c-primary)'}}>✦ Analysing image…</span>:'Paste image or Shift+Enter for new line • TARA Protocol'}
           </p>
         </div>
       </div>
@@ -826,7 +874,7 @@ export default function ChatPanel({
               : <>
                   <p style={{fontSize:15,fontWeight:700,color:'var(--c-on-surface)',marginBottom:14}}>What went wrong? 🐛</p>
                   <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:14}}>
-                    {['Wrong products','Wrong language',"Didn't understand",'Delivery info wrong','No upsell','Too slow','Other'].map(cat=>(
+                    {['Wrong products','Wrong language',"Didn't understand",'Delivery info wrong','Error Message','Too slow','Other'].map(cat=>(
                       <button key={cat} onClick={()=>setFbModal(p=>p?{...p,category:cat}:p)}
                         style={{padding:'4px 12px',borderRadius:20,fontSize:12,cursor:'pointer',border:'none',fontFamily:'var(--font-body)',transition:'all 0.15s',
                           background:fbModal.category===cat?'var(--c-primary-container)':'var(--c-surface-container-high)',

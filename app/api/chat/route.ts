@@ -258,15 +258,26 @@ async function callGoogle(
     return { fullText: '', chunkCount: 0, timedOut: false, error: new Error('No Gemini API key provided') };
   }
 
+  const { GoogleGenerativeAI } = require("@google/generative-ai");
   const genAI = new GoogleGenerativeAI(key);
+
   const googleModel = genAI.getGenerativeModel({
-    model,
+    // Ensure you use the specific 3.1 model name
+    model: "gemini-3.1-flash-lite", 
     systemInstruction: systemPrompt,
+    
     generationConfig: {
-      maxOutputTokens: 1536,
-      temperature: 0.7,
+      // Thinking models need space for internal reasoning.
+      maxOutputTokens: 1024, 
+      
+      // This is what turns on "Extended Mode"
+      thinkingConfig: {
+        includeThoughts: true,
+        thinkingLevel: "MEDIUM"
+      }
     },
   });
+
 
   // Convert OpenAI‑style messages to Google's format
   // IMPORTANT: Cast m.content to string because we only ever pass plain text.
