@@ -4,8 +4,7 @@
 > Turns a 7-minute browsing-and-checkout flow into a 2-minute conversation.
 
 **Live demo:** [tara-green.vercel.app](https://tara-green.vercel.app)  
-**Stack:** Next.js 16.2.7 · TypeScript strict · Tailwind CSS v4 · Three.js r184 · Vercel  
-**Commit:** `a9a161c` — _fix: fallback api setup_ (Jul 5 2026)
+**Stack:** Next.js 16.2.7 · TypeScript strict · Tailwind CSS v4 · Three.js r184 · Vercel 
 
 ---
 
