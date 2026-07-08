@@ -17,9 +17,10 @@ const nextConfig: NextConfig = {
             value: [
               "default-src 'self'",
               "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-              "style-src 'self' 'unsafe-inline'",
+              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "img-src 'self' data: https: blob:",
-              "connect-src 'self' https://api.aimlapi.com https://mcp.kapruka.com",
+              "connect-src 'self' https://api.aimlapi.com https://mcp.kapruka.com wss://generativelanguage.googleapis.com",
+              "font-src 'self' https://fonts.gstatic.com",
               "frame-ancestors 'none'",
             ].join('; '),
           },
@@ -38,11 +39,10 @@ const nextConfig: NextConfig = {
             value: [
               "default-src 'self'",
               "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-              "style-src 'self' 'unsafe-inline'",
+              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "img-src 'self' data: https: blob:",
-              // Must call own /api/* routes and external AI/MCP
-              "connect-src 'self' https://tara-green.vercel.app https://api.aimlapi.com https://mcp.kapruka.com",
-              // Allow embedding from: kapruka.com (extension), same origin (embed-demo), Chrome extensions
+              "connect-src 'self' https://tara-green.vercel.app https://api.aimlapi.com https://mcp.kapruka.com wss://generativelanguage.googleapis.com",
+              "font-src 'self' https://fonts.gstatic.com",
               "frame-ancestors *",
             ].join('; '),
           },
