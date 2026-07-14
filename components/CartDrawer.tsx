@@ -531,7 +531,7 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
                       opacity: pdfLoading ? 0.7 : 1,
                       fontFamily: 'var(--font-body)',
                     }}>
-                    {pdfLoading && pdfAction === 'download' ? '⏳ Generating PDF…' : '📄 Download Order Info'}
+                    {pdfLoading && pdfAction === 'download' ? '⏳ Generating PDF…' : '📄 Download AI Receipt'}
                   </button>
 
                   {/* Share Order Info (Web Share API) */}

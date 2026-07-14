@@ -589,7 +589,7 @@ export default function ChatPanel({
   // actually finishes speaking, by which point sendMessage is already assigned.
   const {
     isRecording, isSending: sttSending, isSpeaking, isPreparingSpeech, voiceModeOn, micSupported,
-    startRecording, stopRecording, cancelRecording, speak, stopSpeaking, toggleVoiceMode, analyserRef,
+    startRecording, stopRecording, cancelRecording, speak, speakInstant, stopSpeaking, toggleVoiceMode, analyserRef,
   } = useVoiceMode({
     onTranscript: (text) => sendMessage(text),
     getLang: () => convLangRef.current,
@@ -753,6 +753,15 @@ export default function ChatPanel({
     setMessages(history); setInput(''); setStreaming(true);
     abortRef.current = new AbortController();
 
+    // ── PHASE 1: Instant greeting — show immediately + start TTS via Web Speech API ──
+    // Uses browser's built-in speechSynthesis for zero-latency TTS (~50ms, no network).
+    // The main LLM response uses the real TTS pipeline (speak()) which has better
+    // voice quality but takes 2-5s to start due to network latency.
+    const instantGreeting = STRINGS[detected].instantGreeting ?? 'On it! 🔍';
+    setMessages(prev => [...prev, { role:'assistant', content: instantGreeting }]);
+    lastReplyRef.current = instantGreeting;
+    if (speakerOn) speakPromiseRef.current = speakInstant(instantGreeting);
+
     try {
       const res = await fetch('/api/chat', {
         method:'POST', headers:{'Content-Type':'application/json'},
@@ -767,8 +776,9 @@ export default function ChatPanel({
         try { thinkingData = JSON.parse(decodeURIComponent(thinkingHeader)); } catch { /* invalid JSON — ignore */ }
       }
 
+      // ── PHASE 2: Main LLM response — replace greeting with full reply ───
       const reader = res.body!.getReader(); const decoder = new TextDecoder(); let full = '';
-      setMessages(prev => [...prev, { role:'assistant', content:'' }]);
+      setMessages(prev => { const c=[...prev]; c[c.length-1]={role:'assistant',content:''}; return c; });
 
       while (true) {
         const { done, value } = await reader.read(); if (done) break;
@@ -780,7 +790,14 @@ export default function ChatPanel({
       const visible = cleanResponse(full);
       setMessages(prev => { const c=[...prev]; c[c.length-1]={role:'assistant',content:visible,...(thinkingData?{thinking:thinkingData}:{})}; return c; });
       lastReplyRef.current = visible;
-      if (speakerOn) speakPromiseRef.current = speak(visible); // fire now — don't wait on search/tracking/checkout-fill below
+      // Speak the main response after the instant greeting finishes
+      if (speakerOn) {
+        const prevSpeak = speakPromiseRef.current;
+        speakPromiseRef.current = (async () => {
+          if (prevSpeak) await prevSpeak; // wait for greeting TTS to finish
+          await speak(visible);
+        })();
+      }
 
       const query = extractQuery(full);
       if (query) {

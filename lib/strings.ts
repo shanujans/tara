@@ -1,4 +1,4 @@
-export const STRINGS = {
+﻿export const STRINGS = {
   en: {
     headerTitle: 'TARA ✦', langBadge: 'EN',
     chatPlaceholder: 'Ask me anything — products, prices, delivery…',
@@ -30,6 +30,7 @@ export const STRINGS = {
     listeningStatus: '🎙 Listening…', transcribingStatus: '✦ Transcribing…', speakingStatus: '🔊 Speaking…', preparingSpeechStatus: '✦ TARA is preparing to speak…',
     micPermissionDenied: 'Allow microphone access to use voice mode.',
     cancelListeningTitle: 'Tap to cancel — won\'t be sent',
+    instantGreeting: 'On it! Searching now… 🔍',
   },
   si: {
     headerTitle: 'TARA ✦', langBadge: 'සිං',
@@ -59,6 +60,7 @@ export const STRINGS = {
     voiceModeStopTitle: 'Voice mode ක්‍රියාත්මකයි — නැවැත්වීමට තට්ටු කරන්න',
     listeningStatus: '🎙 අහගෙන සිටියි…', transcribingStatus: '✦ පරිවර්තනය කරමින්…', speakingStatus: '🔊 කථා කරමින්…', preparingSpeechStatus: '✦ TARA කථා කිරීමට සූදානම් වෙයි…',
     micPermissionDenied: 'Voice mode භාවිතයට මයික්‍රොෆෝන් අවසර දෙන්න.',
+    instantGreeting: 'හරි, හොයනවා! 🔍',
     cancelListeningTitle: 'අවලංගු කිරීමට තට්ටු කරන්න — යවන්නේ නැත',
   },
   // Sihalish — romanized Sinhala + English.
@@ -90,6 +92,7 @@ export const STRINGS = {
     voiceModeStopTitle: 'Voice mode on tiyenne — nawathanna tap karanna',
     listeningStatus: '🎙 Ahagena innawa…', transcribingStatus: '✦ Type karamin…', speakingStatus: '🔊 Katha karamin…', preparingSpeechStatus: '✦ TARA katha karanna heduwannawa…',
     micPermissionDenied: 'Voice mode use karanna mic access denna.',
+    instantGreeting: 'Hondai, hoyanawa! 🔍',
     cancelListeningTitle: 'Cancel karanna tap karanna — send wenne na',
   },
   ta: {
@@ -120,6 +123,7 @@ export const STRINGS = {
     voiceModeStopTitle: 'Voice mode ஆன் — நிறுத்த தட்டவும்',
     listeningStatus: '🎙 கேட்கிறது…', transcribingStatus: '✦ எழுதுகிறது…', speakingStatus: '🔊 பேசுகிறது…', preparingSpeechStatus: '✦ TARA பேச தயாராகிறது…',
     micPermissionDenied: 'Voice mode பயன்படுத்த மைக் அனுமதி கொடுங்கள்.',
+    instantGreeting: 'நிச்சயமாக! தேடுகிறேன்… 🔍',
     cancelListeningTitle: 'ரத்து செய்ய தட்டவும் — அனுப்பப்படாது',
   },
   tl: {
@@ -150,6 +154,7 @@ export const STRINGS = {
     voiceModeStopTitle: 'Voice mode on-la iruku — stop panna tap pannunga',
     listeningStatus: '🎙 Kekkitu iruku…', transcribingStatus: '✦ Type panniten…', speakingStatus: '🔊 Pesikitu iruku…', preparingSpeechStatus: '✦ TARA pesa prepare aaguthu…',
     micPermissionDenied: 'Voice mode use panna mic access kudunga la.',
+    instantGreeting: 'Sari machan, kandupidikiren… 🔍',
     cancelListeningTitle: 'Cancel panna tap pannunga — send aagadhu',
   },
 };

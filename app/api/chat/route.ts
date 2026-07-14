@@ -885,6 +885,9 @@ FIELD RULES:
       • Omit if user only mentioned a city, no street details
   - delivery_date: YYYY-MM-DD only, omit if no date mentioned
   - occasion: one of Birthday | Anniversary | Wedding | New Baby | Get Well | Thank You | Festival | Just Because
+      • ONLY set an occasion if the user EXPLICITLY mentions one (e.g. "for his birthday", "wedding gift", "get well soon")
+      • NEVER invent or assume an occasion — if user says "just because" or no occasion is mentioned, use "Just Because" or omit
+      • NEVER mention occasions like "birthday", "anniversary" etc. in your visible reply unless the user explicitly said them
   - sender_name: the person who is ordering (the user themselves)
       • ALWAYS write in ENGLISH/romanized letters only (never Tamil/Sinhala Unicode script)
   - sender_email: any email address mentioned — include as-is

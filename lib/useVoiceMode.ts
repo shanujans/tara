@@ -218,6 +218,52 @@ export function useVoiceMode({ onTranscript, getLang, micDeniedMessage }: UseVoi
     });
   }, []);
 
+  // ---------- speakInstant(): browser Web Speech API for zero-latency greeting ----------
+  // Uses window.speechSynthesis — starts speaking in ~50ms, no network call.
+  // Works for all languages (browser picks the best available voice).
+  // Falls back to resolving immediately if Web Speech API is unavailable.
+  const speakInstant = useCallback((text: string): Promise<void> => {
+    return new Promise((resolve) => {
+      const clean = text.replace(/[*_#]/g, '').replace(/\p{Extended_Pictographic}/gu, '').trim();
+      if (!clean) return resolve();
+
+      if (typeof window === 'undefined' || !window.speechSynthesis) {
+        return resolve();
+      }
+
+      try {
+        window.speechSynthesis.cancel(); // stop any pending speech
+        const utter = new SpeechSynthesisUtterance(clean);
+
+        // Map TARA lang to BCP-47 for voice selection
+        const langMap: Record<string, string> = {
+          en: 'en-US',
+          si: 'si-LK',
+          ta: 'ta-LK',
+          sl: 'en-US', // Sihalish — English voice reads romanized text
+          tl: 'en-US', // Tanglish — English voice reads romanized text
+        };
+        const bcp47 = langMap[getLang()] ?? 'en-US';
+        utter.lang = bcp47;
+        utter.rate = 1.0;
+        utter.pitch = 1.05;
+
+        // Try to find a matching voice
+        const voices = window.speechSynthesis.getVoices();
+        const match = voices.find(v => v.lang === bcp47) ?? voices.find(v => v.lang.startsWith(bcp47.split('-')[0]));
+        if (match) utter.voice = match;
+
+        utter.onend = () => { setIsSpeaking(false); resolve(); };
+        utter.onerror = () => { setIsSpeaking(false); resolve(); };
+
+        setIsSpeaking(true);
+        window.speechSynthesis.speak(utter);
+      } catch {
+        resolve();
+      }
+    });
+  }, [getLang]);
+
   // ---------- speak(): streamed <audio> for en/si/ta, Web Audio decode as fallback ----------
   const speak = useCallback((text: string): Promise<void> => {
     return new Promise(async (resolve) => {
@@ -360,7 +406,7 @@ export function useVoiceMode({ onTranscript, getLang, micDeniedMessage }: UseVoi
   return {
     isRecording, isSending, isSpeaking, isPreparingSpeech, voiceModeOn, micSupported,
     startRecording, stopRecording, cancelRecording, primeAudioElement,
-    speak, stopSpeaking, toggleVoiceMode,
+    speak, speakInstant, stopSpeaking, toggleVoiceMode,
     analyserRef,
   };
 }
