@@ -240,6 +240,7 @@ export default function ProductPanel({ products, lang, loading, quantum }: Produ
           productUrl={selectedUrl}
           lang={lang}
           allProducts={filtered}
+          fallbackProduct={filtered.find(p => p.id === selectedId) ?? null}
           onClose={() => { setSelectedId(null); setSelectedUrl(''); }}
         />
       )}
