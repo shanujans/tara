@@ -862,6 +862,9 @@ DATE AMBIGUITY — resolve silently, NEVER explain or ask:
 FIELD RULES:
   - Only include fields the user actually mentioned — never invent details
   - recipient_name: the person RECEIVING the gift (not the sender)
+      • ALWAYS write in ENGLISH/romanized letters only (never Tamil/Sinhala Unicode script)
+      • If user types "பிரியா" or "ප්‍රියා" → transliterate to "Priya" in English
+      • Kapruka's order system does NOT accept non-ASCII characters in names
   - recipient_phone: Sri Lanka format, accept with or without +94 prefix
   - city: the DELIVERY CITY / ZONE only — NOT the street address
       • "colombo 7" or "colombo7"   → "Colombo 07"
@@ -872,11 +875,14 @@ FIELD RULES:
       • If user says "at 23 Galle Road Colombo 3" — city="Colombo 03", address="23 Galle Road"
       • NEVER put a city name in the address field
   - address: street address ONLY — house/flat number + road name
+      • ALWAYS write in ENGLISH/romanized letters only (never Tamil/Sinhala Unicode script)
+      • Transliterate any non-English text to English equivalent
       • Strip city name from address: "23 Galle Road Colombo 3" → address="23 Galle Road"
       • Omit if user only mentioned a city, no street details
   - delivery_date: YYYY-MM-DD only, omit if no date mentioned
   - occasion: one of Birthday | Anniversary | Wedding | New Baby | Get Well | Thank You | Festival | Just Because
   - sender_name: the person who is ordering (the user themselves)
+      • ALWAYS write in ENGLISH/romanized letters only (never Tamil/Sinhala Unicode script)
   - sender_email: any email address mentioned — include as-is
   - location_type: map to one of these EXACT strings based on what user says:
       • "house" / "home" / "residence"           → "HOUSE OR RESIDENCE"

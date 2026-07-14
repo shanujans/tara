@@ -9,9 +9,10 @@ const LOG = {
 };
 
 // Try models in order — FLUX.1-schnell is free and fastest
+// FLUX.1-dev was deprecated by HuggingFace (HTTP 410) — replaced with SDXL
 const MODELS = [
   'black-forest-labs/FLUX.1-schnell',
-  'black-forest-labs/FLUX.1-dev',
+  'stabilityai/stable-diffusion-xl-base-1.0',
 ];
 
 // HuggingFace router endpoint (same base the blueprint uses)

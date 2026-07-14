@@ -19,15 +19,22 @@ TARA replaces the traditional Kapruka website UI with a warm, voice-enabled, AI-
 | Feature | Details |
 |---|---|
 | 🌐 5-language chat | Sinhala · Tamil · Singlish · Tanglish · English — sticky auto-detection |
+| 🏆 AI product ranking | Gemini-powered ranking: exact → variant → newer → alternative; accessories excluded |
+| ⭐ TARA's Pick | Top 3 ranked products badged with gold border in chat inline cards |
 | 🛍️ Natural-language checkout | One message fills all checkout fields and opens the cart |
+| 🔒 In-app payment | Kapruka checkout embedded in iframe modal — no redirect to external site |
+| 📋 Track order | Track order panel in sidebar (desktop + mobile) with live status lookup |
+| 💬 Chat notifications | Cart actions, checkout receipts with product images, and errors shown in chat |
+| 🧾 AI receipt in chat | Checkout receipt with inline product images + Download/Share PDF buttons in chat |
 | 🎁 Gift chain upselling | 8 product-pair chains, max 2 follow-ups, all 5 languages |
 | 📸 Vision search | Upload or paste an image → Gemini identifies the product |
 | 🎙️ Voice mode (STT + TTS) | Speak to TARA and hear her reply; hands-free loop available |
 | 📦 PDF invoice | Downloadable/shareable order receipt with QR code + AI gift-card art |
 | 🧠 Agentic thought UI | Collapsible reasoning drawer on every TARA message |
 | 📅 Occasion awareness | 8 seasonal occasions injected into every request |
-| 🔍 3-tier search | Keyword + category + price → graceful fallback to broader queries |
+| 🔍 3-tier search + AI ranking | Keyword + category + price → heuristic filter → Gemini ranking → supplementary out-of-stock fetch |
 | 📋 Product comparison | Side-by-side MCP-fetched same-type products in modal |
+| 🔄 Product detail fallback | MCP search fallback when get_product fails (CATSYM/delisted) — uses search by name, matches by ID |
 | 🗂️ Order history | 20-entry localStorage log with reorder-in-one-tap |
 | 👍 / 👎 Feedback loop | Per-reply quality signals → structured `mistakes.md` log |
 | 🔌 Chrome extension | Floats TARA inside Kapruka.com on product pages |
@@ -160,8 +167,8 @@ flowchart LR
     end
 
     subgraph giftcard["/api/generate-gift-card"]
-        G1["HuggingFace\nFLUX.1-schnell 40s"] -->|fail| G2
-        G2["HuggingFace\nFLUX.1-dev 40s"] -->|fail| GFALL
+    G1["HuggingFace\nFLUX.1-schnell 40s"] -->|fail| G2
+    G2["HuggingFace\nSDXL 1.0 40s"] -->|fail| GFALL
         GFALL["502 — non-fatal\nPDF still generates without art"]
     end
 ```
@@ -229,8 +236,8 @@ All routes export `dynamic = 'force-dynamic'`. Rate limits are per-IP, per-minut
 | Route | Method | Purpose | Rate limit | Max duration |
 |---|---|---|---|---|
 | `/api/chat` | POST | Streaming AI chat · lang routing · upsell · checkout_fill tag | 30/min | 20 s (code) / 30 s (vercel.json) |
-| `/api/search` | POST | 3-tier product search with AI validator + category diversification | 30/min | 15 s |
-| `/api/product` | GET | Single product detail + image gallery via MCP | 120/min | default |
+| `/api/search` | POST | 3-tier product search + AI ranking (Gemini) + supplementary out-of-stock fetch | 30/min | 15 s |
+| `/api/product` | POST | Single product detail + image gallery via MCP + search fallback by name | 120/min | default |
 | `/api/product-ai` | POST | AI product summary + conversational Q&A | 80/min | 30 s |
 | `/api/vision-search` | POST | Gemini vision → product search query | 20/min | default |
 | `/api/voice-stt` | POST | Speech-to-text (audio/webm → transcript) | 20/min | 30 s |
@@ -298,17 +305,23 @@ const m    = text.match(/^data:\s*(.+)$/m);
 const raw  = JSON.parse(m ? m[1] : text)?.result?.content?.[0]?.text ?? '';
 ```
 
-### 3-Tier Search
+### 3-Tier Search + AI Ranking
 
 ```
 TIER-1  →  full params (q + category + price filters)
-              if results < 3 → TIER-2
-TIER-2  →  drop category, q only + AI heuristic validator + category diversification
-              if results < 3 → TIER-3
+               if results < 5 → TIER-2
+TIER-2  →  drop category, q only + AI heuristic validator
+               if results < 5 → TIER-3
 TIER-3  →  single broad keyword retry
+SUPPLEMENT → when TIER-1 succeeds (≥5), also fetch with in_stock_only:false
+             to catch out-of-stock variants (e.g. all iPhone 16 models)
+AI RANK  →  Gemini ranks top 20 heuristic-filtered products:
+             exact → variant → newer → alternative
+             accessories excluded via excluded_ids
+             fallback: heuristic order on AI failure/timeout (8s)
 ```
 
-Upstream rate-limit / error strings from MCP trigger a one-shot retry with a fresh session + 400 ms backoff before falling through to the next tier.
+Upstream rate-limit / error strings from MCP trigger a one-shot retry with a fresh session + 400 ms backoff before falling through to the next tier. When AI ranking succeeds, its ordering replaces category diversification (diversification remains as fallback only).
 
 ---
 
@@ -423,7 +436,37 @@ tara:opencart event → CartDrawer opens
 
 Special instructions (≤250 chars) flow end-to-end: `<checkout_fill>` → `CartContext` → `/api/checkout` → `delivery.instructions` on the MCP order → PDF invoice.
 
+**Transliteration rule:** All name/address fields in `<checkout_fill>` must be in English/romanized letters only. Tamil/Sinhala Unicode is transliterated to English by the AI (e.g. "பிரியா" → "Priya") because Kapruka's order system rejects non-ASCII characters. The checkout route also falls back to "Guest" if the name is empty after ASCII cleaning.
+
 **Date ambiguity** is resolved silently: DD/MM/YYYY (Sri Lanka default) → if past, try MM/DD/YYYY → if still past, use tomorrow.
+
+### In-App Payment
+
+After checkout, the user can pay without leaving TARA:
+
+```
+Order confirmed → "Pay Now" button (in cart drawer or chat receipt)
+  → tara:open-payment event → CartDrawer opens iframe modal
+  → Kapruka checkout page embedded in 90vw × 75vh modal
+  → sandbox: allow-forms allow-scripts allow-same-origin allow-popups
+  → fallback: "Open in new tab" link if Kapruka blocks iframe embedding
+```
+
+CSP `frame-src` allows `https://www.kapruka.com` and `https://kapruka.com` for the payment iframe. The payment panel can also be triggered from the chat receipt's "Pay Now" button via a custom event.
+
+### Chat Notifications
+
+Cart actions and checkout events are mirrored into the chat as assistant messages:
+
+| Event | Source | Chat message |
+|---|---|---|
+| Add to cart | `CartContext.addItem` | `🛒 Added {product} to cart` |
+| Remove from cart | `CartContext.removeItem` | `🗑️ Removed {product} from cart` |
+| Update quantity | `CartContext.updateQty` | `📦 Updated {product} quantity to {n}` |
+| Checkout success | `CartDrawer.handleCheckout` | Full receipt with product images, details, totals |
+| Checkout error | `CartDrawer.handleCheckout` | `⚠️ Checkout issue: {error}` |
+
+The checkout receipt in chat includes inline product images (44×44 thumbnails via `/api/img` proxy), all checkout details (recipient, phone, address, city, delivery date, occasion, gift message), delivery fee, total, and "Download AI Receipt" / "Share Receipt" PDF buttons — same PDF pipeline as CartDrawer (html2canvas + jsPDF + InvoiceTemplate + gift card art + QR code).
 
 ---
 
@@ -648,7 +691,7 @@ All routes use a `LOG` object with `.info` / `.warn` / `.error`. Grep these pref
 | Prefix | Route |
 |---|---|
 | `[TARA:CHAT]` | `/api/chat` |
-| `[TARA:SEARCH]` | `/api/search` |
+| `[TARA:SEARCH]` | `/api/search` (includes `🏆 AI RANK` log) |
 | `[TARA:COMPARE]` | `/api/compare` |
 | `[TARA:VISION]` | `/api/vision-search` |
 | `[TARA:PRODUCT-AI]` | `/api/product-ai` |
@@ -704,7 +747,7 @@ tara/
 │   ├── SidebarShader.tsx           # WebGL sidebar (live, motion/react)
 │   ├── TaraBackground.tsx          # WebGL aurora (live, @paper-design/shaders-react)
 │   ├── ExpatBanner.tsx             # Expat mode banner (live)
-│   ├── Icons.tsx                   # All SVG icons — single source of truth (live)
+│   ├── Icons.tsx                   # All SVG icons — single source of truth (incl. PackageSearchIcon)
 │   ├── DeliveryStatusBadge.tsx     # ⚠️ NOT WIRED — scaffolded, unused
 │   ├── BroccoliCharacter.tsx       # ⚠️ NOT WIRED — 3D mascot, unused
 │   ├── WelcomeScreen.tsx           # ⚠️ NOT WIRED — standalone welcome, unused
@@ -767,7 +810,19 @@ tara/
 - **Checkout validation:** `validateCheckout()` enforces Sri Lankan phone format (`+94xxxxxxxxx` / `0xxxxxxxxx`), future-only delivery dates, and item count limits (≤30).
 - **Product data:** `sanitizeProduct()` normalises untrusted MCP fields, rejects image URLs as product page links, strips HTML from all strings.
 - **CORS:** open on all `/api/*` routes by design — the Chrome extension on `kapruka.com` needs it. Tighten in `next.config.ts` for a private deployment.
-- **Framing:** `/widget` deliberately omits `X-Frame-Options` (embeddable from any origin). All other routes include `frame-ancestors: none`.
+- **Framing:** `/widget` deliberately omits `X-Frame-Options` (embeddable from any origin). All other routes include `frame-ancestors: none`. Payment iframe explicitly allows `kapruka.com` via CSP `frame-src`.
+
+---
+
+## Performance Optimizations
+
+- **CartContext memoized:** Context value wrapped in `useMemo` with `cartIds: Set<string>` for O(1) cart lookups — typing in cart fields no longer re-renders product cards or chat
+- **React.memo on ProductCard + InlineChatCard:** Product cards don't re-render during streaming or unrelated state changes
+- **Streaming optimized:** `sendMessage`/`runVisionSearch` use `messagesRef` instead of `messages` in deps — no callback recreation per streaming chunk
+- **SidebarShader memoized:** 18 paths (reduced from 36) with module-level durations — animations keep running but component only renders once
+- **TaraBackground reduced:** `maxPixelCount` 400×400 (from 800×800), `minPixelRatio` 0.5, `speed` 0.25 — 4x less GPU fill rate, same visual effect
+- **ProductPanel callback stabilized:** `onViewDetail` wrapped in `useCallback` to preserve ProductCard memo
+- **CartDrawer delivery effect:** `items` removed from deps — quantity changes no longer trigger delivery API re-checks
 
 ---
 

@@ -11,7 +11,7 @@ export interface Product {
   category?: string;
 }
 
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useMemo, ReactNode } from 'react';
 
 export interface CartItem {
   id: string; name: string; price: number; image: string; qty: number;
@@ -19,7 +19,8 @@ export interface CartItem {
 
 interface CartCtx {
   items: CartItem[];
-  addItem: (p: Product) => void;
+  cartIds: Set<string>;
+  addItem: (p: Product, silent?: boolean) => void;
   removeItem: (id: string) => void;
   updateQty: (id: string, qty: number) => void;
   clearCart: () => void;
@@ -49,6 +50,12 @@ interface CartCtx {
 }
 
 const Ctx = createContext<CartCtx | null>(null);
+
+function emitCartNotification(content: string) {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('tara:chat-notification', { detail: { content } }));
+  }
+}
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems]               = useState<CartItem[]>([]);
@@ -98,21 +105,32 @@ export function CartProvider({ children }: { children: ReactNode }) {
     if (data.special_instructions) setSpecialInstructions(data.special_instructions);
   }, []);
 
-  const addItem = useCallback((p: Product) => {
+  const addItem = useCallback((p: Product, silent?: boolean) => {
     setItems(prev => {
       const ex = prev.find(i => i.id === p.id);
       if (ex) return prev.map(i => i.id === p.id ? { ...i, qty: i.qty + 1 } : i);
       return [...prev, { id: p.id, name: p.name, price: p.price, image: p.image, qty: 1 }];
     });
+    if (!silent) emitCartNotification(`🛒 Added ${p.name} to cart`);
   }, []);
 
   const removeItem = useCallback((id: string) => {
-    setItems(prev => prev.filter(i => i.id !== id));
+    setItems(prev => {
+      const item = prev.find(i => i.id === id);
+      if (item) emitCartNotification(`🗑️ Removed ${item.name} from cart`);
+      return prev.filter(i => i.id !== id);
+    });
   }, []);
 
   const updateQty = useCallback((id: string, qty: number) => {
     if (qty <= 0) { removeItem(id); return; }
-    setItems(prev => prev.map(i => i.id === id ? { ...i, qty } : i));
+    setItems(prev => prev.map(i => {
+      if (i.id === id) {
+        emitCartNotification(`📦 Updated ${i.name} quantity to ${qty}`);
+        return { ...i, qty };
+      }
+      return i;
+    }));
   }, [removeItem]);
 
   const clearCart = useCallback(() => {
@@ -122,26 +140,32 @@ export function CartProvider({ children }: { children: ReactNode }) {
     setLocationType('HOUSE OR RESIDENCE');
   }, []);
 
-  const total    = items.reduce((s, i) => s + i.price * i.qty, 0);
-  const totalQty = items.reduce((s, i) => s + i.qty, 0);
+  const total    = useMemo(() => items.reduce((s, i) => s + i.price * i.qty, 0), [items]);
+  const totalQty = useMemo(() => items.reduce((s, i) => s + i.qty, 0), [items]);
+  const cartIds  = useMemo(() => new Set(items.map(i => i.id)), [items]);
+
+  const value = useMemo(() => ({
+    items, cartIds, addItem, removeItem, updateQty, clearCart,
+    total, totalQty,
+    giftMessage, setGiftMessage,
+    deliveryDate, setDeliveryDate,
+    district, setDistrict,
+    recipientName, setRecipientName,
+    recipientPhone, setRecipientPhone,
+    addressLine1, setAddressLine1,
+    occasion, setOccasion,
+    senderName, setSenderName,
+    senderEmail, setSenderEmail,
+    locationType, setLocationType,
+    specialInstructions, setSpecialInstructions,
+    prefillCheckout,
+  }), [items, cartIds, addItem, removeItem, updateQty, clearCart, total, totalQty,
+       giftMessage, deliveryDate, district, recipientName, recipientPhone,
+       addressLine1, occasion, senderName, senderEmail, locationType,
+       specialInstructions, prefillCheckout]);
 
   return (
-    <Ctx.Provider value={{
-      items, addItem, removeItem, updateQty, clearCart,
-      total, totalQty,
-      giftMessage, setGiftMessage,
-      deliveryDate, setDeliveryDate,
-      district, setDistrict,
-      recipientName, setRecipientName,
-      recipientPhone, setRecipientPhone,
-      addressLine1, setAddressLine1,
-      occasion, setOccasion,
-      senderName, setSenderName,
-      senderEmail, setSenderEmail,
-      locationType, setLocationType,
-      specialInstructions, setSpecialInstructions,
-      prefillCheckout,
-    }}>
+    <Ctx.Provider value={value}>
       {children}
     </Ctx.Provider>
   );

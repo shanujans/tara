@@ -21,6 +21,7 @@ const nextConfig: NextConfig = {
               "img-src 'self' data: https: blob:",
               "connect-src 'self' https://api.aimlapi.com https://mcp.kapruka.com wss://generativelanguage.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com",
+              "frame-src 'self' https://www.kapruka.com https://kapruka.com",
               "frame-ancestors 'none'",
             ].join('; '),
           },

@@ -17,6 +17,10 @@ tsconfig.tsbuildinfo
 .DS_Store
 Thumbs.db
 
+# SKILL.md — never commit this file
+SKILL.md
+skill.md
+
 # Logs
 *.log
 npm-debug.log*

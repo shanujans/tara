@@ -1,9 +1,9 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { XIcon, PackageIcon, RewardsIcon, BrowseIcon, SettingsIcon, HelpIcon, ChevronRightIcon, TrashIcon } from './Icons';
+import { XIcon, PackageIcon, RewardsIcon, BrowseIcon, SettingsIcon, HelpIcon, ChevronRightIcon, TrashIcon, PackageSearchIcon } from './Icons';
 import { Lang, STRINGS } from '@/lib/strings';
 
-export type PanelId = 'none' | 'history' | 'rewards' | 'browse' | 'settings' | 'help' | 'notifications' | 'menu';
+export type PanelId = 'none' | 'history' | 'rewards' | 'browse' | 'settings' | 'help' | 'notifications' | 'menu' | 'track';
 
 interface SidePanelProps {
   panel: PanelId;
@@ -610,7 +610,7 @@ function SettingsPanel({ lang, onLangChange, onClearChat, onClose }: { lang: Lan
 
       {/* About */}
       <div style={{ marginTop: 20, padding: '12px 14px', borderRadius: 10, background: 'var(--c-surface-container)', border: '1px solid rgba(74,68,81,0.25)' }}>
-        <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--c-on-surface)', marginBottom: 4 }}>TARA v1.0 · GMEU6</p>
+        <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--c-on-surface)', marginBottom: 4 }}>TARA v1.0</p>
         <p style={{ fontSize: 11, color: 'var(--c-outline)' }}>AI Retail Agent · Kapruka Agent Challenge · Built with Next.js 16 · Powered by Gemini</p>
       </div>
     </div>
@@ -696,6 +696,7 @@ function MenuPanel({ onNavigate, speakerOn, onSpeakerToggle }: {
       <MenuRow icon={<PackageIcon  size={18} />} label="Order History"     onClick={() => onNavigate('history')} />
       <MenuRow icon={<RewardsIcon  size={18} />} label="Rewards"           onClick={() => onNavigate('rewards')} />
       <MenuRow icon={<BrowseIcon   size={18} />} label="Browse Categories" onClick={() => onNavigate('browse')} />
+      <MenuRow icon={<PackageSearchIcon size={18} />} label="Track Order"        onClick={() => onNavigate('track')} />
       <MenuRow icon={<BellIcon     size={18} />} label="Notifications"     onClick={() => onNavigate('notifications')} />
 
       <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--c-outline)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '18px 0 10px' }}>
@@ -727,10 +728,128 @@ function MenuPanel({ onNavigate, speakerOn, onSpeakerToggle }: {
   );
 }
 
+/* ─── Track Order panel ─────────────────────────────────────────────────── */
+function TrackPanel() {
+  const [orderNumber, setOrderNumber] = useState('');
+  const [loading,     setLoading]     = useState(false);
+  const [result,      setResult]      = useState<null | {
+    status?: string | null;
+    error?:  string | null;
+    recipient?: string;
+    deliveryDate?: string;
+    items?: { name: string; quantity: number }[];
+  }>(null);
+
+  const handleTrack = async () => {
+    const num = orderNumber.trim();
+    if (!num) return;
+    setLoading(true);
+    setResult(null);
+    try {
+      const r = await fetch('/api/track', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_number: num }),
+      });
+      const data = await r.json();
+      setResult({
+        status: data.status ?? null,
+        error:  data.error ?? null,
+      });
+    } catch {
+      setResult({ error: 'Could not reach tracking service. Please try again.' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ padding: 16 }}>
+      <p style={{ fontSize: 13, color: 'var(--c-on-surface-variant)', marginBottom: 14 }}>
+        Enter your Kapruka order number to check its status.
+      </p>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <input
+          type="text"
+          value={orderNumber}
+          onChange={e => setOrderNumber(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') handleTrack(); }}
+          placeholder="e.g. VIMP34456CB2"
+          style={{
+            flex: 1, padding: '10px 14px', borderRadius: 10,
+            background: 'var(--c-surface-container)',
+            border: '1px solid rgba(74,68,81,0.30)',
+            color: 'var(--c-on-surface)', fontSize: 14,
+            fontFamily: 'var(--font-body)', outline: 'none',
+          }}
+        />
+        <button
+          onClick={handleTrack}
+          disabled={loading || !orderNumber.trim()}
+          style={{
+            padding: '10px 16px', borderRadius: 10, fontSize: 13, fontWeight: 700,
+            background: loading || !orderNumber.trim() ? 'rgba(64,41,112,0.15)' : 'var(--c-primary-container)',
+            border: 'none',
+            color: loading || !orderNumber.trim() ? 'var(--c-outline)' : 'var(--c-on-primary-container)',
+            cursor: loading || !orderNumber.trim() ? 'not-allowed' : 'pointer',
+            fontFamily: 'var(--font-body)',
+          }}
+        >
+          {loading ? '⏳' : 'Track →'}
+        </button>
+      </div>
+
+      {/* Result */}
+      {result && (
+        <div style={{
+          borderRadius: 12, padding: 16,
+          background: 'var(--c-surface-container)',
+          border: '1px solid rgba(215,186,255,0.14)',
+        }}>
+          {result.error ? (
+            <>
+              <p style={{ fontSize: 14, fontWeight: 700, color: '#f87171', marginBottom: 4 }}>⚠️ Tracking Error</p>
+              <p style={{ fontSize: 13, color: 'var(--c-on-surface-variant)' }}>{result.error}</p>
+            </>
+          ) : result.status ? (
+            <>
+              <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--c-on-surface-variant)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Order Status</p>
+              <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--c-secondary)' }}>{result.status}</p>
+              <p style={{ fontSize: 12, color: 'var(--c-on-surface-variant)', marginTop: 8 }}>
+                Order: <span style={{ fontFamily: 'monospace', color: 'var(--c-on-surface)' }}>{orderNumber.trim()}</span>
+              </p>
+            </>
+          ) : (
+            <>
+              <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--c-on-surface)', marginBottom: 4 }}>No status found</p>
+              <p style={{ fontSize: 13, color: 'var(--c-on-surface-variant)' }}>
+                Could not find tracking info for <span style={{ fontFamily: 'monospace' }}>{orderNumber.trim()}</span>. Please check the order number and try again.
+              </p>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Tip */}
+      <div style={{
+        marginTop: 20, padding: 14, borderRadius: 10,
+        background: 'rgba(215,186,255,0.06)',
+        border: '1px solid rgba(215,186,255,0.12)',
+      }}>
+        <p style={{ fontSize: 12, color: 'var(--c-on-surface-variant)', lineHeight: 1.5 }}>
+          💡 Your order number is in the confirmation email from Kapruka after payment. It looks like <span style={{ fontFamily: 'monospace', color: 'var(--c-on-surface)' }}>VIMP34456CB2</span>.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 const PANEL_META: Record<Exclude<PanelId,'none'>, { title: string; icon: React.ReactNode }> = {
   history:       { title: 'Order History',   icon: <PackageIcon  size={18} /> },
   rewards:       { title: 'Rewards',          icon: <RewardsIcon  size={18} /> },
   browse:        { title: 'Browse Categories',icon: <BrowseIcon   size={18} /> },
+  track:         { title: 'Track Order',       icon: <PackageSearchIcon size={18} /> },
   settings:      { title: 'Settings',         icon: <SettingsIcon size={18} /> },
   help:          { title: 'Help & FAQ',        icon: <HelpIcon     size={18} /> },
   notifications: { title: 'Notifications',    icon: <BellIcon     size={18} /> },
@@ -793,6 +912,7 @@ export default function SidePanel({ panel, lang, onClose, onCategorySearch, onLa
               {panel === 'browse'        && <BrowsePanel onCategorySearch={onCategorySearch} onClose={onClose} />}
               {panel === 'settings'      && <SettingsPanel lang={lang} onLangChange={onLangChange} onClearChat={onClearChat} onClose={onClose} />}
               {panel === 'help'          && <HelpPanel />}
+              {panel === 'track'         && <TrackPanel />}
               {panel === 'menu'          && <MenuPanel onNavigate={onNavigate} speakerOn={speakerOn} onSpeakerToggle={onSpeakerToggle} />}
               {panel === 'notifications' && (
                 <div style={{ padding: 24, textAlign: 'center' }}>

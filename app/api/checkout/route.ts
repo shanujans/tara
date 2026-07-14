@@ -249,7 +249,7 @@ export async function POST(req: NextRequest) {
         quantity:   Math.min(Math.max(1, Math.floor(Number(i.qty ?? i.quantity ?? 1))), 99),
       })),
       recipient: {
-        name:  clean(recipient.name, 80),
+        name:  clean(recipient.name, 80) || 'Guest',
         phone: String(recipient.phone).replace(/[\s\-]/g, '').slice(0, 20),
       },
       delivery: {

@@ -1,5 +1,5 @@
 'use client';
-import { useState, useRef, useEffect, useCallback, KeyboardEvent, MutableRefObject } from 'react';
+import { useState, useRef, useEffect, useCallback, KeyboardEvent, MutableRefObject, memo } from 'react';
 import { STRINGS, Lang } from '@/lib/strings';
 import { useCart, Product } from '@/context/CartContext';
 import { detectExpat, detectExpatCountry } from '@/lib/expat';
@@ -8,9 +8,28 @@ import { MicIcon, SendIcon, AttachIcon, AddCartIcon, CheckIcon, GlobeIcon, Thumb
 import { useVoiceMode } from '@/lib/useVoiceMode';
 import AudioVisualizer from './AudioVisualizer';
 
+import InvoiceTemplate, { type InvoiceData } from './InvoiceTemplate';
+
 /* ── Types ─────────────────────────────────────────────────── */
 interface ThinkingData { intent: string; goal: string; constraints: string[]; plan: string[]; }
-interface Message { role: 'user' | 'assistant'; content: string; products?: Product[]; imagePreview?: string; thinking?: ThinkingData; }
+interface ReceiptItem { id: string; name: string; price: number; qty: number; image: string; }
+interface ReceiptData {
+  orderId: string;
+  items: ReceiptItem[];
+  recipient: string;
+  phone: string;
+  address?: string;
+  city?: string;
+  deliveryDate?: string;
+  pickup?: string;
+  occasion?: string;
+  giftMessage?: string;
+  instructions?: string;
+  deliveryFee: number;
+  total: number;
+  checkoutUrl?: string;
+}
+interface Message { role: 'user' | 'assistant'; content: string; products?: Product[]; imagePreview?: string; thinking?: ThinkingData; receipt?: ReceiptData; }
 interface PendingImage { base64: string; mimeType: string; preview: string; }
 interface ChatPanelProps {
   lang: Lang;
@@ -67,18 +86,19 @@ const LANG_OPTS: { key:Lang; label:string }[] = [
 ];
 
 /* ── Inline chat card ─────────────────────────────────────── */
-function InlineChatCard({ product, lang, onViewDetail }: {
+const InlineChatCard = memo(function InlineChatCard({ product, lang, onViewDetail, isTaraPick }: {
   product: Product & { url?: string };
   lang: Lang;
   onViewDetail?: (id: string, url: string) => void;
+  isTaraPick?: boolean;
 }) {
-  const { addItem, items } = useCart();
+  const { addItem, cartIds } = useCart();
   const s = STRINGS[lang];
   const [added,   setAdded]   = useState(false);
   const [imgOk,   setImgOk]   = useState<boolean | null>(null);
   const [lazyImg, setLazyImg] = useState('');
   const cardRef = useRef<HTMLDivElement>(null);
-  const inCart  = items.some(i => i.id === product.id);
+  const inCart  = cartIds.has(product.id);
 
   useEffect(() => {
     const src = proxyImg(product.image || lazyImg);
@@ -112,7 +132,19 @@ function InlineChatCard({ product, lang, onViewDetail }: {
     <div ref={cardRef} className="chat-product-card"
       onClick={() => onViewDetail?.(product.id, product.url ?? '')}
       role="button" tabIndex={0}
-      onKeyDown={e => { if (e.key === 'Enter') onViewDetail?.(product.id, product.url ?? ''); }}>
+      onKeyDown={e => { if (e.key === 'Enter') onViewDetail?.(product.id, product.url ?? ''); }}
+      style={isTaraPick ? { border: '2px solid var(--c-secondary)', borderRadius: 12, position: 'relative' } : undefined}>
+      {isTaraPick && (
+        <div style={{
+          position: 'absolute', top: -1, right: -1, zIndex: 2,
+          background: 'var(--c-secondary)', color: 'var(--c-on-secondary)',
+          fontSize: 9, fontWeight: 800, padding: '2px 7px', borderRadius: '0 10px 0 8px',
+          letterSpacing: 0.3, textTransform: 'uppercase', fontFamily: 'var(--font-body)',
+          boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
+        }}>
+          ★ TARA's Pick
+        </div>
+      )}
       <div style={{ position:'relative', height:110, background:'var(--c-surface-container)', overflow:'hidden' }}>
         {imgOk === null && (
           <div className="skeleton" style={{ position:'absolute', inset:0 }} />
@@ -146,9 +178,244 @@ function InlineChatCard({ product, lang, onViewDetail }: {
       </div>
     </div>
   );
+});
+
+/* ── Receipt Block (inline product images + checkout details + PDF) ────── */
+function ReceiptBlock({ receipt, onViewDetail }: {
+  receipt: ReceiptData;
+  onViewDetail: (id: string, url: string) => void;
+}) {
+  const fmt = (n: number) => n.toLocaleString('si-LK');
+  const invoiceRef = useRef<HTMLDivElement>(null);
+  const [pendingPdf, setPendingPdf] = useState<InvoiceData | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfAction, setPdfAction] = useState<'download' | 'share'>('download');
+
+  // PDF generation effect — runs when pendingPdf is set
+  useEffect(() => {
+    if (!pendingPdf || !invoiceRef.current) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        await new Promise(r => setTimeout(r, 120));
+        if (cancelled || !invoiceRef.current) return;
+        const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+          import('html2canvas'),
+          import('jspdf'),
+        ]);
+        if (cancelled || !invoiceRef.current) return;
+        const canvas = await html2canvas(invoiceRef.current, {
+          scale: 2, useCORS: true, allowTaint: false,
+          backgroundColor: '#FDFDFD', logging: false,
+        });
+        if (cancelled) return;
+        const pxW = canvas.width / 2;
+        const pxH = canvas.height / 2;
+        const img = canvas.toDataURL('image/jpeg', 0.95);
+        const pdf = new jsPDF({ unit: 'px', format: [pxW, pxH], orientation: 'portrait' });
+        pdf.addImage(img, 'JPEG', 0, 0, pxW, pxH);
+        if (pendingPdf.checkoutUrl) {
+          const linkTop = pxH * 0.72;
+          pdf.link(20, linkTop, pxW - 40, pxH - linkTop - 40, { url: pendingPdf.checkoutUrl });
+        }
+        if (pdfAction === 'share') {
+          const blob = pdf.output('blob');
+          const file = new File([blob], `kapruka-order-${pendingPdf.orderId}.pdf`, { type: 'application/pdf' });
+          try {
+            if (navigator.canShare?.({ files: [file] })) {
+              await navigator.share({ files: [file], title: `Kapruka Order ${pendingPdf.orderId}`, text: 'Your Kapruka order details — tap to open or forward.' });
+            } else {
+              pdf.save(`kapruka-order-${pendingPdf.orderId}.pdf`);
+            }
+          } catch {
+            pdf.save(`kapruka-order-${pendingPdf.orderId}.pdf`);
+          }
+        } else {
+          pdf.save(`kapruka-order-${pendingPdf.orderId}.pdf`);
+        }
+      } catch (e) {
+        console.error('[TARA:INVOICE] PDF generation failed:', e);
+      } finally {
+        if (!cancelled) { setPdfLoading(false); setPendingPdf(null); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [pendingPdf, pdfAction]);
+
+  const generatePdf = async (action: 'download' | 'share') => {
+    setPdfAction(action);
+    setPdfLoading(true);
+    let giftCardImage: string | undefined;
+    try {
+      const r = await fetch('/api/generate-gift-card', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ occasion: receipt.occasion ?? '', recipient: receipt.recipient }),
+      });
+      if (r.ok) {
+        const d = await r.json() as { image?: string };
+        if (d.image) giftCardImage = d.image;
+      }
+    } catch { /* PDF still generates without gift card art */ }
+
+    let qrCode: string | undefined;
+    if (receipt.checkoutUrl) {
+      try {
+        const QRCode = (await import('qrcode')).default;
+        qrCode = await QRCode.toDataURL(receipt.checkoutUrl, {
+          width: 150, margin: 1, color: { dark: '#422B75', light: '#FFFFFF' },
+        });
+      } catch { /* skip QR */ }
+    }
+
+    setPendingPdf({
+      state: 'unpaid',
+      orderId: receipt.orderId,
+      orderDate: new Date().toISOString(),
+      checkoutUrl: receipt.checkoutUrl,
+      qrCode,
+      giftCardImage,
+      items: receipt.items.map(i => ({ id: i.id, name: i.name, price: i.price, qty: i.qty, image: i.image })),
+      recipientName: receipt.recipient,
+      recipientPhone: receipt.phone,
+      address: receipt.address ?? receipt.pickup ?? '',
+      city: receipt.city ?? '',
+      deliveryDate: receipt.deliveryDate ?? '',
+      deliveryFee: receipt.deliveryFee,
+      grandTotal: receipt.total,
+      occasion: receipt.occasion,
+      giftMessage: receipt.giftMessage,
+      specialInstructions: receipt.instructions,
+    });
+  };
+
+  return (
+    <>
+      {/* Hidden invoice render target — captured by html2canvas, never visible */}
+      <div style={{ position: 'fixed', left: -9999, top: 0, opacity: 0, pointerEvents: 'none', zIndex: -1 }}>
+        <div ref={invoiceRef}>
+          {pendingPdf && <InvoiceTemplate data={pendingPdf} />}
+        </div>
+      </div>
+
+      <div style={{ marginTop: 12, borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(215,186,255,0.18)', background: 'rgba(34,28,49,0.45)' }}>
+        {/* Items with images */}
+        <div style={{ padding: '10px 12px' }}>
+          <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--c-on-surface-variant)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>Items</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {receipt.items.map((item) => {
+              const img = item.image ? `/api/img?url=${encodeURIComponent(item.image)}` : '';
+              return (
+                <div key={item.id}
+                  onClick={() => onViewDetail(item.id, '')} role="button" tabIndex={0}
+                  style={{ display: 'flex', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
+                  <div style={{ width: 44, height: 44, borderRadius: 8, overflow: 'hidden', flexShrink: 0, background: 'var(--c-surface-container)' }}>
+                    {img ? (
+                      <img src={img} alt={item.name} loading="lazy"
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    ) : (
+                      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <span style={{ fontSize: '1.2rem', opacity: 0.2 }}>📦</span>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--c-on-surface)', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</p>
+                    <p style={{ fontSize: 11, color: 'var(--c-on-surface-variant)', marginTop: 2 }}>×{item.qty} — LKR {fmt(item.price * item.qty)}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Divider */}
+        <div style={{ height: 1, background: 'rgba(215,186,255,0.12)' }} />
+
+        {/* Details */}
+        <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <ReceiptRow label="Recipient" value={receipt.recipient} />
+          <ReceiptRow label="Phone" value={receipt.phone} />
+          {receipt.address && <ReceiptRow label="Address" value={receipt.address} />}
+          {receipt.city && <ReceiptRow label="City" value={receipt.city} />}
+          {receipt.deliveryDate && <ReceiptRow label="Delivery Date" value={receipt.deliveryDate} />}
+          {receipt.pickup && <ReceiptRow label="Pickup" value={receipt.pickup} />}
+          {receipt.occasion && <ReceiptRow label="Occasion" value={receipt.occasion} />}
+          {receipt.giftMessage && <ReceiptRow label="Gift Message" value={`"${receipt.giftMessage}"`} />}
+          {receipt.instructions && <ReceiptRow label="Instructions" value={receipt.instructions} />}
+        </div>
+
+        {/* Divider */}
+        <div style={{ height: 1, background: 'rgba(215,186,255,0.12)' }} />
+
+        {/* Totals */}
+        <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--c-on-surface-variant)' }}>
+            <span>Delivery Fee</span><span>LKR {fmt(receipt.deliveryFee)}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, fontWeight: 700, color: 'var(--c-on-surface)' }}>
+            <span>Total</span><span style={{ color: 'var(--c-secondary)' }}>LKR {fmt(receipt.total)}</span>
+          </div>
+        </div>
+
+        {/* Pay Now + Download + Share PDF buttons */}
+        <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid rgba(215,186,255,0.08)', background: 'rgba(215,186,255,0.04)' }}>
+          {receipt.checkoutUrl && (
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('tara:open-payment', {
+                detail: { checkoutUrl: receipt.checkoutUrl, orderId: receipt.orderId },
+              }))}
+              className="btn-gold"
+              style={{
+                width: '100%', padding: '12px 0', borderRadius: 10, fontSize: 13, fontWeight: 700,
+                color: '#3A3A3C', cursor: 'pointer', border: 'none',
+                fontFamily: 'var(--font-body)', transition: 'all 0.15s',
+              }}>
+              🔒 Pay Now
+            </button>
+          )}
+          <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={() => generatePdf('download')}
+            disabled={pdfLoading}
+            style={{
+              flex: 1, padding: '10px 0', borderRadius: 10, fontSize: 12, fontWeight: 600,
+              background: 'rgba(64,41,112,0.15)', border: '1px solid rgba(107,77,171,0.40)',
+              color: pdfLoading ? 'var(--c-on-surface-variant)' : '#c7abff',
+              cursor: pdfLoading ? 'not-allowed' : 'pointer', opacity: pdfLoading ? 0.7 : 1,
+              fontFamily: 'var(--font-body)', transition: 'all 0.15s',
+            }}>
+            {pdfLoading && pdfAction === 'download' ? '⏳ PDF…' : '📄 Download AI Receipt'}
+          </button>
+          <button
+            onClick={() => generatePdf('share')}
+            disabled={pdfLoading}
+            style={{
+              flex: 1, padding: '10px 0', borderRadius: 10, fontSize: 12, fontWeight: 600,
+              background: 'rgba(64,41,112,0.15)', border: '1px solid rgba(107,77,171,0.40)',
+              color: pdfLoading ? 'var(--c-on-surface-variant)' : '#c7abff',
+              cursor: pdfLoading ? 'not-allowed' : 'pointer', opacity: pdfLoading ? 0.7 : 1,
+              fontFamily: 'var(--font-body)', transition: 'all 0.15s',
+            }}>
+            {pdfLoading && pdfAction === 'share' ? '⏳…' : '↗ Share'}
+          </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
 }
 
-
+function ReceiptRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: 'flex', gap: 8, fontSize: 12 }}>
+      <span style={{ color: 'var(--c-on-surface-variant)', flexShrink: 0, minWidth: 72 }}>{label}:</span>
+      <span style={{ color: 'var(--c-on-surface)', wordBreak: 'break-word' }}>{value}</span>
+    </div>
+  );
+}
 /* ── ThinkingPulse ────────────────────────────────────────── */
 function ThinkingPulse() {
   const phases = [
@@ -256,7 +523,7 @@ export default function ChatPanel({
   speakerOn, onSpeakerToggle, autoSend, onAutoSendDone, onClearRef,
 }: ChatPanelProps) {
   const s = STRINGS[lang];
-  const { addItem, prefillCheckout, items: cartItems } = useCart();
+  const { addItem, prefillCheckout, cartIds } = useCart();
 
   const buildInitial = useCallback((l: Lang): Message[] => {
     const msgs: Message[] = [{ role:'assistant', content:STRINGS[l].welcomeMsg }];
@@ -289,6 +556,7 @@ export default function ChatPanel({
   const [reorderDone,  setReorderDone]  = useState(false);
   const [modalId,      setModalId]      = useState<string|null>(null);
   const [modalUrl,     setModalUrl]     = useState('');
+  const [modalProduct, setModalProduct] = useState<Product | null>(null);
   const [pendingImg,   setPendingImg]   = useState<PendingImage|null>(null);
   const [visionLoading,setVisionLoading]= useState(false);
   const [feedback, setFeedback] = useState<Record<number,'up'|'down'>>({});
@@ -339,6 +607,23 @@ export default function ChatPanel({
   }, [lang, buildInitial]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior:'smooth' }); }, [messages, streaming]);
+
+  // ── Listen for cart/checkout notifications from CartContext + CartDrawer ──
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ content: string; products?: Product[]; receipt?: ReceiptData }>).detail;
+      if (detail?.content) {
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: detail.content,
+          ...(detail.products?.length ? { products: detail.products } : {}),
+          ...(detail.receipt ? { receipt: detail.receipt } : {}),
+        }]);
+      }
+    };
+    window.addEventListener('tara:chat-notification', handler);
+    return () => window.removeEventListener('tara:chat-notification', handler);
+  }, []);
   useEffect(() => { if (!speakerOn && isSpeaking) stopSpeaking(); }, [speakerOn, isSpeaking, stopSpeaking]);
   useEffect(() => {
     const ta = textareaRef.current; if (!ta) return;
@@ -440,7 +725,7 @@ export default function ChatPanel({
           const remaining = 1000 - (Date.now() - searchStart);
           if (remaining > 0) await new Promise(resolve => setTimeout(resolve, remaining));
           onProductsFound(sd.products, sd.quantum);
-          setMessages(prev => { const c=[...prev]; c[c.length-1]={...c[c.length-1],products:sd.products.slice(0,4)}; return c; });
+          setMessages(prev => { const c=[...prev]; c[c.length-1]={...c[c.length-1],products:sd.products.slice(0,8)}; return c; });
         }
       }
     } catch (err) {
@@ -450,7 +735,7 @@ export default function ChatPanel({
         return c;
       });
     } finally { setVisionLoading(false); onSearching(false); }
-  }, [messages, expatMode, convLang, onProductsFound, onSearching]);
+  }, [expatMode, convLang, onProductsFound, onSearching]);
 
   /* ── Send text message ──────────────────────────────────── */
   const sendMessage = useCallback(async (text: string, forcedLang?: Lang) => {
@@ -512,7 +797,7 @@ export default function ChatPanel({
             const remaining = 1000 - (Date.now() - searchStart);
             if (remaining > 0) await new Promise(resolve => setTimeout(resolve, remaining));
             onProductsFound(d.products, d.quantum);
-            setMessages(prev => { const c=[...prev]; c[c.length-1]={...c[c.length-1],products:d.products.slice(0,4)}; return c; });
+            setMessages(prev => { const c=[...prev]; c[c.length-1]={...c[c.length-1],products:d.products.slice(0,8)}; return c; });
           }
         } catch {/***/} finally { onSearching(false); }
       }
@@ -528,7 +813,7 @@ export default function ChatPanel({
       const checkoutData = extractCheckoutFill(full);
       if (checkoutData) {
         prefillCheckout(checkoutData);
-        if (cartItems.length > 0) {
+        if (cartIds.size > 0) {
           window.dispatchEvent(new CustomEvent('tara:opencart'));
         } else {
           window.sessionStorage.setItem('tara_opencart_pending', '1');
@@ -548,7 +833,7 @@ export default function ChatPanel({
         })();
       }
     }
-  }, [messages, streaming, lang, convLang, expatMode, onLangChange, onProductsFound, onSearching, speak, startRecording, voiceModeOn]);
+  }, [streaming, lang, convLang, expatMode, onLangChange, onProductsFound, onSearching, speak, startRecording, voiceModeOn]);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input.trim()); }
@@ -598,6 +883,12 @@ export default function ChatPanel({
                 <div className={msg.role==='user'?'bubble-user':'bubble-tara'}
                   style={{padding:'12px 15px',fontSize:15,lineHeight:1.6,wordBreak:'break-word'}}>
                   {msg.content || (streaming && i===messages.length-1 ? TypingDots : '')}
+
+                  {/* ── Checkout receipt with inline product images ── */}
+                  {msg.role==='assistant' && msg.receipt && (
+                    <ReceiptBlock receipt={msg.receipt} onViewDetail={(id,url)=>{setModalId(id);setModalUrl(url);}} />
+                  )}
+
                   {msg.role==='assistant' && msg.products && msg.products.length>0 && (
                     <>
                       <button
@@ -610,9 +901,10 @@ export default function ChatPanel({
                       </button>
                       {!hiddenProducts[i] && (
                         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:10,marginTop:8}}>
-                          {msg.products.map(p=>(
+                          {msg.products.map((p,idx)=>(
                             <InlineChatCard key={p.id} product={p as Product&{url?:string}} lang={lang}
-                              onViewDetail={(id,url)=>{setModalId(id);setModalUrl(url);}}/>
+                              isTaraPick={idx < 3}
+                              onViewDetail={(id,url)=>{setModalId(id);setModalUrl(url);setModalProduct(p as Product);}}/>
                           ))}
                         </div>
                       )}
@@ -677,7 +969,7 @@ export default function ChatPanel({
                   {lastOrder.items[0]?.name && <p className="gradient-text-gold" style={{fontSize:12,fontWeight:700,marginTop:2}}>{lastOrder.items[0].name}{lastOrder.items.length>1?` +${lastOrder.items.length-1} more`:''}</p>}
                 </div>
                 <div style={{display:'flex',borderTop:'1px solid rgba(74,68,81,0.30)'}}>
-                  <button onClick={()=>{lastOrder.items.forEach(i=>addItem({id:i.id,name:i.name,price:i.price,image:i.image}));setReorderDone(true);setMessages(prev=>[...prev,{role:'assistant',content:s.reorderAdded}]);}}
+                  <button onClick={()=>{lastOrder.items.forEach(i=>addItem({id:i.id,name:i.name,price:i.price,image:i.image},true));setReorderDone(true);setMessages(prev=>[...prev,{role:'assistant',content:s.reorderAdded}]);}}
                     style={{flex:1,padding:'9px',fontSize:12,fontWeight:700,color:'var(--c-secondary)',background:'transparent',cursor:'pointer',transition:'background 0.15s',fontFamily:'var(--font-body)',border:'none'}}>🔄 {s.reorderBtn}</button>
                   <button onClick={()=>setReorderDone(true)} style={{padding:'9px 12px',fontSize:12,borderLeft:'1px solid rgba(74,68,81,0.30)',color:'var(--c-outline)',cursor:'pointer',background:'transparent',border:'none'}}>✕</button>
                 </div>
@@ -934,14 +1226,14 @@ export default function ChatPanel({
         </div>
       )}
 
-      {modalId && <ProductModalWrapper productId={modalId} productUrl={modalUrl} lang={lang} onClose={()=>{setModalId(null);setModalUrl('');}}/>}
+      {modalId && <ProductModalWrapper productId={modalId} productUrl={modalUrl} lang={lang} fallbackProduct={modalProduct} onClose={()=>{setModalId(null);setModalUrl('');setModalProduct(null);}}/>}
     </div>
   );
 }
 
-function ProductModalWrapper({productId,productUrl,lang,onClose}:{productId:string;productUrl:string;lang:Lang;onClose:()=>void}) {
-  const [Comp,setComp]=useState<React.ComponentType<{productId:string;productUrl:string;lang:Lang;onClose:()=>void}>|null>(null);
+function ProductModalWrapper({productId,productUrl,lang,fallbackProduct,onClose}:{productId:string;productUrl:string;lang:Lang;fallbackProduct:Product|null;onClose:()=>void}) {
+  const [Comp,setComp]=useState<React.ComponentType<{productId:string;productUrl:string;lang:Lang;onClose:()=>void;fallbackProduct?:Product|null}>|null>(null);
   useEffect(()=>{import('./ProductModal').then(m=>setComp(()=>m.default));},[]);
   if (!Comp) return null;
-  return <Comp productId={productId} productUrl={productUrl} lang={lang} onClose={onClose}/>;
+  return <Comp productId={productId} productUrl={productUrl} lang={lang} onClose={onClose} fallbackProduct={fallbackProduct}/>;
 }

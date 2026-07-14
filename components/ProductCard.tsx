@@ -1,7 +1,7 @@
 'use client';
 import { useCart, Product } from '@/context/CartContext';
 import { STRINGS, Lang } from '@/lib/strings';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, memo } from 'react';
 import { AddCartIcon, CheckIcon } from './Icons';
 
 function proxyImg(url: string): string {
@@ -35,14 +35,14 @@ interface ProductCardProps {
   onViewDetail?: (id: string, url: string) => void;
 }
 
-export default function ProductCard({ product, lang, index = 0, onViewDetail }: ProductCardProps) {
-  const { addItem, items } = useCart();
+export default memo(function ProductCard({ product, lang, index = 0, onViewDetail }: ProductCardProps) {
+  const { addItem, cartIds } = useCart();
   const s      = STRINGS[lang];
   const [added,   setAdded]   = useState(false);
   const [imgOk,   setImgOk]   = useState<boolean | null>(null);
   const [lazyImg, setLazyImg] = useState('');
 
-  const inCart = items.some(i => i.id === product.id);
+  const inCart = cartIds.has(product.id);
   const emoji  = categoryEmoji(product.category, product.name);
   const imgSrc = proxyImg(product.image || lazyImg);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -60,7 +60,7 @@ export default function ProductCard({ product, lang, index = 0, onViewDetail }: 
           const r = await fetch('/api/product', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ product_id: product.id }),
+            body: JSON.stringify({ product_id: product.id, name: product.name }),
           });
           if (!r.ok || cancelled) return;
           const data = await r.json();
@@ -209,4 +209,4 @@ export default function ProductCard({ product, lang, index = 0, onViewDetail }: 
       </div>
     </div>
   );
-}
+});

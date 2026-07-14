@@ -196,11 +196,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Rate limited' }, { status: 429 });
   }
 
-  let body: { product_id?: string };
+  let body: { product_id?: string; name?: string };
   try { body = await req.json(); }
   catch { return NextResponse.json({ error: 'Invalid request' }, { status: 400 }); }
 
-  const { product_id } = body;
+  const { product_id, name: hintName } = body;
   if (!product_id) return NextResponse.json({ error: 'product_id required' }, { status: 400 });
 
   const safeId = product_id.replace(/[^a-zA-Z0-9_\-]/g, '').slice(0, 80);
@@ -235,25 +235,115 @@ export async function POST(req: NextRequest) {
       const data = JSON.parse(json) as { result?: { content?: { text?: string }[] } };
       raw = data?.result?.content?.[0]?.text ?? '';
     } catch {
-      return NextResponse.json({ error: 'MCP parse error' }, { status: 500 });
+      // MCP parse error — try search fallback before giving up
+      console.warn(`[product] ${safeId} → MCP parse error, trying search fallback`);
     }
 
-    if (!raw) return NextResponse.json({ error: 'Empty response' }, { status: 500 });
+    // Check if get_product returned an error or empty/garbage response
+    const isError = !raw || /error executing tool|validation error|not found|Error/i.test(raw);
+    const isGarbage = raw && !raw.includes('"name"') && !raw.includes('## ') && raw.length < 50;
 
-    let product: Record<string, unknown>;
-    try {
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-      product = normalizeJsonProduct(parsed, safeId);
-      /* Invalidate any stale markdown-parsed entry with same key */
+    let product: Record<string, unknown> | null = null;
+
+    if (!isError && !isGarbage) {
+      try {
+        const parsed = JSON.parse(raw) as Record<string, unknown>;
+        product = normalizeJsonProduct(parsed, safeId);
+        cacheSet(key, product, TTL.PRODUCT);
+        console.log(`[product] ${safeId} → JSON, ${(product.images as string[]).length} image(s)`);
+      } catch {
+        product = parseMarkdownProduct(raw, safeId) as Record<string, unknown>;
+        console.log(`[product] ${safeId} → Markdown, ${((product.images as string[]) ?? []).length} image(s)`);
+      }
+    }
+
+    // ── FALLBACK: search by product NAME to get brief details ──────────────
+    // When get_product fails (CATSYM ID, delisted, parse error, garbage),
+    // use kapruka_search_products with the product NAME (passed by client)
+    // to find the product in search results. Only match by exact product ID
+    // to avoid returning the wrong product.
+    if (!product && hintName) {
+      console.log(`[product] ${safeId} → trying search fallback with name: "${hintName}"`);
+      try {
+        // Use the product name as the search query — NOT the product ID
+        const searchQ = hintName.slice(0, 80);
+
+        const sr = await fetch(MCP, {
+          method: 'POST',
+          headers: { ...H, 'mcp-session-id': sid },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: String(Date.now() + 1),
+            method: 'tools/call',
+            params: {
+              name: 'kapruka_search_products',
+              arguments: { params: { q: searchQ, limit: 10, response_format: 'json', in_stock_only: false } },
+            },
+          }),
+        });
+
+        const sText = await sr.text();
+        const sMatch = sText.match(/^data:\s*(.+)$/m);
+        const sJson = sMatch ? sMatch[1] : sText;
+        const sData = JSON.parse(sJson) as { result?: { content?: { text?: string }[] } };
+        const sRaw = sData?.result?.content?.[0]?.text ?? '';
+
+        if (sRaw) {
+          try {
+            const sParsed = JSON.parse(sRaw) as { results?: Array<Record<string, unknown>> };
+            const results = sParsed.results ?? [];
+
+            // ONLY match by exact product ID — never use first result as fallback
+            // This prevents showing "LED Fog Light" when user clicked "iPhone 16 Pro"
+            const match = results.find(r => String(r.id ?? '') === safeId);
+
+            if (match) {
+              const mName = String(match.name ?? match.id ?? `Product ${safeId}`);
+              const mPrice = match.price && typeof match.price === 'object'
+                ? Number((match.price as Record<string, unknown>).amount ?? 0)
+                : Number(match.price ?? 0);
+              const imageUrl = String(match.image_url ?? '');
+              const productUrl = String(match.url ?? '');
+              const mCategory = match.category && typeof match.category === 'object'
+                ? String((match.category as Record<string, unknown>).name ?? '')
+                : String(match.category ?? '');
+              const mInStock = Boolean(match.in_stock ?? true);
+
+              product = {
+                id: safeId,
+                name: mName,
+                price: mPrice,
+                in_stock: mInStock,
+                stock: mInStock ? 'In Stock' : 'Out of Stock',
+                category: mCategory,
+                url: productUrl || `https://www.kapruka.com/products/?q=${encodeURIComponent(mName)}`,
+                image: imageUrl,
+                image_url: imageUrl,
+                images: imageUrl ? [imageUrl] : [],
+                description: `${mCategory} product available on Kapruka. Tap "View on Kapruka" for full details.`,
+                summary: `${mCategory} product. Price: LKR ${mPrice.toLocaleString('si-LK')}.`,
+              };
+
+              cacheSet(key, product, TTL.SEARCH);
+              console.log(`[product] ${safeId} → search fallback OK: "${mName}" LKR ${mPrice}`);
+            } else {
+              console.log(`[product] ${safeId} → search fallback: ID not found in ${results.length} results`);
+            }
+          } catch {
+            console.warn(`[product] ${safeId} → search fallback parse failed`);
+          }
+        }
+      } catch (searchErr) {
+        console.warn(`[product] ${safeId} → search fallback error:`, searchErr);
+      }
+    }
+
+    if (product) {
       cacheSet(key, product, TTL.PRODUCT);
-      console.log(`[product] ${safeId} → JSON, ${(product.images as string[]).length} image(s)`);
-    } catch {
-      product = parseMarkdownProduct(raw, safeId) as Record<string, unknown>;
-      console.log(`[product] ${safeId} → Markdown, ${((product.images as string[]) ?? []).length} image(s)`);
+      return NextResponse.json({ product });
     }
 
-    cacheSet(key, product, TTL.PRODUCT);
-    return NextResponse.json({ product });
+    return NextResponse.json({ error: 'Could not fetch product' }, { status: 500 });
   } catch (e) {
     console.error('getProduct error:', e);
     return NextResponse.json({ error: 'Could not fetch product' }, { status: 500 });

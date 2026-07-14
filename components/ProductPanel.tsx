@@ -1,5 +1,5 @@
 'use client';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import ProductCard from './ProductCard';
 import ProductModal from './ProductModal';
 import { Product } from '@/context/CartContext';
@@ -24,6 +24,9 @@ const SORT_OPTS: { key: SortMode; label: string; title: string }[] = [
 export default function ProductPanel({ products, lang, loading, quantum }: ProductPanelProps) {
   const s = STRINGS[lang];
   const [selectedId,  setSelectedId]  = useState<string | null>(null);
+  const handleViewDetail = useCallback((id: string, url: string) => {
+    setSelectedId(id); setSelectedUrl(url);
+  }, []);
   const [selectedUrl, setSelectedUrl] = useState<string>('');
   const [sortMode,    setSortMode]    = useState<SortMode>('default');
   const [stockOnly,   setStockOnly]   = useState(false);
@@ -210,7 +213,7 @@ export default function ProductPanel({ products, lang, loading, quantum }: Produ
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               {filtered.map((p, i) => (
                 <ProductCard key={p.id} product={p} lang={lang} index={i}
-                  onViewDetail={(id, url) => { setSelectedId(id); setSelectedUrl(url); }}
+                  onViewDetail={handleViewDetail}
                 />
               ))}
             </div>

@@ -25,15 +25,14 @@ function TaraBackground() {
         intensity={0.65}
         softness={0.85}
         shape="blob"
-        speed={0.4}
-        
-        // BALANCED SETTINGS: 
-        // minPixelRatio={1} ensures sharp edges on all screens.
-        // maxPixelCount={800 * 800} provides 4x more rendering data than the previous version
-        // while remaining significantly lighter than the default 4K+ resolution.
-        minPixelRatio={1} 
-        maxPixelCount={800 * 800} 
-        
+        speed={0.25}
+
+        // REDUCED for performance: lower pixel count + lower min pixel ratio
+        // cuts GPU fill rate by ~4x vs previous 800*800 setting.
+        // Visual effect is nearly identical — just slightly softer edges.
+        minPixelRatio={0.5}
+        maxPixelCount={400 * 400}
+
         style={{
           width: '100%',
           height: '100%',

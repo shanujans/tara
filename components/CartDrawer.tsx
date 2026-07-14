@@ -62,6 +62,27 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
   const [checkoutUrl,    setCheckoutUrl]    = useState('');
   const [orderTime,      setOrderTime]      = useState('');
   const [error,          setError]          = useState('');
+  const [showPayment,    setShowPayment]    = useState(false);
+  const [iframeLoading,  setIframeLoading]  = useState(true);
+  const [iframeError,    setIframeError]    = useState(false);
+  const paymentUrlRef = useRef<string>('');
+
+  // Listen for "Pay Now" from ChatPanel receipt — opens payment iframe
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ checkoutUrl: string; orderId?: string }>).detail;
+      if (detail?.checkoutUrl) {
+        paymentUrlRef.current = detail.checkoutUrl;
+        if (detail.orderId) setOrderId(detail.orderId);
+        setCheckoutUrl(detail.checkoutUrl);
+        setShowPayment(true);
+        setIframeLoading(true);
+        setIframeError(false);
+      }
+    };
+    window.addEventListener('tara:open-payment', handler);
+    return () => window.removeEventListener('tara:open-payment', handler);
+  }, []);
   /* Invoice PDF state */
   const [invoiceSnap,  setInvoiceSnap]  = useState<InvoiceData | null>(null);
   const [pendingPdf,   setPendingPdf]   = useState<InvoiceData | null>(null);
@@ -184,7 +205,7 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
       .catch(()=> { if (!cancelled) setDeliveryInfo({ available: false, message: 'Could not check delivery.' }); })
       .finally(()=> { if (!cancelled) setDeliveryChecking(false); });
     return () => { cancelled = true; };
-  }, [district, deliveryDate, items]);
+  }, [district, deliveryDate]);
 
   const generateMessage = async () => {
     setGenLoading(true);
@@ -300,9 +321,43 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
           setOrderId(orderId);
         } catch { /* */ }
         setCheckoutUrl(data.checkoutUrl);
+
+        // Emit checkout receipt to ChatPanel (with product data for inline images)
+        const receiptData = {
+          orderId,
+          items: items.map(i => ({ id: i.id, name: i.name, price: i.price, qty: i.qty, image: i.image })),
+          recipient: recipientName.trim(),
+          phone: recipientPhone.trim(),
+          ...(orderPurpose !== 'pickup' ? {
+            address: `${addressLine1.trim()}${addressLine2.trim() ? ', ' + addressLine2.trim() : ''}`,
+            city: district,
+            deliveryDate,
+          } : {
+            pickup: PICKUP_LOCATIONS.find(l => l.id === pickupLocation)?.name ?? 'Selected location',
+          }),
+          ...(occasion ? { occasion } : {}),
+          ...(giftMessage ? { giftMessage } : {}),
+          ...(specialInstructions.trim() ? { instructions: specialInstructions.trim() } : {}),
+          deliveryFee: deliveryFee ?? 0,
+          total: grandTotal,
+          checkoutUrl: data.checkoutUrl,
+        };
+        window.dispatchEvent(new CustomEvent('tara:chat-notification', {
+          detail: { content: `✅ Order placed successfully! Order Ref: ${orderId}`, receipt: receiptData },
+        }));
+
         clearCart();
       } else {
-        setError(data.error ?? 'Checkout failed.');
+        const errMsg = data.error ?? 'Checkout failed.';
+        setError(errMsg);
+
+        // Emit checkout error to ChatPanel — friendlier message for rate limits
+        const friendlyMsg = /too many|rate limit/i.test(errMsg)
+          ? `⚠️ Too many checkout attempts — please wait a minute and try again.`
+          : `⚠️ Checkout issue: ${errMsg} — please check your details and try again.`;
+        window.dispatchEvent(new CustomEvent('tara:chat-notification', {
+          detail: { content: friendlyMsg },
+        }));
       }
     } finally { setCheckLoading(false); }
   };
@@ -426,11 +481,12 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
 
               {checkoutUrl && (
                 <div className="w-full">
-                  <a href={checkoutUrl} target="_blank" rel="noopener noreferrer"
-                    className="btn-gold w-full py-3 rounded-xl text-sm flex items-center justify-center gap-2 text-center block"
+                  <button
+                    onClick={() => { setShowPayment(true); setIframeLoading(true); setIframeError(false); }}
+                    className="btn-gold w-full py-3 rounded-xl text-sm flex items-center justify-center gap-2 text-center"
                     style={{ color: '#3A3A3C' }}>
-                    🔒 Complete Payment on Kapruka →
-                  </a>
+                    🔒 Pay Now
+                  </button>
                   <p className="text-xs mt-2" style={{ color: 'var(--t-text-4)' }}>
                     Secure checkout · ~30 seconds · Cash on delivery available
                   </p>
@@ -519,7 +575,7 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
                 </div>
               )}
 
-              <button onClick={() => { setOrderId(''); setCheckoutUrl(''); setOrderTime(''); setInvoiceSnap(null); onClose(); }}
+              <button onClick={() => { setOrderId(''); setCheckoutUrl(''); setOrderTime(''); setInvoiceSnap(null); setShowPayment(false); onClose(); }}
                 className="text-xs transition-colors"
                 style={{ color: 'var(--t-text-3)' }}>
                 Continue Shopping
@@ -915,6 +971,139 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
           )}
         </div>
       </div>
+
+      {/* ── In-App Payment Panel (iframe overlay) ─────────────────────────── */}
+      {showPayment && (checkoutUrl || paymentUrlRef.current) && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+          onClick={() => setShowPayment(false)}
+        >
+        <div
+          className="relative flex flex-col rounded-2xl overflow-hidden shadow-2xl"
+          style={{
+            background: 'var(--c-background)',
+            width: '90vw',
+            maxWidth: '520px',
+            height: '75vh',
+            maxHeight: '640px',
+            border: '1px solid var(--c-outline)',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header bar */}
+          <div
+            className="flex items-center justify-between px-4 py-3 flex-shrink-0"
+            style={{
+              background: 'var(--c-surface-container)',
+              borderBottom: '1px solid var(--c-outline)',
+            }}
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-base font-bold" style={{ color: 'var(--c-on-surface)' }}>
+                🔒 Secure Payment
+              </span>
+              <span className="text-xs font-mono" style={{ color: 'var(--c-on-surface-variant)' }}>
+                {orderId}
+              </span>
+            </div>
+            <button
+              onClick={() => setShowPayment(false)}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+              style={{
+                background: 'rgba(255,255,255,0.08)',
+                border: '1px solid var(--c-outline)',
+                color: 'var(--c-on-surface-variant)',
+              }}
+            >
+              ✕ Close
+            </button>
+          </div>
+
+          {/* Iframe container */}
+          <div className="flex-1 relative">
+            {iframeLoading && !iframeError && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+                <div
+                  className="w-8 h-8 rounded-full border-2 animate-spin"
+                  style={{
+                    borderColor: 'var(--c-outline)',
+                    borderTopColor: 'var(--c-primary)',
+                  }}
+                />
+                <p className="text-sm" style={{ color: 'var(--c-on-surface-variant)' }}>
+                  Loading secure checkout…
+                </p>
+              </div>
+            )}
+
+            {iframeError && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-6 text-center">
+                <div
+                  className="w-14 h-14 rounded-full flex items-center justify-center text-2xl"
+                  style={{
+                    background: 'rgba(250,229,85,0.08)',
+                    border: '1px solid rgba(250,229,85,0.25)',
+                  }}
+                >
+                  ⚠
+                </div>
+                <div>
+                  <p className="font-bold text-sm" style={{ color: 'var(--c-on-surface)' }}>
+                    Checkout can't be embedded
+                  </p>
+                  <p className="text-xs mt-1" style={{ color: 'var(--c-on-surface-variant)' }}>
+                    Kapruka's payment page needs to open in a new tab.
+                  </p>
+                </div>
+                <a
+                  href={checkoutUrl || paymentUrlRef.current}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-gold px-6 py-3 rounded-xl text-sm font-semibold"
+                  style={{ color: '#3A3A3C' }}
+                >
+                  🔒 Open Kapruka Checkout →
+                </a>
+              </div>
+            )}
+
+            {!iframeError && (
+              <iframe
+                src={checkoutUrl || paymentUrlRef.current}
+                className="w-full h-full border-0"
+                onLoad={() => setIframeLoading(false)}
+                onError={() => { setIframeLoading(false); setIframeError(true); }}
+                sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"
+                title="Kapruka Secure Checkout"
+              />
+            )}
+          </div>
+
+          {/* Fallback link at bottom (always visible) */}
+          <div
+            className="flex-shrink-0 px-4 py-2 flex items-center justify-center gap-3"
+            style={{
+              background: 'var(--c-surface-container)',
+              borderTop: '1px solid var(--c-outline)',
+            }}
+          >
+            <span className="text-xs" style={{ color: 'var(--c-on-surface-variant)' }}>
+              Having trouble?
+            </span>
+            <a
+              href={checkoutUrl || paymentUrlRef.current}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs font-semibold underline"
+              style={{ color: 'var(--c-primary)' }}
+            >
+              Open in new tab →
+            </a>
+          </div>
+        </div>
+        </div>
+      )}
     </>
   );
 }

@@ -257,28 +257,30 @@ textarea::-webkit-scrollbar { display: none; }
   transition: all 0.18s ease;
   white-space: nowrap;
   flex-shrink: 0;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 .chip-secondary {   /* yellow-green highlight = Browse Electronics */
-  background: rgba(197, 205, 101, 0.10);
-  border: 1px solid rgba(197, 205, 101, 0.30);
+  background: rgba(47, 51, 0, 0.85);
+  border: 1px solid rgba(197, 205, 101, 0.45);
   color: var(--c-secondary);
 }
-.chip-secondary:hover { background: rgba(197, 205, 101, 0.20); }
+.chip-secondary:hover { background: rgba(47, 51, 0, 0.95); }
 
 .chip-primary {    /* lavender = Fashion Gifts */
-  background: rgba(215, 186, 255, 0.10);
-  border: 1px solid rgba(215, 186, 255, 0.30);
+  background: rgba(78, 36, 132, 0.85);
+  border: 1px solid rgba(215, 186, 255, 0.45);
   color: var(--c-primary);
 }
-.chip-primary:hover { background: rgba(215, 186, 255, 0.20); }
+.chip-primary:hover { background: rgba(78, 36, 132, 0.95); }
 
 .chip-neutral {    /* muted = other chips */
-  background: rgba(55, 49, 71, 0.50);
-  border: 1px solid rgba(74, 68, 81, 0.30);
+  background: rgba(34, 28, 49, 0.88);
+  border: 1px solid rgba(74, 68, 81, 0.50);
   color: var(--c-on-surface-variant);
 }
 .chip-neutral:hover {
-  background: var(--c-surface-container-high);
+  background: rgba(44, 39, 60, 0.95);
   color: var(--c-on-surface);
 }
 

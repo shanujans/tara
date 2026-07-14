@@ -12,6 +12,7 @@ import { CartProvider, useCart, Product } from '@/context/CartContext';
 import { STRINGS, Lang } from '@/lib/strings';
 import {
   HomeIcon, HistoryIcon, RewardsIcon, BrowseIcon, CartIcon,
+PackageSearchIcon,
   SettingsIcon, HelpIcon, BellIcon, MenuIcon, XIcon,
   ChatIcon, BagIcon, SparkleIcon, StoreIcon, HeadsetIcon,
 } from '@/components/Icons';
@@ -36,9 +37,9 @@ const NAV_ITEMS: { key: NavKey; label: string; icon: React.ReactNode }[] = [
 ];
 
 /* ── Sidebar with the exact spec shader as background ──────── */
-function SideNavBar({ activeNav, onNavClick, onCartOpen, totalQty, user }:{
+function SideNavBar({ activeNav, onNavClick, onCartOpen, totalQty, user, onTrackOrder }:{
   activeNav: NavKey; onNavClick:(k:NavKey)=>void;
-  onCartOpen:()=>void; totalQty:number; user:UserInfo;
+  onCartOpen:()=>void; totalQty:number; user:UserInfo; onTrackOrder:()=>void;
 }) {
   return (
     <aside style={{
@@ -116,6 +117,16 @@ function SideNavBar({ activeNav, onNavClick, onCartOpen, totalQty, user }:{
                 {totalQty > 9 ? '9+' : totalQty}
               </span>
             )}
+          </button>
+
+          {/* Track Order — under Browse in the nav */}
+          <button onClick={onTrackOrder}
+            style={{ display:'flex', alignItems:'center', gap:14, width:'100%', padding:'11px 14px', borderRadius:12, marginTop:4, fontSize:14, fontWeight:500, color:'rgba(255,255,255,0.65)', background:'transparent', border:'none', cursor:'pointer', transition:'all 0.15s', fontFamily:'var(--font-body)' }}
+            onMouseOver={e=>e.currentTarget.style.background='rgba(255,255,255,0.10)'}
+            onMouseOut={e=>e.currentTarget.style.background='transparent'}
+          >
+            <span style={{ opacity:0.7 }}><PackageSearchIcon size={20}/></span>
+            Track Order
           </button>
         </nav>
 
@@ -264,7 +275,7 @@ function AppContent({ user }: { user: UserInfo }) {
 
       {/* ── Sidebar spacer + sidebar ─────────────────────── */}
       <div className="hidden lg:block" style={{ position:'fixed', top:64, left:0, bottom:0, width:sidebarOpen?256:0, zIndex:30, overflow:'hidden', transition:'width 0.25s cubic-bezier(0.4,0,0.2,1)' }}>
-        {sidebarOpen && <SideNavBar activeNav={activeNav} onNavClick={handleNavClick} onCartOpen={()=>setCartOpen(true)} totalQty={totalQty} user={user}/>}
+        {sidebarOpen && <SideNavBar activeNav={activeNav} onNavClick={handleNavClick} onCartOpen={()=>setCartOpen(true)} totalQty={totalQty} user={user} onTrackOrder={()=>setPanel('track')}/>}
       </div>
 
       {/* ── Main ──────────────────────────────────────────── */}

@@ -1,5 +1,6 @@
 'use client';
 import { motion } from 'motion/react';
+import { memo } from 'react';
 
 /* =====================================================================
    Sidebar background — floating paths, exact animation pattern from
@@ -11,7 +12,7 @@ import { motion } from 'motion/react';
    ===================================================================== */
 
 function buildPaths(position: number) {
-  return Array.from({ length: 36 }, (_, i) => ({
+  return Array.from({ length: 18 }, (_, i) => ({
     id: i,
     d: `M-${380 - i * 5 * position} -${189 + i * 6}C-${
       380 - i * 5 * position
@@ -25,9 +26,11 @@ function buildPaths(position: number) {
   }));
 }
 
-export default function SidebarShader() {
-  const paths = buildPaths(-1);
+// Module-level — paths and durations are computed once, not per render
+const PATHS = buildPaths(-1);
+const DURATIONS = Array.from({ length: 18 }, () => 5 + Math.random() * 5);
 
+const SidebarShader = memo(function SidebarShader() {
   return (
     <div
       aria-hidden
@@ -37,16 +40,16 @@ export default function SidebarShader() {
         width: '100%',
         height: '100%',
         overflow: 'hidden',
-        background: '#100b1f', // exact colorBack from TaraBackground.tsx
+        background: '#100b1f',
       }}
     >
       <svg
         viewBox="0 0 696 316"
-        preserveAspectRatio="none" /* full-bleed stretch — was "slice", which cropped most of the motion out of view on a narrow sidebar */
+        preserveAspectRatio="none"
         fill="none"
         style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
       >
-        {paths.map((path) => (
+        {PATHS.map((path, i) => (
           <motion.path
             key={path.id}
             d={path.d}
@@ -59,7 +62,7 @@ export default function SidebarShader() {
               pathOffset: [0, 1, 0],
             }}
             transition={{
-              duration: 5 + Math.random() * 5, // was 20–30s — now 5–10s, reads as motion immediately
+              duration: DURATIONS[i],
               repeat: Number.POSITIVE_INFINITY,
               ease: 'linear',
             }}
@@ -68,4 +71,6 @@ export default function SidebarShader() {
       </svg>
     </div>
   );
-}
+});
+
+export default SidebarShader;

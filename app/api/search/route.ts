@@ -78,6 +78,13 @@ const LOG = {
     );
   },
 
+  rank: (query: string, beforeCount: number, afterCount: number, aiSucceeded: boolean) => {
+    console.log(
+      `[TARA:SEARCH] 🏆 AI RANK: "${query}"\n` +
+      `   before: ${beforeCount} | after: ${afterCount} | AI succeeded: ${aiSucceeded}`
+    );
+  },
+
   diversify: (buckets: Record<string, number>, finalCount: number) => {
     const summary = Object.entries(buckets)
       .map(([cat, n]) => `    "${cat}": ${n}`)
@@ -373,6 +380,201 @@ Products: ${JSON.stringify(filtered.map(p => ({ id: p.id, name: p.name, category
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// AI PRODUCT RANKER
+// Uses Gemini to reorder products by match quality: exact → variant → newer →
+// alternative. Excludes accessories. 8s timeout — falls back to input order
+// on any failure (no regression to heuristic/diversified order).
+// ─────────────────────────────────────────────────────────────────────────────
+const GEMINI_RANK_KEY       = process.env.GEMINI_API_KEY;
+const GEMINI_RANK_MODEL     = process.env.GEMINI_MODEL ?? 'gemini-3.1-flash-lite';
+const GEMINI_RANK_TIMEOUT_MS = 8_000;
+
+interface RankResult {
+  succeeded: boolean;
+  ranked:    Product[];
+}
+
+async function aiRankProducts(
+  sp:       SearchParams,
+  products: Product[],
+): Promise<RankResult> {
+  if (!GEMINI_RANK_KEY || products.length === 0) {
+    return { succeeded: false, ranked: products };
+  }
+
+  // Send at most 20 products to the AI for ranking
+  const top = products.slice(0, 20);
+
+  const productList = top.map(p => ({
+    id:       p.id,
+    name:     p.name,
+    price:    p.price,
+    category: p.category,
+    in_stock: p.in_stock,
+  }));
+
+  const userQuery = sp.q;
+  const category   = sp.category ?? '(not specified)';
+  const maxPrice   = sp.max_price ? `LKR ${sp.max_price}` : '(none)';
+  const minPrice   = sp.min_price ? `LKR ${sp.min_price}` : '(none)';
+
+  const systemPrompt =
+`You are a product ranking AI for an e-commerce search engine (Kapruka, Sri Lanka).
+Your job: classify and reorder products by how well they match the user's search intent.
+
+RANKING PRIORITY (highest to lowest):
+1. Exact match — the product IS what the user searched for
+2. Close variant — same product line with a modifier (Pro, Max, Plus, Mini, etc.)
+3. Newer version — next-gen model of the requested product
+4. Closest alternative — same category, similar specs/price
+
+EXCLUSION RULE — identify accessories and IRRELEVANT items into excluded_ids:
+Accessories: chargers, cases, bags, cables, screen guards, stands, covers, adapters,
+sleeves, coolers, docks, mice, keyboards, screen protectors, pouches, skins, mounts,
+holders, grips, straps, stickers, cleaning kits, or any item that is clearly an
+accessory rather than the main product.
+Irrelevant: products that have no meaningful connection to the search query.
+
+OTHER RULES:
+- ranked_ids: products that match user intent, ordered best-match first.
+- excluded_ids: accessories and irrelevant products — these will be REMOVED entirely.
+- Every product ID from the input MUST appear in either ranked_ids or excluded_ids.
+- If fewer than 8 exact/variant matches exist, fill remaining ranked slots with the best
+  related alternatives (NEVER accessories).
+- Prioritize in-stock products above out-of-stock when match quality is equal.
+- If there are duplicates (same product, different colors/storage), pick at most 2
+  and prioritize variety over repetition.
+- This works across ALL categories: Electronics, Chocolates, Cakes, Flowers,
+  Pharmacy, Perfumes, Grocery, Sports, Automobile, Jewellery, Pet, Books,
+  Clothing, Cosmetics, and more. Classify and rank by relevance to the search query.`;
+
+  const userPrompt =
+`Search query: "${userQuery}"
+Category filter: ${category}
+Price range: min ${minPrice}, max ${maxPrice}
+
+Products to classify and rank (JSON array):
+${JSON.stringify(productList)}
+
+Return JSON: {"ranked_ids": ["id1","id2","id3",...], "excluded_ids": ["id4","id5",...]}
+- ranked_ids: best-match products first (NEVER accessories)
+- excluded_ids: accessories and irrelevant products to REMOVE
+- Every product ID from the input list MUST be in one of the two arrays.`;
+
+  const controller = new AbortController();
+  const timeoutId  = setTimeout(() => controller.abort(), GEMINI_RANK_TIMEOUT_MS);
+
+  try {
+    const url =
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_RANK_MODEL}:generateContent?key=${GEMINI_RANK_KEY}`;
+
+    const res = await fetch(url, {
+      method:  'POST',
+      signal:  controller.signal,
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        system_instruction: { parts: [{ text: systemPrompt }] },
+        contents:           [{ role: 'user', parts: [{ text: userPrompt }] }],
+        generationConfig: {
+          maxOutputTokens:   1024,
+          temperature:       0.3,
+          responseMimeType:  'application/json',
+        },
+      }),
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      LOG.warn(`aiRankProducts: Gemini returned ${res.status} — using heuristic order`);
+      return { succeeded: false, ranked: products };
+    }
+
+    const data = await res.json();
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+    if (!text) {
+      LOG.warn('aiRankProducts: Gemini returned empty content — using heuristic order');
+      return { succeeded: false, ranked: products };
+    }
+
+    // Parse the JSON response (responseMimeType helps, but be defensive)
+    let parsed: { ranked_ids?: string[]; excluded_ids?: string[] };
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        LOG.warn('aiRankProducts: could not parse JSON from response — using heuristic order');
+        return { succeeded: false, ranked: products };
+      }
+      try {
+        parsed = JSON.parse(jsonMatch[0]);
+      } catch {
+        LOG.warn('aiRankProducts: JSON extraction failed — using heuristic order');
+        return { succeeded: false, ranked: products };
+      }
+    }
+
+    const rankedIds = parsed.ranked_ids;
+    const excludedIds = parsed.excluded_ids;
+    if (!Array.isArray(rankedIds) || rankedIds.length === 0) {
+      LOG.warn('aiRankProducts: ranked_ids missing or empty — using heuristic order');
+      return { succeeded: false, ranked: products };
+    }
+
+    // Build exclusion set — these products are removed entirely
+    const excludedSet = new Set<string>(
+      Array.isArray(excludedIds) ? excludedIds : []
+    );
+
+    // Reorder: AI-ranked products first (in AI order), then unranked non-excluded
+    // products in original order. Excluded products (accessories/irrelevant) are
+    // dropped completely so they never appear in the top 8 chat cards.
+    const productMap = new Map(products.map(p => [p.id, p]));
+    const ranked: Product[]  = [];
+    const usedIds  = new Set<string>();
+
+    for (const id of rankedIds) {
+      const p = productMap.get(id);
+      if (p && !usedIds.has(id)) {
+        ranked.push(p);
+        usedIds.add(id);
+      }
+    }
+    const aiMatched = usedIds.size;
+
+    // Append products not in ranked_ids AND not in excluded_ids
+    // (these are products the AI didn't classify — keep them as fallback)
+    let appendedCount = 0;
+    for (const p of products) {
+      if (!usedIds.has(p.id) && !excludedSet.has(p.id)) {
+        ranked.push(p);
+        usedIds.add(p.id);
+        appendedCount++;
+      }
+    }
+
+    const excludedCount = products.length - aiMatched - appendedCount;
+    LOG.info(
+      `aiRankProducts: AI returned ${rankedIds.length} ranked, ` +
+      `${excludedSet.size} excluded, ` +
+      `matched ${aiMatched} ranked + ${appendedCount} appended, ` +
+      `${excludedCount} removed (accessories/irrelevant)`
+    );
+    return { succeeded: true, ranked };
+
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === 'AbortError') {
+      LOG.warn(`aiRankProducts: timed out after ${GEMINI_RANK_TIMEOUT_MS}ms — using heuristic order`);
+    } else {
+      LOG.warn('aiRankProducts: failed — using heuristic order', err);
+    }
+    return { succeeded: false, ranked: products };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MAIN HANDLER
 // ─────────────────────────────────────────────────────────────────────────────
 // Loopback IPs are never real client IPs in production —
@@ -489,6 +691,27 @@ export async function POST(req: NextRequest) {
     // ── TIER 1: Full params as-is ─────────────────────────────────────────
     const r1 = await mcpSearch(sp, sid, 50, 'TIER-1 (full params)');
 
+    let discoveredCategory: string | undefined;
+    let r2: Record<string, unknown>[] = [];
+
+    // ── SUPPLEMENT: Fetch out-of-stock variants when TIER-1 succeeds ──────
+    // TIER-1 uses in_stock_only:true which can filter out relevant variants
+    // (e.g. "iphone 16" has 8 variants but only 1 is in stock). This
+    // supplementary search with in_stock_only:false + category:null catches
+    // the rest. Deduped later in the merge step. Only runs when TIER-1 found
+    // enough results to skip TIER-2 (otherwise TIER-2 already fetches with
+    // in_stock_only:false).
+    if (r1.length >= 5) {
+      r2 = await mcpSearch(
+        { q: sp.q, in_stock_only: false, sort: 'relevance' },
+        sid, 50, 'SUPPLEMENT (in_stock_only:false)',
+      );
+      LOG.info(
+        `SUPPLEMENT search: ${r2.length} products (in_stock_only:false, category:null) ` +
+        `— merged with TIER-1 (${r1.length}) to catch out-of-stock variants`
+      );
+    }
+
     // ── TIER 2: Category Discovery ────────────────────────────────────────
     // Fires when TIER-1 returns < 5 results — usually means the category string
     // the AI chose doesn't match what Kapruka's MCP stores internally.
@@ -500,9 +723,6 @@ export async function POST(req: NextRequest) {
     //   3. Find the dominant category (most products for this keyword)
     //   4. Re-search WITH that real category name for a clean, precise set
     //   5. Fall back to raw discovery results if targeted re-search underperforms
-    let discoveredCategory: string | undefined;
-    let r2: Record<string, unknown>[] = [];
-
     if (r1.length < 5) {
       LOG.fallback(
         'TIER-2 DISCOVERY (category:null)',
@@ -695,10 +915,25 @@ export async function POST(req: NextRequest) {
       LOG.info(`Post-merge filter skipped — "${filterCategory}" is not a real MCP category filter`);
     }
 
-    // ── Category diversification (only when no specific category was requested) ─
-    // When the original query was category:null (or General was discovered, meaning
-    // no real filter exists), spread results across categories for variety.
-    if ((!sp.category || !discoveredCategory) && mergedProducts.length > 0) {
+    // ── AI heuristic validation ───────────────────────────────────────────
+    mergedProducts = await aiValidateProducts(sp.q, mergedProducts);
+
+    // ── AI product ranking (Gemini) ───────────────────────────────────────
+    // Reorders mergedProducts by AI match quality: exact → variant → newer →
+    // alternative. Accessories are excluded from the ranked list. If AI fails
+    // or times out (8s), the existing heuristic order is kept and category
+    // diversification runs as a fallback.
+    const beforeRank  = mergedProducts.length;
+    const rankResult  = await aiRankProducts(sp, mergedProducts);
+    if (rankResult.succeeded) {
+      mergedProducts = rankResult.ranked;
+    }
+    LOG.rank(sp.q, beforeRank, mergedProducts.length, rankResult.succeeded);
+
+    // ── Category diversification (FALLBACK — only when AI ranking failed) ──
+    // When AI ranking succeeds, its ordering replaces diversification.
+    // This runs only as a fallback to spread results across categories.
+    if (!rankResult.succeeded && (!sp.category || !discoveredCategory) && mergedProducts.length > 0) {
       const buckets: Record<string, Product[]> = {};
       for (const item of mergedProducts) {
         const cat = item.category || 'Other';
@@ -724,9 +959,6 @@ export async function POST(req: NextRequest) {
       LOG.diversify(bucketSummary, diverseResult.length);
       mergedProducts = diverseResult;
     }
-
-    // ── AI heuristic validation ───────────────────────────────────────────
-    mergedProducts = await aiValidateProducts(sp.q, mergedProducts);
 
     // ── Final clip ────────────────────────────────────────────────────────
     const products = mergedProducts.slice(0, 50);

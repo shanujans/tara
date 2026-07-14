@@ -4,7 +4,7 @@ import { useCart, Product } from '@/context/CartContext';
 import { STRINGS, Lang } from '@/lib/strings';
 import { SendIcon, CheckIcon } from './Icons';
 
-interface ProductModalProps { productId: string; productUrl: string; lang: Lang; onClose: () => void; allProducts?: (Product & { url?: string; category?: string })[]; }
+interface ProductModalProps { productId: string; productUrl: string; lang: Lang; onClose: () => void; allProducts?: (Product & { url?: string; category?: string })[]; fallbackProduct?: Product | null; }
 
 interface FullProduct {
   id: string; name: string; price: number; image?: string; image_url?: string;
@@ -56,7 +56,7 @@ function renderMd(text: string): React.ReactNode {
   );
 }
 
-export default function ProductModal({ productId, productUrl, lang, onClose, allProducts }: ProductModalProps) {
+export default function ProductModal({ productId, productUrl, lang, onClose, allProducts, fallbackProduct }: ProductModalProps) {
   const { addItem, items } = useCart();
   const s = STRINGS[lang];
 
@@ -83,10 +83,55 @@ export default function ProductModal({ productId, productUrl, lang, onClose, all
   useEffect(() => {
     let alive = true;
     setLoading(true); setProduct(null); setActiveImg(0);
-    fetch('/api/product', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ product_id: productId }) })
+
+    // Build fallback product from search result data (passed via props)
+    const buildFallback = (): FullProduct | null => {
+      if (!fallbackProduct) return null;
+      return {
+        id:        fallbackProduct.id,
+        name:      fallbackProduct.name || fallbackProduct.id,
+        price:     fallbackProduct.price || 0,
+        image:     fallbackProduct.image || '',
+        image_url: fallbackProduct.image || '',
+        url:       fallbackProduct.url ?? (productUrl || ''),
+        in_stock:  fallbackProduct.in_stock ?? true,
+        category:  fallbackProduct.category ?? '',
+        summary:   'Full product details are temporarily unavailable. You can still add this to your cart or view it on Kapruka.',
+      };
+    };
+
+    fetch('/api/product', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ product_id: productId, name: fallbackProduct?.name }) })
       .then(r => r.json())
-      .then(d => { if (alive && d.product) setProduct(d.product); })
-      .catch(() => {})
+      .then(d => {
+        if (!alive) return;
+        if (d.product) {
+          const apiProduct = d.product as FullProduct;
+          // Check if API returned garbage (price=0, no images, name is just the ID)
+          const isGarbage =
+            (!apiProduct.price || apiProduct.price === 0) &&
+            (!apiProduct.images || apiProduct.images.length === 0) &&
+            (!apiProduct.image_url || apiProduct.image_url === '') &&
+            (!apiProduct.description && !apiProduct.summary);
+
+          if (isGarbage && fallbackProduct) {
+            // Merge: use search result data for missing fields, keep any API data that exists
+            const fb = buildFallback()!;
+            setProduct({
+              ...fb,
+              ...(apiProduct.name && apiProduct.name !== apiProduct.id ? { name: apiProduct.name } : {}),
+              ...(apiProduct.category ? { category: apiProduct.category } : {}),
+              ...(apiProduct.url ? { url: apiProduct.url } : {}),
+            });
+          } else {
+            setProduct(apiProduct);
+          }
+        } else if (fallbackProduct) {
+          setProduct(buildFallback());
+        }
+      })
+      .catch(() => {
+        if (alive) setProduct(buildFallback());
+      })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [productId]);
@@ -174,7 +219,7 @@ export default function ProductModal({ productId, productUrl, lang, onClose, all
     finally { setChatBusy(false); }
   };
 
-  const viewUrl = product?.url || productUrl || '';
+  const viewUrl = product?.url || productUrl || fallbackProduct?.url || '';
   const surface = { background: 'rgba(17,11,46,0.60)', border: '1px solid rgba(74,68,81,0.30)' };
 
   /* ── Tab bar ──────────────────────────────────────── */
