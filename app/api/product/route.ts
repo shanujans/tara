@@ -190,6 +190,607 @@ function normalizeJsonProduct(p: Record<string, unknown>, pid: string): Record<s
     images:      unique.slice(0, 10),
   };
 }
+
+/* ── Structured extraction from MCP response (Markdown or JSON) ────────────
+   Follows the user's schema. Zero extra calls — parses what we already have. */
+function extractStructuredProduct(raw: string, productId: string): Record<string, unknown> | null {
+  if (!raw || raw.length < 20) return null;
+
+  const str = (v: unknown, fallback = ''): string => {
+    if (v == null) return fallback;
+    if (typeof v === 'string') return v.trim();
+    if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+    if (typeof v === 'object') {
+      const o = v as Record<string, unknown>;
+      return String(o.name ?? o.title ?? o.label ?? o.value ?? o.id ?? fallback).trim();
+    }
+    return String(v);
+  };
+
+  // ── Try JSON first ────────────────────────────────────────────────────────
+  let parsed: Record<string, unknown> | null = null;
+  try {
+    parsed = JSON.parse(raw) as Record<string, unknown>;
+  } catch { /* not JSON, fall through to markdown */ }
+
+  // Helper to extract from either parsed JSON or raw markdown
+  const getField = (obj: Record<string, unknown> | null, keys: string[], mdPatterns: RegExp[]): string => {
+    // Try JSON object
+    if (obj) {
+      for (const k of keys) {
+        const v = obj[k];
+        if (v != null && String(v).trim()) return str(v);
+      }
+    }
+    // Try markdown patterns
+    for (const re of mdPatterns) {
+      const m = raw.match(re);
+      if (m?.[1]?.trim()) return m[1].trim();
+    }
+    return '';
+  };
+
+  // ── Basic Info ────────────────────────────────────────────────────────────
+  const name = getField(parsed, ['name', 'title', 'product_name'], [
+    /^##\s+(.+)/m,
+    /\*\*Name\*\*[^:]*:\s*(.+)/i,
+  ]);
+
+  const priceStr = getField(parsed, ['price', 'amount', 'selling_price', 'lkr'], [
+    /\*\*Price\*\*[^:]*:\s*LKR\s*([\d,]+)/i,
+    /\*\*Price\*\*[^:]*:\s*Rs\.?\s*([\d,]+)/i,
+    /Price[:\s]+(?:LKR|Rs\.?)?\s*([\d,]+)/i,
+  ]);
+  const price = Number(priceStr.replace(/,/g, '')) || 0;
+
+  const currency = getField(parsed, ['currency'], [/LKR|Rs\.?/i]) || 'LKR';
+
+  const stockRaw = getField(parsed, ['stock', 'stock_status', 'availability', 'in_stock'], [
+    /\*\*Stock\*\*[^:]*:\s*(.+)/i,
+    /\*\*Availability\*\*[^:]*:\s*(.+)/i,
+  ]);
+  const availability = stockRaw || 'Unknown';
+
+  const brand_or_merchant = getField(parsed, ['vendor', 'seller', 'brand', 'merchant', 'manufacturer'], [
+    /\*\*Vendor\*\*[^:]*:\s*(.+)/i,
+    /\*\*Sold by\*\*[^:]*:\s*(.+)/i,
+    /\*\*Brand\*\*[^:]*:\s*(.+)/i,
+  ]);
+
+  const warranty_or_guarantee = getField(parsed, ['warranty', 'guarantee', 'return_policy'], [
+    /\*\*Warranty\*\*[^:]*:\s*(.+)/i,
+    /\*\*Guarantee\*\*[^:]*:\s*(.+)/i,
+    /\*\*Return\*\*[^:]*:\s*(.+)/i,
+    /return.*policy[:\s]+(.+)/i,
+  ]);
+
+  // ── Key Highlights & Specs ───────────────────────────────────────────────
+  const description = getField(parsed, ['description', 'summary', 'short_description'], [
+    /\*\*(?:Description|Summary)\*\*[^:]*:\s*([\s\S]+?)(?=\n\*\*|\n##|$)/i,
+  ]);
+
+  const specifications: string[] = [];
+  const specFields = ['specifications', 'specs', 'features', 'details', 'technical_specifications'];
+  if (parsed) {
+    for (const k of specFields) {
+      const v = parsed[k];
+      if (Array.isArray(v)) {
+        for (const item of v) specifications.push(str(item));
+      } else if (typeof v === 'string' && v.trim()) {
+        specifications.push(...v.split('\n').map(s => s.trim()).filter(Boolean));
+      } else if (v && typeof v === 'object') {
+        const o = v as Record<string, unknown>;
+        for (const [sk, sv] of Object.entries(o)) {
+          if (sv != null) specifications.push(`${sk}: ${str(sv)}`);
+        }
+      }
+    }
+  }
+  // Extract from markdown tables/lists
+  const specMatches = raw.matchAll(/\*\*([^*]+)\*\*[^:]*:\s*(.+)/g);
+  for (const m of specMatches) {
+    const label = m[1].trim();
+    const value = m[2].trim();
+    if (label && value && !/price|stock|category|vendor|brand|warranty|guarantee|return|description|summary|image|url|link|rating|weight|shipping/i.test(label)) {
+      specifications.push(`${label}: ${value}`);
+    }
+  }
+
+  // ── Promotional & Transactional Info ─────────────────────────────────────
+  const payment_options = getField(parsed, ['payment_options', 'installments', 'bnpl', 'card_offers'], [
+    /installment|emi|bnpl|buy.now.pay.later|card.discount|0%/i,
+  ]);
+
+  const shipping_info = getField(parsed, ['shipping', 'delivery', 'shipping_info', 'delivery_info'], [
+    /\*\*Shipping\*\*[^:]*:\s*(.+)/i,
+    /\*\*Delivery\*\*[^:]*:\s*(.+)/i,
+    /deliver(y|ed)\s+(within|in|on)\s+[\d\w\s]+/i,
+  ]);
+
+  // ── Social Proof & Discovery ─────────────────────────────────────────────
+  const ratingStr = getField(parsed, ['rating', 'average_rating', 'stars'], [
+    /\*\*Rating\*\*[^:]*:\s*([\d.]+)/i,
+  ]);
+  const rating_score = ratingStr ? Number(ratingStr) : null;
+
+  const review_count_str = getField(parsed, ['review_count', 'reviews', 'ratings_count'], [
+    /\*\*Reviews?\*\*[^:]*:\s*(\d+)/i,
+    /\((\d+)\s*reviews?\)/i,
+  ]);
+  const review_count = review_count_str ? Number(review_count_str) : null;
+
+  // ── URL & Images ─────────────────────────────────────────────────────────
+  const allUrls: string[] = [];
+  // From JSON
+  if (parsed) {
+    for (const k of ['url', 'link', 'product_url', 'permalink']) {
+      const v = parsed[k];
+      if (typeof v === 'string' && v.startsWith('http')) allUrls.push(v);
+    }
+  }
+  // From markdown
+  for (const m of raw.matchAll(/https?:\/\/(?:www\.)?kapruka\.com[^\s)\]"'\\<>]*/g)) {
+    allUrls.push(m[0]);
+  }
+
+  // Filter out image URLs
+  const isImg = (u: string) => /productImages|\/images\/|\.(jpg|jpeg|png|webp|gif|avif)(\?|$)/i.test(u);
+  const pageUrl = allUrls.find(u => !isImg(u)) ?? `https://www.kapruka.com/products/?q=${encodeURIComponent(name)}`;
+
+  const rawImgUrls: string[] = [];
+  if (parsed?.images && Array.isArray(parsed.images)) {
+    for (const img of parsed.images) {
+      if (typeof img === 'string' && img.startsWith('http')) rawImgUrls.push(img);
+      else if (img && typeof img === 'object') {
+        const u = (img as Record<string, unknown>).url ?? (img as Record<string, unknown>).src ?? '';
+        if (typeof u === 'string' && u.startsWith('http')) rawImgUrls.push(u);
+      }
+    }
+  }
+  for (const m of raw.matchAll(/!\[.*?\]\((https?:\/\/[^)\s]+)\)/g)) rawImgUrls.push(m[1].trim());
+  for (const m of raw.matchAll(/https?:\/\/[^\s)"'\\<>]+\.(?:jpg|jpeg|png|webp|gif|avif)(?:[?#][^\s)"'\\<>]*)?/gi)) rawImgUrls.push(m[0].replace(/[.,;:!?)\]]+$/, ''));
+
+  const seenI = new Set<string>();
+  const uniqueImgs: string[] = [];
+  for (const u of rawImgUrls) if (!seenI.has(u)) { seenI.add(u); uniqueImgs.push(u); }
+
+  const mainImage = uniqueImgs[0] ?? '';
+
+  // ── Category ──────────────────────────────────────────────────────────────
+  const category = getField(parsed, ['category', 'category_name', 'type'], [
+    /\*\*Category\*\*[^:]*:\s*(.+)/i,
+  ]);
+
+  // ── Build result following the schema ─────────────────────────────────────
+  if (!name) return null; // Must have at least a name
+
+  return {
+    // Basic Info
+    title: name,
+    price,
+    currency,
+    availability: /in.?stock/i.test(availability) ? true : (availability || null),
+    brand_or_merchant: brand_or_merchant || null,
+    warranty_or_guarantee: warranty_or_guarantee || null,
+
+    // Key Highlights & Specs
+    description: description || (category ? `${category} product${brand_or_merchant ? ` by ${brand_or_merchant}` : ''}` : null),
+    specifications: specifications.length > 0 ? specifications.slice(0, 15) : null,
+
+    // Promotional & Transactional
+    payment_options: payment_options || null,
+    shipping_info: shipping_info || null,
+
+    // Social Proof & Discovery
+    rating_score,
+    review_count,
+    related_items: null, // Not available from single product response
+
+    // Extras for our UI
+    id: productId,
+    in_stock: /in.?stock/i.test(availability),
+    stock: availability,
+    category,
+    vendor: brand_or_merchant,
+    url: pageUrl,
+    image: mainImage,
+    image_url: mainImage,
+    images: uniqueImgs.slice(0, 10),
+  };
+}
+
+/* ── Fetch Kapruka product page HTML and extract structured data ────────────
+   Uses the product URL from search results to fetch the actual Kapruka page.
+   Parses JSON-LD (Schema.org/Product), meta tags, and HTML elements.
+   5-second timeout — never blocks the response. Zero external dependencies. */
+async function fetchKaprukaPage(
+  pageUrl: string,
+  fallbackName: string,
+  fallbackPrice: number,
+  fallbackImage: string,
+  fallbackCategory: string,
+  fallbackInStock: boolean,
+  safeId: string,
+): Promise<Record<string, unknown> | null> {
+  if (!pageUrl || !pageUrl.startsWith('http')) return null;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+  try {
+    const res = await fetch(pageUrl, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'text/html,application/xhtml+xml',
+      },
+    });
+    clearTimeout(timeoutId);
+    if (!res.ok) return null;
+
+    const html = await res.text();
+    if (!html || html.length < 200) return null;
+
+    // ── Helper: strip HTML tags ──────────────────────────────────────────────
+    const stripTags = (s: string): string =>
+      s.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&')
+       .replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&#39;/gi, "'")
+       .replace(/&quot;/gi, '"').replace(/\s+/g, ' ').trim();
+
+    // ── Helper: decode HTML entities for text ────────────────────────────────
+    const decodeHtml = (s: string): string =>
+      s.replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<')
+       .replace(/&gt;/gi, '>').replace(/&#39;/gi, "'").replace(/&quot;/gi, '"');
+
+    // ── 1. Try JSON-LD (Schema.org/Product) — most reliable ──────────────────
+    let ldData: Record<string, unknown> | null = null;
+    const ldMatches = [...html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)];
+    for (const m of ldMatches) {
+      try {
+        const parsed = JSON.parse(m[1].trim());
+        const items = Array.isArray(parsed) ? parsed : [parsed];
+        for (const item of items) {
+          const type = (item as Record<string, unknown>)['@type'];
+          if (typeof type === 'string' && /product/i.test(type)) {
+            ldData = item as Record<string, unknown>;
+            break;
+          }
+          // Check @graph array
+          const graph = (item as Record<string, unknown>)['@graph'];
+          if (Array.isArray(graph)) {
+            for (const g of graph) {
+              const gt = (g as Record<string, unknown>)['@type'];
+              if (typeof gt === 'string' && /product/i.test(gt)) {
+                ldData = g as Record<string, unknown>;
+                break;
+              }
+            }
+          }
+          if (ldData) break;
+        }
+        if (ldData) break;
+      } catch { /* invalid JSON-LD — skip */ }
+    }
+
+    // ── 2. Extract from meta tags ────────────────────────────────────────────
+    const getMeta = (prop: string): string => {
+      // Match content="..." or content='...' — non-greedy, handles both quote types
+      const m = html.match(new RegExp(`<meta[^>]*(?:property|name)=["']${prop}["'][^>]*content=["']([^"']*)["']`, 'i'));
+      if (m) return decodeHtml(m[1]).trim();
+      // Try reversed attribute order: content before property/name
+      const m2 = html.match(new RegExp(`<meta[^>]*content=["']([^"']*)["'][^>]*(?:property|name)=["']${prop}["']`, 'i'));
+      return m2 ? decodeHtml(m2[1]).trim() : '';
+    };
+
+    // ── 3. Extract from HTML elements ────────────────────────────────────────
+    const getEl = (selector: RegExp): string => {
+      const m = html.match(selector);
+      return m ? stripTags(m[1]).trim() : '';
+    };
+
+    // ── Build the structured product following the schema ────────────────────
+
+    // Basic Info
+    let title = '';
+    let price = 0;
+    let currency = 'LKR';
+    let availability: boolean | string = '';
+    let brand = '';
+    let warranty = '';
+
+    if (ldData) {
+      title = String(ldData.name ?? '').trim();
+      const ldPrice = ldData.offers as Record<string, unknown> | undefined;
+      if (ldPrice) {
+        price = Number(ldPrice.price ?? ldPrice.lowPrice ?? 0) || 0;
+        currency = String(ldPrice.priceCurrency ?? 'LKR');
+        availability = String(ldPrice.availability ?? '');
+      }
+      brand = String((ldData.brand as Record<string, unknown> | undefined)?.name ?? ldData.brand ?? '').trim();
+    }
+
+    // Fallback to meta tags
+    if (!title) title = getMeta('og:title') || getEl(/<h1[^>]*>([\s\S]*?)<\/h1>/i) || getMeta('twitter:title');
+    if (!title) title = fallbackName;
+
+    if (!price) {
+      const metaPrice = getMeta('product:price:amount');
+      if (metaPrice) price = Number(metaPrice.replace(/[^0-9.]/g, '')) || 0;
+    }
+    if (!price) {
+      // Try common Kapruka price patterns in HTML
+      const priceMatch = html.match(/(?:LKR|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i);
+      if (priceMatch) price = Number(priceMatch[1].replace(/,/g, '')) || 0;
+    }
+    if (!price) price = fallbackPrice;
+
+    if (!availability) {
+      const metaAvail = getMeta('product:availability');
+      availability = metaAvail || '';
+    }
+    if (!availability) {
+      if (/in.?stock|available/i.test(html)) availability = 'In Stock';
+      else if (/out.?of.?stock|unavailable|sold.?out/i.test(html)) availability = 'Out of Stock';
+    }
+    if (!availability) availability = fallbackInStock ? 'In Stock' : 'Unknown';
+
+    if (!brand) brand = getMeta('product:brand') || '';
+    if (!brand) brand = fallbackCategory;
+
+    // Partner/Seller — Kapruka shows "Kapruka Partner: CELLTRONICS" on product pages
+    const partnerMatch = html.match(/(?:kapruka\s+partner|sold\s+by|seller|vendor|merchant)[:\s]*<\/[^>]+>\s*<[^>]+>\s*([^<]{2,60})/i)
+      || html.match(/(?:kapruka\s+partner|sold\s+by|seller|vendor|merchant)[:\s]*([^<\n]{2,60})/i);
+    if (partnerMatch) {
+      const partnerName = partnerMatch[1].trim().replace(/['"]/g, '');
+      if (partnerName && partnerName.length > 1 && partnerName.length < 50) {
+        brand = partnerName;
+      }
+    }
+
+    // Stock level detail — "Last X remaining", "Only X left", etc.
+    const stockLevelMatch = html.match(/<(?:p|span|div|li|td|small)[^>]*>\s*(?:last|only)\s+(\d+)\s+(?:remaining|left|available|in\s+stock)\s*<\/(?:p|span|div|li|td|small)>/i)
+      || html.match(/(?:last|only)\s+(\d+)\s+(?:remaining|left|available)/i);
+    if (stockLevelMatch) {
+      availability = `In Stock (Last ${stockLevelMatch[1]} remaining)`;
+    }
+
+    // Warranty — scan for warranty/return text in visible elements only
+    const warrantyMatch = html.match(/<(?:p|span|div|li|td)[^>]*>\s*(?:warranty|guarantee|return\s+policy)[^<]*<\/(?:p|span|div|li|td)>/i);
+    if (warrantyMatch) warranty = stripTags(warrantyMatch[0]).trim().slice(0, 80);
+
+    // Key Highlights & Specs
+    let description = '';
+    if (ldData?.description) {
+      description = String(ldData.description).trim();
+    }
+    if (!description) description = getMeta('og:description') || getMeta('description');
+    if (!description) {
+      description = getEl(/<(?:div|p)[^>]*(?:class|id)=["'][^"']*(?:description|product-detail|product-desc|summary)[^"']*["'][^>]*>([\s\S]*?)<\/(?:div|p)>/i);
+    }
+    // Clean description — strip any residual HTML/meta fragments
+    description = description
+      .replace(/content=["'][^"']*["']/gi, '')
+      .replace(/\/?>/g, '')
+      .replace(/<[^>]+>/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!description || description.length < 10) description = `${fallbackCategory} product from Kapruka.`;
+
+    // Specifications — extract from tables, lists, and definition lists
+    const specifications: string[] = [];
+
+    // From <table> elements
+    const tableMatches = [...html.matchAll(/<table[^>]*>([\s\S]*?)<\/table>/gi)];
+    for (const tm of tableMatches) {
+      const rows = [...tm[1].matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
+      for (const row of rows) {
+        const cells = [...row[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)];
+        if (cells.length >= 2) {
+          const label = stripTags(cells[0][1]).trim();
+          const value = stripTags(cells[1][1]).trim();
+          if (label && value && label.length < 50 && value.length < 100) {
+            specifications.push(`${label}: ${value}`);
+          }
+        }
+      }
+    }
+
+    // From <li> elements inside spec/feature lists
+    const listMatches = [...html.matchAll(/<(?:ul|ol)[^>]*(?:class|id)=["'][^"']*(?:spec|feature|detail|attribute|info)[^"']*["'][^>]*>([\s\S]*?)<\/(?:ul|ol)>/gi)];
+    for (const lm of listMatches) {
+      const items = [...lm[1].matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)];
+      for (const item of items) {
+        const text = stripTags(item[1]).trim();
+        if (text && text.length < 120) specifications.push(text);
+      }
+    }
+
+    // From <dt>/<dd> pairs
+    const dtMatches = [...html.matchAll(/<dt[^>]*>([\s\S]*?)<\/dt>\s*<dd[^>]*>([\s\S]*?)<\/dd>/gi)];
+    for (const dm of dtMatches) {
+      const label = stripTags(dm[1]).trim();
+      const value = stripTags(dm[2]).trim();
+      if (label && value) specifications.push(`${label}: ${value}`);
+    }
+
+    // Promotional & Transactional — extract installment plans (MintPay, KokoPay, SAMPATH, etc.)
+    const paymentParts: string[] = [];
+
+    // Method 1: Look for installment plan blocks — "MintPay Cards", "KokoPay Cards", "SAMPATH Cards"
+    // Kapruka shows: "MintPay Cards RS. 177,533 per month 3 months"
+    const installmentBlocks = [...html.matchAll(
+      /<(?:div|span|p|li|td)[^>]*>\s*((?:mintpay|kokopay|sampath|amex|visa|mastercard|commercial|hsbc|citi|boc|peoples|nations|hnb|seylan|dfcc|nsb)\s*(?:cards?|bank)?)\s*<\/[^>]+>\s*<(?:div|span|p|li|td)[^>]*>\s*(?:rs\.?\s*([\d,]+(?:\.\d+)?)\s*(?:per\s+month|\/\s*month|monthly)?)\s*<\/[^>]+>\s*<(?:div|span|p|li|td)[^>]*>\s*(?:(\d+)\s*months?)?\s*<\/[^>]+>/gi,
+    )];
+    for (const m of installmentBlocks) {
+      const planName = stripTags(m[1]).trim();
+      const monthly = m[2] ? Number(m[2].replace(/,/g, '')) : null;
+      const months = m[3] ? Number(m[3]) : null;
+      const parts: string[] = [planName];
+      if (monthly) parts.push(`Rs. ${monthly.toLocaleString('si-LK')}/month`);
+      if (months) parts.push(`${months} months`);
+      paymentParts.push(parts.join(' · '));
+    }
+
+    // Method 2: Broader search for any visible payment offer text
+    if (paymentParts.length === 0) {
+      const paymentMatch = html.match(/<(?:p|span|div|li|td|strong|b)[^>]*>\s*(?:payment\s+offers?\s+available|installment\s+plan|emi\s+available|card\s+offers?)\s*<\/(?:p|span|div|li|td|strong|b)>/i);
+      if (paymentMatch) paymentParts.push(stripTags(paymentMatch[0]).trim());
+    }
+
+    // Method 3: "Payment offers available at checkout"
+    const checkoutOffers = html.match(/<(?:p|span|div|li)[^>]*>\s*payment\s+offers?\s+available\s+at\s+checkout\s*<\/(?:p|span|div|li)>/i);
+    if (checkoutOffers && !paymentParts.some(p => /checkout/i.test(p))) {
+      paymentParts.push('Payment offers available at checkout');
+    }
+
+    let payment_options = paymentParts.length > 0 ? paymentParts.join(' | ') : '';
+
+    let shipping_info = '';
+    // Look for delivery/shipping text in visible elements
+    const shippingPatterns = [
+      /<(?:p|span|div|li|td|small)[^>]*>\s*(?:low\s+cost\s+islandwide\s+delivery|free\s+delivery|islandwide\s+delivery|delivery\s+available|same\s+day\s+delivery|next\s+day\s+delivery|deliver(?:s|y)?\s+(?:within|in|to)\s+[\d\w\s]+)\s*<\/(?:p|span|div|li|td|small)>/i,
+      /<(?:p|span|div|li)[^>]*>\s*(?:delivery|shipping|deliver\s+to|ships?\s+from)\s*[^<]*<\/(?:p|span|div|li)>/i,
+    ];
+    for (const pat of shippingPatterns) {
+      const m = html.match(pat);
+      if (m) { shipping_info = stripTags(m[0]).trim().slice(0, 80); break; }
+    }
+
+    // Social Proof
+    let rating_score: number | null = null;
+    let review_count: number | null = null;
+    if (ldData?.aggregateRating) {
+      const ar = ldData.aggregateRating as Record<string, unknown>;
+      rating_score = Number(ar.ratingValue) || null;
+      review_count = Number(ar.reviewCount ?? ar.ratingCount) || null;
+    }
+    if (rating_score === null) {
+      const ratingMatch = html.match(/(?:rating|stars?)[:\s]*([\d.]+)\s*(?:\/|out\s+of)\s*5/i);
+      if (ratingMatch) rating_score = Number(ratingMatch[1]) || null;
+    }
+    if (review_count === null) {
+      const reviewMatch = html.match(/\((\d+)\s*(?:reviews?|ratings?)\)/i);
+      if (reviewMatch) review_count = Number(reviewMatch[1]) || null;
+    }
+
+    // Related items — from "related products" / "you may also like" sections
+    const related_items: string[] = [];
+    const relatedSection = html.match(/(?:related|you\s+may\s+also\s+like|similar|recommended)[^<]*<\/[^>]+>\s*([\s\S]{0,2000})/i);
+    if (relatedSection) {
+      const relatedNames = [...relatedSection[1].matchAll(/<a[^>]*>([\s\S]*?)<\/a>/gi)]
+        .map(m => stripTags(m[1]).trim())
+        .filter(n => n.length > 3 && n.length < 80 && n !== title);
+      related_items.push(...relatedNames.slice(0, 5));
+    }
+
+    // Images — ONLY actual product images, filter out UI icons, suggested products, etc.
+    const imgUrls: string[] = [];
+    
+    // og:image (usually the main product image)
+    const ogImg = getMeta('og:image');
+    if (ogImg && /product|product-image|partnercentral/i.test(ogImg)) imgUrls.push(ogImg);
+    
+    // JSON-LD images
+    if (ldData?.image) {
+      const ldImgs = Array.isArray(ldData.image) ? ldData.image : [ldData.image];
+      for (const img of ldImgs) {
+        if (typeof img === 'string' && img.startsWith('http')) imgUrls.push(img);
+      }
+    }
+    
+    // <img> tags — ONLY keep images that look like actual product photos
+    // Product image URLs contain: /product-image/, /assets/images/product/, partnercentral product paths
+    // EXCLUDE: bar_icons, shops/images, YouTube, logo, banner, icon, button, placeholder, static UI
+    const isProductImage = (url: string): boolean => {
+      const u = url.toLowerCase();
+      // Must contain product-related path
+      if (!/product-image|\/product\/|partnercentral.*product|assets\/images\/product/i.test(u)) return false;
+      // Must be an actual image extension
+      if (!/\.(?:jpg|jpeg|png|webp)(?:\?|$)/i.test(u)) return false;
+      // Exclude UI elements
+      if (/bar_icons|shops\/images|youtube|logo|banner|icon|button|placeholder|sprite|favicon|social/i.test(u)) return false;
+      return true;
+    };
+    
+    for (const m of html.matchAll(/<img[^>]*src=["'](https?:\/\/[^"']+)["']/gi)) {
+      const url = m[1];
+      if (isProductImage(url)) imgUrls.push(url);
+    }
+    
+    // Also check data-src (lazy-loaded images)
+    for (const m of html.matchAll(/<img[^>]*data-src=["'](https?:\/\/[^"']+)["']/gi)) {
+      const url = m[1];
+      if (isProductImage(url)) imgUrls.push(url);
+    }
+    
+    // Deduplicate — also dedupe by the underlying image filename (different sizes of same image)
+    const seenImg = new Set<string>();
+    const seenBaseName = new Set<string>();
+    const uniqueImgs: string[] = [];
+    for (const u of imgUrls) {
+      const full = u.startsWith('http') ? u : `https://www.kapruka.com${u}`;
+      // Extract base filename to dedupe different sizes (width=700 vs width=64)
+      const baseName = full.replace(/.*\//, '').replace(/\?.*$/, '').toLowerCase();
+      if (seenImg.has(full)) continue;
+      if (seenBaseName.has(baseName)) continue;
+      seenImg.add(full);
+      seenBaseName.add(baseName);
+      uniqueImgs.push(full);
+    }
+
+    const mainImage = uniqueImgs[0] || fallbackImage;
+
+    if (!title) return null;
+
+    const result: Record<string, unknown> = {
+      // Basic Info
+      title,
+      price: price || fallbackPrice,
+      currency,
+      availability: /in.?stock/i.test(String(availability)) ? true : (availability || null),
+      brand_or_merchant: brand || null,
+      warranty_or_guarantee: warranty || null,
+
+      // Key Highlights & Specs
+      description,
+      specifications: specifications.length > 0 ? specifications.slice(0, 15) : null,
+
+      // Promotional & Transactional
+      payment_options: payment_options || null,
+      shipping_info: shipping_info || null,
+
+      // Social Proof & Discovery
+      rating_score,
+      review_count,
+      related_items: related_items.length > 0 ? related_items : null,
+
+      // Extras for our UI
+      id: safeId,
+      name: title,
+      in_stock: /in.?stock/i.test(String(availability)),
+      stock: String(availability),
+      category: fallbackCategory,
+      vendor: brand,
+      url: pageUrl,
+      image: mainImage,
+      image_url: mainImage,
+      images: uniqueImgs.slice(0, 10),
+      summary: description.slice(0, 200),
+    };
+
+    console.log(`[product] ${safeId} → page fetch OK: "${title}" | specs=${specifications.length} images=${uniqueImgs.length} rating=${rating_score}`);
+    return result;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === 'AbortError') {
+      console.log(`[product] ${safeId} → page fetch timed out (5s)`);
+    } else {
+      console.warn(`[product] ${safeId} → page fetch error:`, err);
+    }
+    return null;
+  }
+}
+
 export async function POST(req: NextRequest) {
   const ip = req.headers.get('x-forwarded-for') ?? 'unknown';
   if (!rateLimit(ip, 120, 60_000)) {
@@ -257,15 +858,26 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── FALLBACK: search by product NAME to get brief details ──────────────
-    // When get_product fails (CATSYM ID, delisted, parse error, garbage),
-    // use kapruka_search_products with the product NAME (passed by client)
-    // to find the product in search results. Only match by exact product ID
-    // to avoid returning the wrong product.
+    // ── FALLBACK 1: Structured extraction from raw MCP response ─────────────
+    // Zero extra calls — parses whatever we already have (JSON or Markdown)
+    // following the detailed schema. Runs before search fallback.
+    if (!product && raw && raw.length > 20) {
+      console.log(`[product] ${safeId} → trying structured extraction fallback`);
+      const structured = extractStructuredProduct(raw, safeId);
+      if (structured) {
+        product = structured;
+        cacheSet(key, product, TTL.PRODUCT);
+        console.log(`[product] ${safeId} → structured extraction OK: "${structured.title}" LKR ${structured.price}`);
+      }
+    }
+
+    // ── FALLBACK 2: Search by name → fetch product page HTML → extract ──────
+    // 1. Search by product name to get the valid Kapruka product URL
+    // 2. Fetch that URL and parse the HTML for structured data (schema)
+    // 3. If page fetch fails, use search result data directly as last resort
     if (!product && hintName) {
-      console.log(`[product] ${safeId} → trying search fallback with name: "${hintName}"`);
+      console.log(`[product] ${safeId} → trying search + page fetch fallback with name: "${hintName}"`);
       try {
-        // Use the product name as the search query — NOT the product ID
         const searchQ = hintName.slice(0, 80);
 
         const sr = await fetch(MCP, {
@@ -289,50 +901,112 @@ export async function POST(req: NextRequest) {
         const sRaw = sData?.result?.content?.[0]?.text ?? '';
 
         if (sRaw) {
-          try {
-            const sParsed = JSON.parse(sRaw) as { results?: Array<Record<string, unknown>> };
-            const results = sParsed.results ?? [];
+            try {
+              const sParsed = JSON.parse(sRaw) as { results?: Array<Record<string, unknown>> };
+              const results = sParsed.results ?? [];
 
-            // ONLY match by exact product ID — never use first result as fallback
-            // This prevents showing "LED Fog Light" when user clicked "iPhone 16 Pro"
-            const match = results.find(r => String(r.id ?? '') === safeId);
+              // ── Match strategy (in priority order) ──────────────────────────
+              let match = results.find(r => String(r.id ?? '') === safeId);
+              let matchReason = 'exact ID';
 
-            if (match) {
-              const mName = String(match.name ?? match.id ?? `Product ${safeId}`);
-              const mPrice = match.price && typeof match.price === 'object'
-                ? Number((match.price as Record<string, unknown>).amount ?? 0)
-                : Number(match.price ?? 0);
-              const imageUrl = String(match.image_url ?? '');
-              const productUrl = String(match.url ?? '');
-              const mCategory = match.category && typeof match.category === 'object'
-                ? String((match.category as Record<string, unknown>).name ?? '')
-                : String(match.category ?? '');
-              const mInStock = Boolean(match.in_stock ?? true);
+              if (!match) {
+                match = results.find(r => String(r.id ?? '').toLowerCase() === safeId.toLowerCase());
+                if (match) matchReason = 'case-insensitive ID';
+              }
 
-              product = {
-                id: safeId,
-                name: mName,
-                price: mPrice,
-                in_stock: mInStock,
-                stock: mInStock ? 'In Stock' : 'Out of Stock',
-                category: mCategory,
-                url: productUrl || `https://www.kapruka.com/products/?q=${encodeURIComponent(mName)}`,
-                image: imageUrl,
-                image_url: imageUrl,
-                images: imageUrl ? [imageUrl] : [],
-                description: `${mCategory} product available on Kapruka. Tap "View on Kapruka" for full details.`,
-                summary: `${mCategory} product. Price: LKR ${mPrice.toLocaleString('si-LK')}.`,
-              };
+              if (!match && results.length > 0) {
+                const tokenize = (s: string): string[] =>
+                  s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(t => t.length > 1);
 
-              cacheSet(key, product, TTL.SEARCH);
-              console.log(`[product] ${safeId} → search fallback OK: "${mName}" LKR ${mPrice}`);
-            } else {
-              console.log(`[product] ${safeId} → search fallback: ID not found in ${results.length} results`);
+                const queryTokens = tokenize(hintName);
+                const queryNums = queryTokens.filter(t => /\d/.test(t));
+
+                let bestScore = -1;
+                for (const r of results) {
+                  const rName = String(r.name ?? '');
+                  const rTokens = tokenize(rName);
+                  const rNums = rTokens.filter(t => /\d/.test(t));
+
+                  let score = 0;
+                  for (const qt of queryTokens) {
+                    if (rTokens.includes(qt)) score += 2;
+                    else if (rTokens.some(rt => rt.includes(qt) || qt.includes(rt))) score += 1;
+                  }
+
+                  for (const qn of queryNums) {
+                    if (rNums.includes(qn)) score += 5;
+                    else if (rNums.length > 0) score -= 3;
+                  }
+
+                  const overlap = queryTokens.filter(qt => rTokens.includes(qt)).length;
+                  score += overlap / Math.max(queryTokens.length, rTokens.length) * 3;
+
+                  if (score > bestScore) {
+                    bestScore = score;
+                    match = r;
+                    matchReason = `fuzzy name (score=${score.toFixed(1)})`;
+                  }
+                }
+
+                if (match) {
+                  console.log(`[product] ${safeId} → matched by ${matchReason}: "${match.name}"`);
+                }
+              }
+
+              if (match) {
+                const mName = String(match.name ?? match.id ?? `Product ${safeId}`);
+                const mPrice = match.price && typeof match.price === 'object'
+                  ? Number((match.price as Record<string, unknown>).amount ?? 0)
+                  : Number(match.price ?? 0);
+                const imageUrl = String(match.image_url ?? '');
+                const productUrl = String(match.url ?? '');
+                const mCategory = match.category && typeof match.category === 'object'
+                  ? String((match.category as Record<string, unknown>).name ?? '')
+                  : String(match.category ?? '');
+                const mInStock = Boolean(match.in_stock ?? true);
+
+                // ── FALLBACK 2a: Fetch the actual Kapruka product page ──────────
+                // Use the valid product URL from search results to fetch the
+                // real page HTML and extract structured data per the schema.
+                // NEVER retry get_product — only fetch the page URL.
+                if (productUrl && productUrl.startsWith('http')) {
+                  console.log(`[product] ${safeId} → fetching page: ${productUrl}`);
+                  const pageProduct = await fetchKaprukaPage(
+                    productUrl, mName, mPrice, imageUrl, mCategory, mInStock, safeId,
+                  );
+                  if (pageProduct) {
+                    product = pageProduct;
+                    cacheSet(key, product, TTL.PRODUCT);
+                    console.log(`[product] ${safeId} → page fetch fallback OK: "${pageProduct.name}"`);
+                  }
+                }
+
+                // ── FALLBACK 2b: Use search result data directly (last resort) ──
+                if (!product) {
+                  product = {
+                    id: safeId,
+                    name: mName,
+                    price: mPrice,
+                    in_stock: mInStock,
+                    stock: mInStock ? 'In Stock' : 'Out of Stock',
+                    category: mCategory,
+                    url: productUrl || `https://www.kapruka.com/products/?q=${encodeURIComponent(mName)}`,
+                    image: imageUrl,
+                    image_url: imageUrl,
+                    images: imageUrl ? [imageUrl] : [],
+                    description: `${mCategory} product available on Kapruka. Tap "View on Kapruka" for full details.`,
+                    summary: `${mCategory} product. Price: LKR ${mPrice.toLocaleString('si-LK')}.`,
+                  };
+                  cacheSet(key, product, TTL.SEARCH);
+                  console.log(`[product] ${safeId} → search data fallback OK: "${mName}" LKR ${mPrice}`);
+                }
+              } else {
+                console.log(`[product] ${safeId} → search fallback: no results returned`);
+              }
+            } catch {
+              console.warn(`[product] ${safeId} → search fallback parse failed`);
             }
-          } catch {
-            console.warn(`[product] ${safeId} → search fallback parse failed`);
           }
-        }
       } catch (searchErr) {
         console.warn(`[product] ${safeId} → search fallback error:`, searchErr);
       }

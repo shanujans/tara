@@ -148,9 +148,9 @@ export default function LoginModal({ onDone }: LoginModalProps) {
     if (!ctx) return;
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    const DPR = Math.min(window.devicePixelRatio || 1, 2);
-    const COUNT = 140;            // ← more stars
-    const LINK_DIST = 160;        // ← longer connections
+    const DPR = 1;
+    const COUNT = 60;            // reduced from 140
+    const LINK_DIST = 120;        // shorter connections = fewer line draws
     let particles: Particle[] = [];
     let raf = 0;
     let w = 0, h = 0;
@@ -221,8 +221,8 @@ export default function LoginModal({ onDone }: LoginModalProps) {
         const [r, g, b] = PARTICLE_COLOR[p.kind];
         ctx.beginPath();
         ctx.fillStyle = `rgba(${r},${g},${b},${tw.toFixed(3)})`;
-        ctx.shadowColor = `rgba(${r},${g},${b},${(tw * 0.9).toFixed(3)})`;
-        ctx.shadowBlur = p.r + 3;   // ← larger, glowing aura
+        ctx.shadowColor = `rgba(${r},${g},${b},${(tw * 0.6).toFixed(3)})`;
+        ctx.shadowBlur = p.r + 1;   // reduced from +3
         ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
         ctx.fill();
       }

@@ -40,8 +40,8 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
   const [fadingOut, setFadingOut] = useState(false);
   // Lazy initializers run synchronously during the first render — stars/sparkles
   // exist in the DOM from frame one, not a render cycle later via useEffect.
-  const [stars] = useState(() => generateStars(70));
-  const [sparkles] = useState(() => generateDots(35));
+  const [stars] = useState(() => generateStars(40));
+  const [sparkles] = useState(() => generateDots(20));
   const [showFallback, setShowFallback] = useState(true); // static image until sprite ready
   // True only once the cartoon image has actually finished loading (or failed).
   // Ring, character, wordmark and badge all wait on this so they appear together
@@ -53,8 +53,8 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
   // 2s before fading, instead of eating that time out of the display window.
   useEffect(() => {
     if (!assetsReady) return;
-    const t1 = setTimeout(() => setFadingOut(true), 2000);
-    const t2 = setTimeout(() => onDone(), 2750);
+    const t1 = setTimeout(() => setFadingOut(true), 1200);
+    const t2 = setTimeout(() => onDone(), 1900);
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
@@ -104,9 +104,9 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
       camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
       camera.position.set(0, 0, 5);
 
-      renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+      renderer = new THREE.WebGLRenderer({ alpha: true, antialias: false });
       renderer.setSize(width, height);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setPixelRatio(1);
       renderer.outputColorSpace = THREE.SRGBColorSpace;
 
       const ambientLight = new THREE.AmbientLight(0xffffff, 2.0);

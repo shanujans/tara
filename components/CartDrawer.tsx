@@ -4,6 +4,7 @@ import { useCart } from '@/context/CartContext';
 import { Lang, STRINGS } from '@/lib/strings';
 import type { DeliveryOption } from '@/lib/mcp';
 import InvoiceTemplate, { type InvoiceData } from './InvoiceTemplate';
+import { getOrderCoreHash, getCachedPdf, setCachedPdf, hasCachedPdf } from '@/lib/pdfCache';
 
 const PLACEHOLDER = 'https://placehold.co/48x48/110b2e/6b4dab?text=?';
 const OCCASIONS = ['Birthday','Anniversary','Wedding','New Baby','Get Well','Thank You','Festival','Just Because'];
@@ -83,13 +84,83 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
     window.addEventListener('tara:open-payment', handler);
     return () => window.removeEventListener('tara:open-payment', handler);
   }, []);
-  /* Invoice PDF state */
+/* Invoice PDF state */
   const [invoiceSnap,  setInvoiceSnap]  = useState<InvoiceData | null>(null);
   const [pendingPdf,   setPendingPdf]   = useState<InvoiceData | null>(null);
   const [pdfLoading,   setPdfLoading]   = useState(false);
-  const [pdfAction,    setPdfAction]    = useState<'download' | 'share'>('download'); // NEW
+  const [pdfAction,    setPdfAction]    = useState<'download' | 'share'>('download');
+  const [pdfDownloaded, setPdfDownloaded] = useState(false);
+  const [pdfShared, setPdfShared] = useState(false);
   const invoiceRef  = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Reset when order changes
+  useEffect(() => { setPdfDownloaded(false); setPdfShared(false); }, [invoiceSnap?.orderId]);
+
+  // Use shared PDF cache from lib/pdfCache.ts
+  const usePdfBlob = useCallback(async (action: 'download' | 'share') => {
+    if (!invoiceSnap) return;
+    const currentHash = getOrderCoreHash({
+      orderId: invoiceSnap.orderId,
+      items: invoiceSnap.items.map(i => ({ id: i.id, qty: i.qty, price: i.price })),
+      recipientName: invoiceSnap.recipientName,
+      recipientPhone: invoiceSnap.recipientPhone,
+      address: invoiceSnap.address,
+      city: invoiceSnap.city,
+      deliveryDate: invoiceSnap.deliveryDate,
+      deliveryFee: invoiceSnap.deliveryFee ?? 0,
+      grandTotal: invoiceSnap.grandTotal,
+      occasion: invoiceSnap.occasion,
+      giftMessage: invoiceSnap.giftMessage,
+      specialInstructions: invoiceSnap.specialInstructions,
+      checkoutUrl: invoiceSnap.checkoutUrl,
+    });
+
+    // Check shared cache first
+    if (hasCachedPdf(invoiceSnap.orderId, currentHash)) {
+      const cached = getCachedPdf(invoiceSnap.orderId)!;
+      const file = new File([cached.blob], `kapruka-order-${invoiceSnap.orderId}.pdf`, { type: 'application/pdf' });
+      if (action === 'share') {
+        try {
+          if (navigator.canShare?.({ files: [file] })) {
+            await navigator.share({ files: [file], title: `Kapruka Order ${invoiceSnap.orderId}`, text: 'Your Kapruka order details — tap to open or forward.' });
+          } else {
+            const url = URL.createObjectURL(cached.blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = `kapruka-order-${invoiceSnap.orderId}.pdf`;
+            document.body.appendChild(a); a.click(); a.remove();
+            URL.revokeObjectURL(url);
+          }
+        } catch {
+          const url = URL.createObjectURL(cached.blob);
+          const a = document.createElement('a');
+          a.href = url; a.download = `kapruka-order-${invoiceSnap.orderId}.pdf`;
+          document.body.appendChild(a); a.click(); a.remove();
+          URL.revokeObjectURL(url);
+        }
+      } else {
+        const url = URL.createObjectURL(cached.blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `kapruka-order-${invoiceSnap.orderId}.pdf`;
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      }
+      return; // Used cache
+    }
+
+    // Cache miss — fetch gift card, then generate
+    setPdfAction(action);
+    setPdfLoading(true);
+    let giftCardImage: string | undefined;
+    try {
+      const r = await fetch('/api/generate-gift-card', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ occasion: invoiceSnap.occasion ?? '', recipient: invoiceSnap.recipientName ?? '' }),
+      });
+      if (r.ok) { const d = await r.json() as { image?: string }; if (d.image) giftCardImage = d.image; }
+    } catch { /* ignore */ }
+    setPendingPdf({ ...invoiceSnap, giftCardImage });
+  }, [invoiceSnap]);
 
   /* ── Invoice PDF generation ────────────────────────────────────────────── */
   // Runs after React commits the hidden InvoiceTemplate to the DOM
@@ -121,9 +192,27 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
           const linkTop = pxH * 0.72;
           pdf.link(20, linkTop, pxW - 40, pxH - linkTop - 40, { url: pendingPdf.checkoutUrl });
         }
-        // ── NEW: share or download based on pdfAction ──────────────────────
+        // Generate blob and store in shared cache
+        const blob = pdf.output('blob');
+        const dataHash = getOrderCoreHash({
+          orderId: pendingPdf.orderId,
+          items: pendingPdf.items.map(i => ({ id: i.id, qty: i.qty, price: i.price })),
+          recipientName: pendingPdf.recipientName,
+          recipientPhone: pendingPdf.recipientPhone,
+          address: pendingPdf.address,
+          city: pendingPdf.city,
+          deliveryDate: pendingPdf.deliveryDate,
+          deliveryFee: pendingPdf.deliveryFee ?? 0,
+          grandTotal: pendingPdf.grandTotal,
+          occasion: pendingPdf.occasion,
+          giftMessage: pendingPdf.giftMessage,
+          specialInstructions: pendingPdf.specialInstructions,
+          checkoutUrl: pendingPdf.checkoutUrl,
+        });
+        setCachedPdf(pendingPdf.orderId, blob, dataHash);
+
+        // ── share or download based on pdfAction ──────────────────────
         if (pdfAction === 'share') {
-          const blob = pdf.output('blob');
           const file = new File(
             [blob],
             `kapruka-order-${pendingPdf.orderId}.pdf`,
@@ -153,7 +242,7 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
       }
     })();
     return () => { cancelled = true; };
-  }, [pendingPdf, pdfAction]); // added pdfAction dependency
+  }, [pendingPdf, pdfAction]);
 
   const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
   const maxDate  = new Date(); maxDate.setDate(maxDate.getDate() + 30);
@@ -497,30 +586,7 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
               {invoiceSnap && (
                 <div className="w-full space-y-2">
                   <button
-                    onClick={() => {
-                      if (!invoiceSnap) return;
-                      setPdfAction('download');
-                      setPdfLoading(true);
-                      // Auto-generate gift card, then trigger PDF
-                      (async () => {
-                        let giftCardImage: string | undefined;
-                        try {
-                          const r = await fetch('/api/generate-gift-card', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              occasion:  invoiceSnap.occasion  ?? '',
-                              recipient: invoiceSnap.recipientName ?? '',
-                            }),
-                          });
-                          if (r.ok) {
-                            const d = await r.json() as { image?: string };
-                            if (d.image) giftCardImage = d.image;
-                          }
-                        } catch { /* PDF still generates — gift card slot shows placeholder */ }
-                        setPendingPdf({ ...invoiceSnap, giftCardImage });
-                      })();
-                    }}
+                    onClick={() => { usePdfBlob('download'); setPdfDownloaded(true); }}
                     disabled={pdfLoading}
                     className="w-full py-3 rounded-xl text-sm font-semibold transition-all"
                     style={{
@@ -531,35 +597,12 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
                       opacity: pdfLoading ? 0.7 : 1,
                       fontFamily: 'var(--font-body)',
                     }}>
-                    {pdfLoading && pdfAction === 'download' ? '⏳ Generating PDF…' : '📄 Download AI Receipt'}
+                    {pdfLoading && pdfAction === 'download' ? '⏳ Generating PDF…' : pdfDownloaded ? '📄 Re-download AI Receipt' : '📄 Download AI Receipt'}
                   </button>
 
                   {/* Share Order Info (Web Share API) */}
                   <button
-                    onClick={() => {
-                      if (!invoiceSnap) return;
-                      setPdfAction('share');
-                      setPdfLoading(true);
-                      // Same gift card generation for share
-                      (async () => {
-                        let giftCardImage: string | undefined;
-                        try {
-                          const r = await fetch('/api/generate-gift-card', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              occasion:  invoiceSnap.occasion  ?? '',
-                              recipient: invoiceSnap.recipientName ?? '',
-                            }),
-                          });
-                          if (r.ok) {
-                            const d = await r.json() as { image?: string };
-                            if (d.image) giftCardImage = d.image;
-                          }
-                        } catch { /* */ }
-                        setPendingPdf({ ...invoiceSnap, giftCardImage });
-                      })();
-                    }}
+                    onClick={() => { usePdfBlob('share'); setPdfShared(true); }}
                     disabled={pdfLoading}
                     className="w-full py-3 rounded-xl text-sm font-semibold transition-all"
                     style={{
@@ -570,7 +613,7 @@ export default function CartDrawer({ open, onClose, lang }: CartDrawerProps) {
                       opacity: pdfLoading ? 0.7 : 1,
                       fontFamily: 'var(--font-body)',
                     }}>
-                    {pdfLoading && pdfAction === 'share' ? '⏳ Preparing…' : '↗ Share Order Info'}
+                    {pdfLoading && pdfAction === 'share' ? '⏳ Preparing…' : pdfShared ? '↗ Re-share Order Info' : '↗ Share Order Info'}
                   </button>
                 </div>
               )}

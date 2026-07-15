@@ -10,6 +10,10 @@ interface FullProduct {
   id: string; name: string; price: number; image?: string; image_url?: string;
   url?: string; description?: string; summary?: string; in_stock?: boolean;
   stock?: string | boolean; category?: string; shipping?: string; images?: string[];
+  specifications?: string[] | null; rating_score?: number | null;
+  review_count?: number | null; brand_or_merchant?: string | null;
+  warranty_or_guarantee?: string | null; payment_options?: string | null;
+  shipping_info?: string | null; title?: string;
 }
 interface Msg { role: 'user' | 'assistant'; content: string; }
 
@@ -337,10 +341,87 @@ export default function ProductModal({ productId, productUrl, lang, onClose, all
                         </span>
                       </div>
                       {desc && <p style={{ fontSize:13, lineHeight:1.65, color:'var(--c-on-surface-variant)' }}>{desc}</p>}
+
+                      {/* Rating + Reviews */}
+                      {(product.rating_score || product.review_count) && (
+                        <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+                          {product.rating_score && (
+                            <span style={{ display:'flex', alignItems:'center', gap:4, fontSize:13, fontWeight:700, color:'#fbbf24' }}>
+                              {'★'.repeat(Math.round(product.rating_score))}{'☆'.repeat(5 - Math.round(product.rating_score))}
+                              <span style={{ color:'var(--c-on-surface-variant)', fontWeight:500, marginLeft:2 }}>{product.rating_score.toFixed(1)}</span>
+                            </span>
+                          )}
+                          {product.review_count && (
+                            <span style={{ fontSize:12, color:'var(--c-on-surface-variant)' }}>{product.review_count} review{product.review_count !== 1 ? 's' : ''}</span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Brand + Warranty */}
+                      {(product.brand_or_merchant || product.warranty_or_guarantee) && (
+                        <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                          {product.brand_or_merchant && (
+                            <span style={{ fontSize:11, fontWeight:600, padding:'3px 10px', borderRadius:20, background:'rgba(215,186,255,0.08)', border:'1px solid rgba(215,186,255,0.18)', color:'var(--c-primary)' }}>
+                              🏷 {product.brand_or_merchant}
+                            </span>
+                          )}
+                          {product.warranty_or_guarantee && (
+                            <span style={{ fontSize:11, fontWeight:600, padding:'3px 10px', borderRadius:20, background:'rgba(74,222,128,0.08)', border:'1px solid rgba(74,222,128,0.18)', color:'#4ade80' }}>
+                              🛡 {product.warranty_or_guarantee}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Specifications */}
+                      {product.specifications && product.specifications.length > 0 && (
+                        <div>
+                          <p style={{ fontSize:11, fontWeight:700, color:'var(--c-outline)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>Specifications</p>
+                          <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                            {product.specifications.map((spec, i) => (
+                              <div key={i} style={{ display:'flex', gap:8, fontSize:12, lineHeight:1.5 }}>
+                                <span style={{ color:'var(--c-on-surface-variant)', flexShrink:0 }}>•</span>
+                                <span style={{ color:'var(--c-on-surface)' }}>{spec}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Shipping info from page fetch */}
+                      {product.shipping_info && !product.shipping && (
+                        <div style={{ display:'flex', gap:8, borderRadius:12, padding:12, ...surface }}>
+                          <span style={{ fontSize:16 }}>🚚</span>
+                          <p style={{ fontSize:12, lineHeight:1.55, color:'var(--c-on-surface-variant)' }}>{product.shipping_info}</p>
+                        </div>
+                      )}
                       {product.shipping && (
                         <div style={{ display:'flex', gap:8, borderRadius:12, padding:12, ...surface }}>
                           <span style={{ fontSize:16 }}>🚚</span>
                           <p style={{ fontSize:12, lineHeight:1.55, color:'var(--c-on-surface-variant)' }}>{product.shipping}</p>
+                        </div>
+                      )}
+
+                      {/* Payment options — installment plans */}
+                      {product.payment_options && (
+                        <div style={{ borderRadius:12, padding:12, background:'rgba(251,191,36,0.06)', border:'1px solid rgba(251,191,36,0.15)' }}>
+                          <div style={{ display:'flex', gap:8, marginBottom: product.payment_options.includes('|') ? 8 : 0 }}>
+                            <span style={{ fontSize:16 }}>💳</span>
+                            <p style={{ fontSize:12, lineHeight:1.55, color:'var(--c-on-surface-variant)', margin:0 }}>
+                              {product.payment_options.includes('|')
+                                ? 'Installment Plans Available:'
+                                : product.payment_options}
+                            </p>
+                          </div>
+                          {product.payment_options.includes('|') && (
+                            <div style={{ display:'flex', flexDirection:'column', gap:4, marginLeft:24 }}>
+                              {product.payment_options.split('|').map((plan, i) => (
+                                <span key={i} style={{ fontSize:11, fontWeight:600, color:'#fbbf24', lineHeight:1.4 }}>
+                                  {plan.trim()}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )}
 

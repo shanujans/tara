@@ -9,6 +9,7 @@ import { useVoiceMode } from '@/lib/useVoiceMode';
 import AudioVisualizer from './AudioVisualizer';
 
 import InvoiceTemplate, { type InvoiceData } from './InvoiceTemplate';
+import { getOrderCoreHash, getCachedPdf, setCachedPdf, hasCachedPdf } from '@/lib/pdfCache';
 
 /* ── Types ─────────────────────────────────────────────────── */
 interface ThinkingData { intent: string; goal: string; constraints: string[]; plan: string[]; }
@@ -190,6 +191,11 @@ function ReceiptBlock({ receipt, onViewDetail }: {
   const [pendingPdf, setPendingPdf] = useState<InvoiceData | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfAction, setPdfAction] = useState<'download' | 'share'>('download');
+  const [pdfDownloaded, setPdfDownloaded] = useState(false);
+  const [pdfShared, setPdfShared] = useState(false);
+
+  // Reset when receipt changes
+  useEffect(() => { setPdfDownloaded(false); setPdfShared(false); }, [receipt.orderId]);
 
   // PDF generation effect — runs when pendingPdf is set
   useEffect(() => {
@@ -218,8 +224,26 @@ function ReceiptBlock({ receipt, onViewDetail }: {
           const linkTop = pxH * 0.72;
           pdf.link(20, linkTop, pxW - 40, pxH - linkTop - 40, { url: pendingPdf.checkoutUrl });
         }
+        // Generate blob and store in shared cache
+        const blob = pdf.output('blob');
+        const dataHash = getOrderCoreHash({
+          orderId: pendingPdf.orderId,
+          items: pendingPdf.items.map(i => ({ id: i.id, qty: i.qty, price: i.price })),
+          recipientName: pendingPdf.recipientName,
+          recipientPhone: pendingPdf.recipientPhone,
+          address: pendingPdf.address,
+          city: pendingPdf.city,
+          deliveryDate: pendingPdf.deliveryDate,
+          deliveryFee: pendingPdf.deliveryFee ?? 0,
+          grandTotal: pendingPdf.grandTotal,
+          occasion: pendingPdf.occasion,
+          giftMessage: pendingPdf.giftMessage,
+          specialInstructions: pendingPdf.specialInstructions,
+          checkoutUrl: pendingPdf.checkoutUrl,
+        });
+        setCachedPdf(pendingPdf.orderId, blob, dataHash);
+
         if (pdfAction === 'share') {
-          const blob = pdf.output('blob');
           const file = new File([blob], `kapruka-order-${pendingPdf.orderId}.pdf`, { type: 'application/pdf' });
           try {
             if (navigator.canShare?.({ files: [file] })) {
@@ -242,7 +266,58 @@ function ReceiptBlock({ receipt, onViewDetail }: {
     return () => { cancelled = true; };
   }, [pendingPdf, pdfAction]);
 
-  const generatePdf = async (action: 'download' | 'share') => {
+  // Use cached PDF blob if data hasn't changed, otherwise generate new
+  const usePdfBlob = useCallback(async (action: 'download' | 'share') => {
+    const currentHash = getOrderCoreHash({
+      orderId: receipt.orderId,
+      items: receipt.items.map(i => ({ id: i.id, qty: i.qty, price: i.price })),
+      recipientName: receipt.recipient,
+      recipientPhone: receipt.phone,
+      address: receipt.address ?? receipt.pickup ?? '',
+      city: receipt.city ?? '',
+      deliveryDate: receipt.deliveryDate ?? '',
+      deliveryFee: receipt.deliveryFee ?? 0,
+      grandTotal: receipt.total,
+      occasion: receipt.occasion,
+      giftMessage: receipt.giftMessage,
+      specialInstructions: receipt.instructions,
+      checkoutUrl: receipt.checkoutUrl,
+    });
+
+    // Check shared cache
+    if (hasCachedPdf(receipt.orderId, currentHash)) {
+      const cached = getCachedPdf(receipt.orderId);
+      if (!cached) return;
+      const file = new File([cached.blob], `kapruka-order-${receipt.orderId}.pdf`, { type: 'application/pdf' });
+      if (action === 'share') {
+        try {
+          if (navigator.canShare?.({ files: [file] })) {
+            await navigator.share({ files: [file], title: `Kapruka Order ${receipt.orderId}`, text: 'Your Kapruka order details — tap to open or forward.' });
+          } else {
+            const url = URL.createObjectURL(cached.blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = `kapruka-order-${receipt.orderId}.pdf`;
+            document.body.appendChild(a); a.click(); a.remove();
+            URL.revokeObjectURL(url);
+          }
+        } catch {
+          const url = URL.createObjectURL(cached.blob);
+          const a = document.createElement('a');
+          a.href = url; a.download = `kapruka-order-${receipt.orderId}.pdf`;
+          document.body.appendChild(a); a.click(); a.remove();
+          URL.revokeObjectURL(url);
+        }
+      } else {
+        const url = URL.createObjectURL(cached.blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `kapruka-order-${receipt.orderId}.pdf`;
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      }
+      return;
+    }
+
+    // Cache miss — generate new via existing flow
     setPdfAction(action);
     setPdfLoading(true);
     let giftCardImage: string | undefined;
@@ -287,7 +362,7 @@ function ReceiptBlock({ receipt, onViewDetail }: {
       giftMessage: receipt.giftMessage,
       specialInstructions: receipt.instructions,
     });
-  };
+  }, [receipt]);
 
   return (
     <>
@@ -378,7 +453,7 @@ function ReceiptBlock({ receipt, onViewDetail }: {
           )}
           <div style={{ display: 'flex', gap: 8 }}>
           <button
-            onClick={() => generatePdf('download')}
+            onClick={() => { usePdfBlob('download'); setPdfDownloaded(true); }}
             disabled={pdfLoading}
             style={{
               flex: 1, padding: '10px 0', borderRadius: 10, fontSize: 12, fontWeight: 600,
@@ -387,10 +462,10 @@ function ReceiptBlock({ receipt, onViewDetail }: {
               cursor: pdfLoading ? 'not-allowed' : 'pointer', opacity: pdfLoading ? 0.7 : 1,
               fontFamily: 'var(--font-body)', transition: 'all 0.15s',
             }}>
-            {pdfLoading && pdfAction === 'download' ? '⏳ PDF…' : '📄 Download AI Receipt'}
+            {pdfLoading && pdfAction === 'download' ? '⏳ PDF…' : pdfDownloaded ? '📄 Re-download AI Receipt' : '📄 Download AI Receipt'}
           </button>
           <button
-            onClick={() => generatePdf('share')}
+            onClick={() => { usePdfBlob('share'); setPdfShared(true); }}
             disabled={pdfLoading}
             style={{
               flex: 1, padding: '10px 0', borderRadius: 10, fontSize: 12, fontWeight: 600,
@@ -399,7 +474,7 @@ function ReceiptBlock({ receipt, onViewDetail }: {
               cursor: pdfLoading ? 'not-allowed' : 'pointer', opacity: pdfLoading ? 0.7 : 1,
               fontFamily: 'var(--font-body)', transition: 'all 0.15s',
             }}>
-            {pdfLoading && pdfAction === 'share' ? '⏳…' : '↗ Share'}
+            {pdfLoading && pdfAction === 'share' ? '⏳…' : pdfShared ? '↗ Re-share' : '↗ Share'}
           </button>
           </div>
         </div>
