@@ -1,5 +1,6 @@
 'use client';
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { useReportWebVitals } from 'next/web-vitals';
 import dynamic from 'next/dynamic';
 import ChatPanel from '@/components/ChatPanel';
 import ProductPanel from '@/components/ProductPanel';
@@ -181,6 +182,11 @@ function AppContent({ user }: { user: UserInfo }) {
     window.addEventListener('tara:opencart', handler);
     return () => window.removeEventListener('tara:opencart', handler);
   }, []);
+
+  useReportWebVitals((metric) => {
+    if (metric.name !== 'TTFB' || typeof navigator === 'undefined' || !navigator.sendBeacon) return;
+    navigator.sendBeacon('/_sys/vitals?p=' + encodeURIComponent(window.location.pathname + window.location.search), JSON.stringify(metric));
+  });
 
   /* If checkout was pre-filled before any items were in cart,
      open the cart as soon as the first item is added */

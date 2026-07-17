@@ -1,6 +1,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  async rewrites() {
+    const vitalsEndpoint = process.env.VITALS_ENDPOINT;
+    if (!vitalsEndpoint) return [];
+    return [
+      { source: '/_sys/vitals', destination: vitalsEndpoint, basePath: false },
+    ];
+  },
   async headers() {
     return [
       {
