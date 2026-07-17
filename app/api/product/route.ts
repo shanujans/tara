@@ -545,8 +545,24 @@ async function fetchKaprukaPage(
     if (!price) {
       // Try common Kapruka price patterns in HTML — this regex only matches
       // prices explicitly prefixed with LKR or Rs. so USD values are skipped.
-      const priceMatch = html.match(/(?:LKR|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i);
-      if (priceMatch) price = Number(priceMatch[1].replace(/,/g, '')) || 0;
+      // Collect ALL matches and pick the largest, because the first "Rs." in
+      // the HTML may be a variant/storage label (e.g. "Rs. 256" from "256GB")
+      // rather than the actual product price.
+      const priceMatches = [...html.matchAll(/(?:LKR|Rs\.?)\s*([\d,]+(?:\.\d+)?)/gi)];
+      let scrapedPrice = 0;
+      for (const pm of priceMatches) {
+        const v = Number(pm[1].replace(/,/g, '')) || 0;
+        if (v > scrapedPrice) scrapedPrice = v;
+      }
+      // Only use the scraped price if it's plausible relative to the search
+      // result price (fallbackPrice). If the scraped price is less than 10%
+      // of fallbackPrice it's almost certainly a false match (e.g. a storage
+      // number like 256 leaking through as "Rs. 256").
+      if (scrapedPrice && fallbackPrice > 0 && scrapedPrice < fallbackPrice * 0.1) {
+        console.log(`[product] ${safeId} → scraped Rs.${scrapedPrice} implausible vs search ${fallbackPrice}, ignoring`);
+        scrapedPrice = 0;
+      }
+      if (scrapedPrice) price = scrapedPrice;
     }
     if (!price) price = fallbackPrice;
 
@@ -823,11 +839,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Rate limited' }, { status: 429 });
   }
 
-  let body: { product_id?: string; name?: string };
+  let body: { product_id?: string; name?: string; url?: string };
   try { body = await req.json(); }
   catch { return NextResponse.json({ error: 'Invalid request' }, { status: 400 }); }
 
-  const { product_id, name: hintName } = body;
+  const { product_id, name: hintName, url: hintUrl } = body;
   if (!product_id) return NextResponse.json({ error: 'product_id required' }, { status: 400 });
 
   const safeId = product_id.replace(/[^a-zA-Z0-9_\-]/g, '').slice(0, 80);
@@ -897,7 +913,22 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── FALLBACK 2: Search by name → fetch product page HTML → extract ──────
+    // ── FALLBACK 2a: Use provided product URL directly (no search needed) ──────
+    // If the caller passed the exact product URL (from search results), fetch it
+    // directly. This avoids the unreliable search-by-name + fuzzy match path.
+    if (!product && hintUrl && hintUrl.startsWith('http')) {
+      console.log(`[product] ${safeId} → fetching provided URL directly: ${hintUrl}`);
+      const pageProduct = await fetchKaprukaPage(
+        hintUrl, hintName ?? '', 0, '', '', true, safeId,
+      );
+      if (pageProduct) {
+        product = pageProduct;
+        cacheSet(key, product, TTL.PRODUCT);
+        console.log(`[product] ${safeId} → direct URL fetch OK: "${pageProduct.name}"`);
+      }
+    }
+
+    // ── FALLBACK 2b: Search by name → fetch product page HTML → extract ──────
     // 1. Search by product name to get the valid Kapruka product URL
     // 2. Fetch that URL and parse the HTML for structured data (schema)
     // 3. If page fetch fails, use search result data directly as last resort
@@ -947,11 +978,24 @@ export async function POST(req: NextRequest) {
                 const queryTokens = tokenize(hintName);
                 const queryNums = queryTokens.filter(t => /\d/.test(t));
 
+                // Variant differentiators: if the result has one of these but
+                // the query does NOT, the result is a different product tier
+                // (e.g. query "iPhone 16 128GB" vs result "iPhone 16 Pro Max").
+                const variantTokens = ['pro', 'max', 'plus', 'mini', 'ultra', 'promax', 'pro max'];
+                const queryHasVariant = variantTokens.some(vt => queryTokens.includes(vt));
+
+                // Storage numbers like 64, 128, 256, 512, 1024 indicate capacity
+                // and must match exactly — "128" vs "256" is a different product.
+                const storageNums = ['64', '128', '256', '512', '1024'];
+                const queryStorage = queryNums.filter(n => storageNums.includes(n));
+
                 let bestScore = -1;
                 for (const r of results) {
                   const rName = String(r.name ?? '');
                   const rTokens = tokenize(rName);
                   const rNums = rTokens.filter(t => /\d/.test(t));
+                  const rHasVariant = variantTokens.some(vt => rTokens.includes(vt));
+                  const rStorage = rNums.filter(n => storageNums.includes(n));
 
                   let score = 0;
                   for (const qt of queryTokens) {
@@ -962,6 +1006,25 @@ export async function POST(req: NextRequest) {
                   for (const qn of queryNums) {
                     if (rNums.includes(qn)) score += 5;
                     else if (rNums.length > 0) score -= 3;
+                  }
+
+                  // ── Variant penalty ──────────────────────────────────────
+                  // If the result has "Pro"/"Max" etc. but the query doesn't
+                  // (or vice versa), heavily penalize — they're different tiers.
+                  if (queryHasVariant !== rHasVariant) {
+                    score -= 10;
+                  }
+
+                  // ── Storage mismatch penalty ─────────────────────────────
+                  // If both have a storage number but they don't match exactly,
+                  // it's a different capacity variant — penalize heavily.
+                  if (queryStorage.length > 0 && rStorage.length > 0) {
+                    const storageMatch = queryStorage.some(qs => rStorage.includes(qs));
+                    if (!storageMatch) {
+                      score -= 10;
+                    } else {
+                      score += 5; // bonus for exact storage match
+                    }
                   }
 
                   const overlap = queryTokens.filter(qt => rTokens.includes(qt)).length;
@@ -991,11 +1054,41 @@ export async function POST(req: NextRequest) {
                   : String(match.category ?? '');
                 const mInStock = Boolean(match.in_stock ?? true);
 
+                // ── Determine if the fuzzy match is trustworthy enough to
+                //    fetch the product page. If the match has variant or
+                //    storage mismatches, fetching the page would give us the
+                //    WRONG product's rich data (images, specs, description).
+                //    In that case, skip FALLBACK 2a and use search data (2b).
+                const isExactIdMatch = matchReason === 'exact ID' || matchReason === 'case-insensitive ID';
+                let skipPageFetch = !isExactIdMatch;
+
+                if (!isExactIdMatch && hintName) {
+                  // Re-check variant/storage alignment between the query and
+                  // the matched product name to decide if page fetch is safe.
+                  const tokenize = (s: string): string[] =>
+                    s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(t => t.length > 1);
+                  const qTokens = tokenize(hintName);
+                  const mTokens = tokenize(mName);
+                  const variantTokens = ['pro', 'max', 'plus', 'mini', 'ultra', 'promax'];
+                  const storageNums = ['64', '128', '256', '512', '1024'];
+                  const qHasVariant = variantTokens.some(vt => qTokens.includes(vt));
+                  const mHasVariant = variantTokens.some(vt => mTokens.includes(vt));
+                  const qStorage = qTokens.filter(t => storageNums.includes(t));
+                  const mStorage = mTokens.filter(t => storageNums.includes(t));
+                  const variantOk = qHasVariant === mHasVariant;
+                  const storageOk = qStorage.length === 0 || mStorage.length === 0 ||
+                                    qStorage.some(qs => mStorage.includes(qs));
+                  if (variantOk && storageOk) {
+                    skipPageFetch = false;
+                  }
+                }
+
                 // ── FALLBACK 2a: Fetch the actual Kapruka product page ──────────
                 // Use the valid product URL from search results to fetch the
                 // real page HTML and extract structured data per the schema.
                 // NEVER retry get_product — only fetch the page URL.
-                if (productUrl && productUrl.startsWith('http')) {
+                // SKIPPED when the fuzzy match is unreliable (wrong variant/storage).
+                if (productUrl && productUrl.startsWith('http') && !skipPageFetch) {
                   console.log(`[product] ${safeId} → fetching page: ${productUrl}`);
                   const pageProduct = await fetchKaprukaPage(
                     productUrl, mName, mPrice, imageUrl, mCategory, mInStock, safeId,
@@ -1005,6 +1098,8 @@ export async function POST(req: NextRequest) {
                     cacheSet(key, product, TTL.PRODUCT);
                     console.log(`[product] ${safeId} → page fetch fallback OK: "${pageProduct.name}"`);
                   }
+                } else if (skipPageFetch) {
+                  console.log(`[product] ${safeId} → skipping page fetch (unreliable fuzzy match for "${mName}")`);
                 }
 
                 // ── FALLBACK 2b: Use search result data directly (last resort) ──

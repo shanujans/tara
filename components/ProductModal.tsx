@@ -104,7 +104,33 @@ export default function ProductModal({ productId, productUrl, lang, onClose, all
       };
     };
 
-    fetch('/api/product', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ product_id: productId, name: fallbackProduct?.name }) })
+    // ── Name-similarity guard ──────────────────────────────────────────────
+    // Detect if the API returned a DIFFERENT product than the one the user
+    // clicked on (e.g. clicked "iPhone 16 128GB" but API returned
+    // "iPhone 16 Pro Max 256GB"). This happens when the API's fuzzy name
+    // matcher picks the wrong search result. We compare variant tokens
+    // (Pro/Max/Plus/Mini/Ultra) and storage numbers (128/256/512) between
+    // the API product name and the fallback (clicked) product name.
+    const isSameProduct = (apiName: string, fbName: string): boolean => {
+      if (!apiName || !fbName) return true; // can't check, allow
+      const tok = (s: string): string[] =>
+        s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(t => t.length > 1);
+      const aT = tok(apiName);
+      const fT = tok(fbName);
+      const variantTokens = ['pro', 'max', 'plus', 'mini', 'ultra', 'promax'];
+      const storageNums = ['64', '128', '256', '512', '1024'];
+      // Variant mismatch: one has "Pro"/"Max" but the other doesn't
+      const aHasV = variantTokens.some(v => aT.includes(v));
+      const fHasV = variantTokens.some(v => fT.includes(v));
+      if (aHasV !== fHasV) return false;
+      // Storage mismatch: both have a storage number but they differ
+      const aS = aT.filter(t => storageNums.includes(t));
+      const fS = fT.filter(t => storageNums.includes(t));
+      if (aS.length > 0 && fS.length > 0 && !aS.some(s => fS.includes(s))) return false;
+      return true;
+    };
+
+    fetch('/api/product', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ product_id: productId, name: fallbackProduct?.name, url: productUrl }) })
       .then(r => r.json())
       .then(d => {
         if (!alive) return;
@@ -117,15 +143,30 @@ export default function ProductModal({ productId, productUrl, lang, onClose, all
             (!apiProduct.image_url || apiProduct.image_url === '') &&
             (!apiProduct.description && !apiProduct.summary);
 
-          if (isGarbage && fallbackProduct) {
-            // Merge: use search result data for missing fields, keep any API data that exists
+          // ── Wrong-product guard ──────────────────────────────────────────
+          // If the API product name clearly differs from the clicked product
+          // (different variant/storage), discard the API data and use the
+          // fallback. The API's fuzzy matcher may have fetched the wrong page.
+          const isWrongProduct = fallbackProduct && apiProduct.name &&
+            !isSameProduct(String(apiProduct.name), fallbackProduct.name);
+
+          if ((isGarbage || isWrongProduct) && fallbackProduct) {
+            // Merge: use search result data for missing fields
             const fb = buildFallback()!;
-            setProduct({
-              ...fb,
-              ...(apiProduct.name && apiProduct.name !== apiProduct.id ? { name: apiProduct.name } : {}),
-              ...(apiProduct.category ? { category: apiProduct.category } : {}),
-              ...(apiProduct.url ? { url: apiProduct.url } : {}),
-            });
+            if (isWrongProduct) {
+              // API returned a different product entirely — use only the
+              // fallback (correct) data, discard all wrong-product fields.
+              setProduct(fb);
+            } else {
+              // API returned garbage (empty/zero fields) — merge what little
+              // API data exists with the fallback.
+              setProduct({
+                ...fb,
+                ...(apiProduct.name && apiProduct.name !== apiProduct.id ? { name: apiProduct.name } : {}),
+                ...(apiProduct.category ? { category: apiProduct.category } : {}),
+                ...(apiProduct.url ? { url: apiProduct.url } : {}),
+              });
+            }
           } else {
             // If the API returned a valid product but with no/zero price
             // (e.g. MCP returned a USD price that we rejected), patch in the
