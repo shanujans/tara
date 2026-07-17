@@ -839,11 +839,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Rate limited' }, { status: 429 });
   }
 
-  let body: { product_id?: string; name?: string };
+  let body: { product_id?: string; name?: string; url?: string };
   try { body = await req.json(); }
   catch { return NextResponse.json({ error: 'Invalid request' }, { status: 400 }); }
 
-  const { product_id, name: hintName } = body;
+  const { product_id, name: hintName, url: hintUrl } = body;
   if (!product_id) return NextResponse.json({ error: 'product_id required' }, { status: 400 });
 
   const safeId = product_id.replace(/[^a-zA-Z0-9_\-]/g, '').slice(0, 80);
@@ -913,7 +913,22 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── FALLBACK 2: Search by name → fetch product page HTML → extract ──────
+    // ── FALLBACK 2a: Use provided product URL directly (no search needed) ──────
+    // If the caller passed the exact product URL (from search results), fetch it
+    // directly. This avoids the unreliable search-by-name + fuzzy match path.
+    if (!product && hintUrl && hintUrl.startsWith('http')) {
+      console.log(`[product] ${safeId} → fetching provided URL directly: ${hintUrl}`);
+      const pageProduct = await fetchKaprukaPage(
+        hintUrl, hintName ?? '', 0, '', '', true, safeId,
+      );
+      if (pageProduct) {
+        product = pageProduct;
+        cacheSet(key, product, TTL.PRODUCT);
+        console.log(`[product] ${safeId} → direct URL fetch OK: "${pageProduct.name}"`);
+      }
+    }
+
+    // ── FALLBACK 2b: Search by name → fetch product page HTML → extract ──────
     // 1. Search by product name to get the valid Kapruka product URL
     // 2. Fetch that URL and parse the HTML for structured data (schema)
     // 3. If page fetch fails, use search result data directly as last resort

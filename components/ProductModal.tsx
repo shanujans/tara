@@ -130,7 +130,7 @@ export default function ProductModal({ productId, productUrl, lang, onClose, all
       return true;
     };
 
-    fetch('/api/product', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ product_id: productId, name: fallbackProduct?.name }) })
+    fetch('/api/product', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ product_id: productId, name: fallbackProduct?.name, url: productUrl }) })
       .then(r => r.json())
       .then(d => {
         if (!alive) return;
