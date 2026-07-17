@@ -127,6 +127,13 @@ export default function ProductModal({ productId, productUrl, lang, onClose, all
               ...(apiProduct.url ? { url: apiProduct.url } : {}),
             });
           } else {
+            // If the API returned a valid product but with no/zero price
+            // (e.g. MCP returned a USD price that we rejected), patch in the
+            // correct LKR price from the search result while keeping all the
+            // rich API data (images, specs, description, etc.).
+            if ((!apiProduct.price || apiProduct.price === 0) && fallbackProduct?.price) {
+              apiProduct.price = fallbackProduct.price;
+            }
             setProduct(apiProduct);
           }
         } else if (fallbackProduct) {

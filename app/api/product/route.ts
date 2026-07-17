@@ -150,11 +150,20 @@ function normalizeJsonProduct(p: Record<string, unknown>, pid: string): Record<s
 
   // ── Price — may be number, string, or { amount, currency } ───────────────
   let price = 0;
-  if (typeof p.price === 'number') price = p.price;
-  else if (typeof p.price === 'string') price = Number(p.price.replace(/[^0-9.]/g, ''));
-  else if (p.price && typeof p.price === 'object') {
+  if (typeof p.price === 'number') {
+    price = p.price;
+  } else if (typeof p.price === 'string') {
+    price = Number(p.price.replace(/[^0-9.]/g, ''));
+  } else if (p.price && typeof p.price === 'object') {
     const po = p.price as Record<string, unknown>;
-    price = Number(po.amount ?? po.value ?? po.lkr ?? 0);
+    const pCurrency = String(po.currency ?? '').trim().toUpperCase();
+    // Only accept the price when it is LKR. The MCP may return a USD price
+    // object (e.g. { amount: 674.07, currency: "USD" }) for some products
+    // even when currency:"LKR" was requested — using it would show a wrong
+    // "Rs." price. Setting price=0 lets the UI merge the search-result LKR price.
+    if (pCurrency === '' || pCurrency === 'LKR' || pCurrency === 'RS' || pCurrency === 'RS.') {
+      price = Number(po.amount ?? po.value ?? po.lkr ?? 0);
+    }
   }
 
   // ── Shipping / vendor line ────────────────────────────────────────────────
@@ -525,10 +534,17 @@ async function fetchKaprukaPage(
 
     if (!price) {
       const metaPrice = getMeta('product:price:amount');
-      if (metaPrice) price = Number(metaPrice.replace(/[^0-9.]/g, '')) || 0;
+      const metaCurrency = (getMeta('product:price:currency') || getMeta('og:price:currency') || '').trim().toUpperCase();
+      // Only trust the meta price when it is explicitly LKR.
+      // On Kapruka's international pages (served to US/overseas IPs like Vercel),
+      // product:price:amount is a USD value — accepting it would leak a wrong "Rs." price.
+      if (metaPrice && (metaCurrency === 'LKR' || metaCurrency === 'RS' || metaCurrency === 'RS.')) {
+        price = Number(metaPrice.replace(/[^0-9.]/g, '')) || 0;
+      }
     }
     if (!price) {
-      // Try common Kapruka price patterns in HTML
+      // Try common Kapruka price patterns in HTML — this regex only matches
+      // prices explicitly prefixed with LKR or Rs. so USD values are skipped.
       const priceMatch = html.match(/(?:LKR|Rs\.?)\s*([\d,]+(?:\.\d+)?)/i);
       if (priceMatch) price = Number(priceMatch[1].replace(/,/g, '')) || 0;
     }
