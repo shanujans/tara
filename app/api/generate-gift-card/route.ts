@@ -8,12 +8,16 @@ const LOG = {
   error: (...a: unknown[]) => console.error('[TARA:GIFT-CARD] ❌', ...a),
 };
 
-// Try models in order — FLUX.1-schnell is free and fastest
-// FLUX.1-dev was deprecated by HuggingFace (HTTP 410) — replaced with SDXL
+// Try models in order — use HF router first, then Pollinations.ai as free fallback
+// HF models: FLUX.1-schnell and SDXL-base-1.0 were deprecated (HTTP 410)
 const MODELS = [
-  'black-forest-labs/FLUX.1-schnell',
-  'stabilityai/stable-diffusion-xl-base-1.0',
+  'stabilityai/stable-diffusion-3.5-large',   // newer SD, often available
+  'black-forest-labs/FLUX.1-dev',             // FLUX dev (may route to other provider)
+  'runwayml/stable-diffusion-v1-5',           // older SD, widely available
 ];
+
+// Pollinations.ai — free, no API key, good fallback
+const POLLINATIONS_BASE = 'https://image.pollinations.ai/prompt';
 
 // HuggingFace router endpoint (same base the blueprint uses)
 const HF_BASE = 'https://router.huggingface.co/hf-inference/models';
@@ -89,7 +93,7 @@ export async function POST(req: NextRequest) {
   const prompt = buildPrompt(occasion, recipient);
   LOG.info('prompt:', prompt.slice(0, 100));
 
-  // Try each model in order, return the first successful image
+  // Try each HF model in order, return the first successful image
   for (const model of MODELS) {
     const buf = await tryModel(model, prompt, hfKey);
     if (!buf) continue;
@@ -100,7 +104,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ image });
   }
 
-  LOG.error('All models failed');
+  // ── Pollinations.ai fallback (free, no API key) ──────────────────────────
+  try {
+    const encoded = encodeURIComponent(prompt);
+    const url = `${POLLINATIONS_BASE}/${encoded}?width=1024&height=1024&nologo=true&enhance=true`;
+    const res = await fetch(url, { method: 'GET' });
+    if (res.ok) {
+      const buf = await res.arrayBuffer();
+      const base64 = Buffer.from(buf).toString('base64');
+      const image = `data:image/png;base64,${base64}`;
+      return NextResponse.json({ image });
+    }
+  } catch (e) {
+    LOG.warn('Pollinations.ai fallback failed:', e);
+  }
+
+  LOG.error('All models failed including Pollinations.ai');
   return NextResponse.json(
     { error: 'Image generation failed — all models unavailable' },
     { status: 502 },
