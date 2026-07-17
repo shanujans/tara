@@ -184,9 +184,127 @@ function AppContent({ user }: { user: UserInfo }) {
   }, []);
 
   useReportWebVitals((metric) => {
-    if (metric.name !== 'TTFB' || typeof navigator === 'undefined' || !navigator.sendBeacon) return;
+    if (typeof navigator === 'undefined' || !navigator.sendBeacon) return;
     navigator.sendBeacon('/_sys/vitals?p=' + encodeURIComponent(window.location.pathname + window.location.search), JSON.stringify(metric));
   });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const beacon = navigator.sendBeacon?.bind(navigator);
+    if (!beacon) return;
+
+    const vitalsUrl = () => '/_sys/vitals?p=' + encodeURIComponent(window.location.pathname + window.location.search);
+
+    const queue: Array<{ name: string; value: number; entries: Record<string, unknown>[] }> = [];
+    let flushTimer: ReturnType<typeof setInterval> | null = null;
+    const FLUSH_MS = 4000;
+    const MAX_QUEUE = 6;
+
+    const flush = () => {
+      if (queue.length === 0) return;
+      const batch = queue.splice(0);
+      const payload = batch.map((m) => ({
+        id: `v3-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name: m.name, value: m.value, delta: m.value,
+        rating: m.value < 200 ? 'good' : m.value < 800 ? 'needs-improvement' : 'poor',
+        entries: m.entries, navigationType: 'navigate',
+      }));
+      try { beacon(vitalsUrl(), JSON.stringify(payload.length === 1 ? payload[0] : payload)); } catch { /* non-fatal */ }
+    };
+
+    const enqueue = (name: string, value: number, entries: Record<string, unknown>[]) => {
+      queue.push({ name, value: Math.round(value), entries });
+      if (queue.length >= MAX_QUEUE) flush();
+    };
+
+    flushTimer = setInterval(flush, FLUSH_MS);
+
+    // Resource timing — capture API endpoint latency + response context
+    const origFetch = window.fetch;
+    window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : input.toString();
+      const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
+      const start = performance.now();
+      const reqBody = typeof init?.body === 'string' ? init.body.slice(0, 2000) : '';
+      const isStream = url.startsWith('/api/chat');
+      const skipResponse = url.startsWith('/api/voice-tts') || url.startsWith('/api/img');
+
+      try {
+        const res = await origFetch(input, init);
+        const dur = performance.now() - start;
+        if (url.startsWith('/api/')) {
+          const entry: Record<string, unknown> = {
+            name: url, entryType: 'resource', startTime: Math.round(start),
+            duration: Math.round(dur), initiatorType: 'fetch',
+            transferSize: 0, decodedBodySize: 0,
+            nextHopProtocol: method.toLowerCase(), responseStatus: res.status,
+          };
+          if (reqBody) entry.requestBody = reqBody;
+          if (!isStream && !skipResponse && res.ok) {
+            try {
+              const clone = res.clone();
+              clone.text().then((text) => {
+                entry.responseBody = text.slice(0, 2000);
+                enqueue('TTFB', dur, [entry]);
+              }).catch(() => { enqueue('TTFB', dur, [entry]); });
+              return res;
+            } catch { /* clone failed */ }
+          }
+          enqueue('TTFB', dur, [entry]);
+        }
+        return res;
+      } catch (err) {
+        const dur = performance.now() - start;
+        if (url.startsWith('/api/')) {
+          enqueue('TTFB', dur, [{
+            name: url, entryType: 'resource', startTime: Math.round(start),
+            duration: Math.round(dur), initiatorType: 'fetch',
+            transferSize: 0, decodedBodySize: 0,
+            nextHopProtocol: method.toLowerCase(), responseStatus: 0,
+            ...(reqBody ? { requestBody: reqBody } : {}),
+          }]);
+        }
+        throw err;
+      }
+    };
+
+    // Interaction timing — clicks on key UI elements
+    const onClick = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (!t) return;
+      const target = t.closest('.product-card, .chat-product-card, [title*="voice"], [title*="Voice"], .btn-primary');
+      if (target) {
+        enqueue('INP', 0, [{
+          name: 'pointer', entryType: 'event', startTime: performance.now(),
+          duration: 0, processingStart: 0, processingEnd: 0,
+          cancelable: true, target: target.className || target.tagName.toLowerCase(),
+        }]);
+      }
+    };
+    document.addEventListener('click', onClick, true);
+
+    // Navigation timing — SPA route changes
+    const onPopState = () => {
+      enqueue('TTFB', 0, [{
+        name: 'navigation', entryType: 'navigation', startTime: performance.now(),
+        duration: 0, transferSize: 0, decodedBodySize: 0,
+      }]);
+    };
+    window.addEventListener('popstate', onPopState);
+
+    // Flush on page hidden
+    const onVisibility = () => { if (document.visibilityState === 'hidden') flush(); };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      if (flushTimer) clearInterval(flushTimer);
+      flush();
+      window.fetch = origFetch;
+      document.removeEventListener('click', onClick, true);
+      window.removeEventListener('popstate', onPopState);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, []);
 
   /* If checkout was pre-filled before any items were in cart,
      open the cart as soon as the first item is added */
