@@ -502,8 +502,18 @@ async function fetchKaprukaPage(
       title = String(ldData.name ?? '').trim();
       const ldPrice = ldData.offers as Record<string, unknown> | undefined;
       if (ldPrice) {
-        price = Number(ldPrice.price ?? ldPrice.lowPrice ?? 0) || 0;
-        currency = String(ldPrice.priceCurrency ?? 'LKR');
+        const ldCurrency = String(ldPrice.priceCurrency ?? '').trim().toUpperCase();
+        // Only trust the JSON-LD price when it is explicitly LKR.
+        // Kapruka's international pages often expose a USD price in JSON-LD,
+        // which would otherwise leak through as the displayed "Rs." price.
+        if (ldCurrency === 'LKR' || ldCurrency === 'RS' || ldCurrency === 'RS.') {
+          price = Number(ldPrice.price ?? ldPrice.lowPrice ?? 0) || 0;
+          currency = 'LKR';
+        } else {
+          // Non-LKR (often USD) structured price — ignore it so the
+          // LKR-based fallbacks below (meta tags, HTML scan, search price) win.
+          currency = 'LKR';
+        }
         availability = String(ldPrice.availability ?? '');
       }
       brand = String((ldData.brand as Record<string, unknown> | undefined)?.name ?? ldData.brand ?? '').trim();
@@ -745,8 +755,8 @@ async function fetchKaprukaPage(
     const result: Record<string, unknown> = {
       // Basic Info
       title,
-      price: price || fallbackPrice,
-      currency,
+      price: (currency.toUpperCase() === 'LKR' || currency.toUpperCase() === 'RS' || currency.toUpperCase() === 'RS.') ? (price || fallbackPrice) : fallbackPrice,
+      currency: 'LKR',
       availability: /in.?stock/i.test(String(availability)) ? true : (availability || null),
       brand_or_merchant: brand || null,
       warranty_or_guarantee: warranty || null,
