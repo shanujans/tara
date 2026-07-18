@@ -6,6 +6,7 @@ import { detectExpat, detectExpatCountry } from '@/lib/expat';
 import ExpatBanner from './ExpatBanner';
 import { MicIcon, SendIcon, AttachIcon, AddCartIcon, CheckIcon, GlobeIcon, ThumbsUpIcon, ThumbsDownIcon, ChevronRightIcon, VoiceSparkleIcon } from './Icons';
 import { useVoiceMode } from '@/lib/useVoiceMode';
+import { useGeminiLiveVoice } from '@/lib/useGeminiLiveVoice';
 import AudioVisualizer from './AudioVisualizer';
 
 import InvoiceTemplate, { type InvoiceData } from './InvoiceTemplate';
@@ -671,6 +672,181 @@ export default function ChatPanel({
     micDeniedMessage: s.micPermissionDenied,
   });
 
+  // ── Gemini Live Voice (replaces STT→TTS loop when handsfree mode is on) ──
+  // Target workflow: no confirmation prompts. Search + cart fill execute immediately.
+  // Mic stays paused from user transcript until ALL TTS (instant confirmation + main
+  // response + upselling) finishes, then resumes via onTTSComplete.
+  //
+  // RACE CONDITION FIX: Two async processes run in parallel after user speech:
+  //   A) Gemini Live generates + plays instant confirmation (ends via onTTSComplete)
+  //   B) /api/chat + /api/search run in sendMessage (ends with visible text ready)
+  // speakResponse(visible) must only fire AFTER BOTH A and B complete. We use
+  // instantConfirmDoneRef + mainResponseTextRef as a two-gate latch.
+  const sendMessageRef = useRef<(text: string, forcedLang?: Lang, fromGeminiLive?: boolean) => void>(() => {});
+  const awaitingChatResponseRef = useRef(false);     // true from user transcript until main response spoken
+  const instantConfirmDoneRef = useRef(false);        // gate A: instant confirmation TTS finished
+  const mainResponseTextRef = useRef<string | null>(null);  // gate B: /api/chat response ready to speak
+  const mainResponseLangRef = useRef<Lang>('en');     // lang for building upsell text
+  const pendingUpsellRef = useRef<string | null>(null); // upselling text to speak after main response
+  const lastSearchHadResultsRef = useRef(false);      // for choosing upselling message
+  const lastWasCartFillRef = useRef(false);            // for choosing upselling message
+  const lastProcessedTranscriptRef = useRef<string | null>(null); // dedup guard for transcripts
+  const instantConfirmTextRef = useRef<string | null>(null);    // captures Gemini's instant confirmation text
+  // Ref to the geminiLive hook API — avoids temporal-dead-zone issues since the
+  // handlers below are passed into useGeminiLiveVoice() but also need to call its methods.
+  const geminiLiveApiRef = useRef<{
+    pauseMic: () => void; resumeMic: () => void; speakResponse: (t: string) => void;
+  } | null>(null);
+
+  // Helper: attempt to speak the main response if BOTH gates are satisfied
+  const trySpeakMainResponse = useCallback(() => {
+    if (instantConfirmDoneRef.current && mainResponseTextRef.current && awaitingChatResponseRef.current) {
+      const text = mainResponseTextRef.current;
+      const lang = mainResponseLangRef.current;
+      mainResponseTextRef.current = null;
+      awaitingChatResponseRef.current = false;
+      pendingUpsellRef.current = buildUpsellRef.current(lang);
+      console.log('[gemini-live] both gates satisfied — speaking main response');
+      geminiLiveApiRef.current?.speakResponse(text);
+    }
+  }, []);
+
+  const buildUpsellRef = useRef<(lang: Lang) => string>(() => 'Is there anything else I can help you find on Kapruka?');
+
+  const handleGeminiTranscript = useCallback((text: string) => {
+    console.log('[gemini-live] handleGeminiTranscript CALLED:', text);
+    // Guard: prevent duplicate processing of the same transcript
+    if (lastProcessedTranscriptRef.current === text) {
+      console.log('[gemini-live] duplicate transcript, skipping');
+      return;
+    }
+    lastProcessedTranscriptRef.current = text;
+    // Strict mic control — pause immediately, no interruption allowed
+    geminiLiveApiRef.current?.pauseMic();
+    // Reset all per-turn state
+    awaitingChatResponseRef.current = true;
+    instantConfirmDoneRef.current = false;
+    mainResponseTextRef.current = null;
+    pendingUpsellRef.current = null;
+    lastSearchHadResultsRef.current = false;
+    lastWasCartFillRef.current = false;
+    instantConfirmTextRef.current = null;
+    // Forward raw transcription to /api/chat (Backend Delegation — no local extraction)
+    // sendMessage adds the user transcript bubble (Complete Visual Transcript Logging)
+    console.log('[gemini-live] calling sendMessageRef.current...');
+    sendMessageRef.current(text, undefined, true);
+  }, []);
+
+  const handleOutputTranscript = useCallback((text: string, isReadAloud: boolean) => {
+    console.log('[gemini-live] handleOutputTranscript:', { text: text.slice(0, 60), isReadAloud });
+    if (isReadAloud) {
+      // This is Gemini reading the system-provided text aloud — already displayed
+      // from the /api/chat stream, so skip to avoid duplication.
+      return;
+    }
+    // Gemini's OWN content — the instant short confirmation.
+    // Store it so the main response can prepend it (first sentence matches instant reply).
+    instantConfirmTextRef.current = text;
+    // Fill the existing last assistant placeholder bubble (don't add a new one,
+    // since sendMessage already added an empty placeholder).
+    setMessages(prev => {
+      const c = [...prev];
+      if (c.length > 0 && c[c.length - 1].role === 'assistant') {
+        c[c.length - 1] = { ...c[c.length - 1], content: text };
+      } else {
+        c.push({ role: 'assistant', content: text });
+      }
+      return c;
+    });
+  }, []);
+
+  const handleTTSComplete = useCallback(() => {
+    console.log('[gemini-live] handleTTSComplete', {
+      awaiting: awaitingChatResponseRef.current,
+      instantDone: instantConfirmDoneRef.current,
+      mainText: mainResponseTextRef.current?.slice(0, 40),
+      upsell: pendingUpsellRef.current?.slice(0, 40),
+    });
+    if (awaitingChatResponseRef.current) {
+      // The instant confirmation just finished playing.
+      // Set gate A. Then check if gate B (chat response) is also ready.
+      instantConfirmDoneRef.current = true;
+      trySpeakMainResponse();
+      return;
+    }
+    if (pendingUpsellRef.current) {
+      // Main response just finished — speak the upselling follow-up now.
+      const upsell = pendingUpsellRef.current;
+      pendingUpsellRef.current = null;
+      setMessages(prev => [...prev, { role: 'assistant', content: upsell }]);
+      console.log('[gemini-live] speaking upselling');
+      geminiLiveApiRef.current?.speakResponse(upsell);
+      // Mic stays paused — will resume after upselling's onTTSComplete
+      return;
+    }
+    // All TTS done (instant confirmation + main response + upselling) — resume mic
+    console.log('[gemini-live] all TTS done — resuming mic');
+    geminiLiveApiRef.current?.resumeMic();
+  }, [trySpeakMainResponse]);
+
+  const geminiLive = useGeminiLiveVoice({
+    onUserTranscript: (text) => handleGeminiTranscript(text),
+    onOutputTranscript: (text, isReadAloud) => handleOutputTranscript(text, isReadAloud),
+    onTTSComplete: () => handleTTSComplete(),
+  });
+
+  // Keep geminiLiveApiRef in sync so the handlers above can call hook methods
+  useEffect(() => {
+    geminiLiveApiRef.current = geminiLive;
+  }, [geminiLive]);
+
+  // Connect/disconnect Gemini Live when handsfree mode toggles
+  useEffect(() => {
+    if (voiceModeOn && geminiLive.status === 'idle') {
+      void geminiLive.connect();
+    } else if (!voiceModeOn && geminiLive.status !== 'idle') {
+      void geminiLive.disconnect();
+    }
+  }, [voiceModeOn]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Build a contextual upselling follow-up in the user's language
+  const buildUpsell = useCallback((lang: Lang): string => {
+    const S: Record<Lang, { search: string; cart: string; general: string }> = {
+      en: {
+        search: 'You can press the cart button on any product to add it to your cart!',
+        cart: 'You can review and edit these details in the cart before placing your order.',
+        general: 'Is there anything else I can help you find on Kapruka?',
+      },
+      si: {
+        search: 'ඕනෑම භාණ්ඩයක කරට බොත්තම ඔබා එය ඔබගේ කරටට එක් කරගන්න!',
+        cart: 'ඇණවුම තැබීමට පෙර මෙම විස්තර කරටෙහි සමාලෝචනය කර සංස්කරණය කළ හැක.',
+        general: 'කප්රූකා හි තව යමක් උදව් කරන්නද?',
+      },
+      sl: {
+        search: 'Onnama bhaandayak karata bottama obaa eka oobage karata ekka karaganna!',
+        cart: 'Order thebimata kere mema vishta karate saamaalochana kara samskaranaya kala haka.',
+        general: 'Kapruka hi tha yamak udoo karannada?',
+      },
+      ta: {
+        search: 'எந்தப் பொருளின் மீதும் கூடை பொத்தானை அழுத்தி அதை உங்கள் கூடையில் சேர்க்கலாம்!',
+        cart: 'ஆர்டர் செய்வதற்கு முன் இந்த விவரங்களை கூடையில் சரிபார்த்து திருத்தலாம்.',
+        general: 'கப்ரூகாவில் வேறு ஏதேனும் உதவ வேண்டுமா?',
+      },
+      tl: {
+        search: 'Edhap porulinya meedhum koodai poththanai azhuthi adhai ungal koodiyil sekkalaam!',
+        cart: 'Order seivatharku mun indha vivarangalai koodaiyil saripaarthu thiruthalaam.',
+        general: 'Kapruka-vil veru edhenaam udhava vaenumaa?',
+      },
+    };
+    const set = S[lang] ?? S.en;
+    if (lastWasCartFillRef.current) return set.cart;
+    if (lastSearchHadResultsRef.current) return set.search;
+    return set.general;
+  }, []);
+
+  // Keep buildUpsellRef in sync so trySpeakMainResponse can call it
+  useEffect(() => { buildUpsellRef.current = buildUpsell; }, [buildUpsell]);
+
   useEffect(() => {
     setConvLang(lang);
     convLangRef.current = lang;
@@ -813,8 +989,23 @@ export default function ChatPanel({
   }, [expatMode, convLang, onProductsFound, onSearching]);
 
   /* ── Send text message ──────────────────────────────────── */
-  const sendMessage = useCallback(async (text: string, forcedLang?: Lang) => {
-    if (!text.trim() || streaming) return;
+  const sendMessage = useCallback(async (text: string, forcedLang?: Lang, fromGeminiLive = false) => {
+    console.log('[gemini-live] sendMessage called:', { text: text.slice(0, 60), streaming, hasText: !!text.trim(), fromGeminiLive });
+    if (!text.trim()) return;
+    // Allow Gemini Live to bypass the streaming guard (interrupt previous response)
+    if (streaming && !fromGeminiLive) {
+      console.log('[gemini-live] sendMessage returning early: streaming & not from Gemini Live');
+      return;
+    }
+    // If Gemini Live is interrupting a previous streaming response, abort it
+    if (streaming && fromGeminiLive) {
+      console.log('[gemini-live] Gemini Live interrupting previous streaming response');
+      abortRef.current?.abort();
+    }
+
+    // When Gemini Live is connected, pause mic during processing
+    const usingGeminiLive = geminiLive.status === 'connected';
+    if (usingGeminiLive) geminiLive.pauseMic();
 
     const detected = forcedLang ?? detectLangClient(text, convLang);
     setConvLang(detected);
@@ -828,22 +1019,25 @@ export default function ChatPanel({
     setMessages(history); setInput(''); setStreaming(true);
     abortRef.current = new AbortController();
 
-    // ── PHASE 1: Instant greeting — show immediately + start TTS via Web Speech API ──
-    // Uses browser's built-in speechSynthesis for zero-latency TTS (~50ms, no network).
-    // The main LLM response uses the real TTS pipeline (speak()) which has better
-    // voice quality but takes 2-5s to start due to network latency.
-    const instantGreeting = STRINGS[detected].instantGreeting ?? 'On it! 🔍';
-    setMessages(prev => [...prev, { role:'assistant', content: instantGreeting }]);
-    lastReplyRef.current = instantGreeting;
-    if (speakerOn) speakPromiseRef.current = speakInstant(instantGreeting);
+    // ── Instant greeting — skip when using Gemini Live (it handles TTS) ──
+    if (!usingGeminiLive) {
+      const instantGreeting = STRINGS[detected].instantGreeting ?? 'On it! 🔍';
+      setMessages(prev => [...prev, { role:'assistant', content: instantGreeting }]);
+      lastReplyRef.current = instantGreeting;
+      if (speakerOn) speakPromiseRef.current = speakInstant(instantGreeting);
+    } else {
+      setMessages(prev => [...prev, { role:'assistant', content: '' }]);
+    }
 
     try {
+      console.log('[gemini-live] calling /api/chat...');
       const res = await fetch('/api/chat', {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ messages:history, expatMode: expatMode||isNewExpat, lang:detected }),
         signal: abortRef.current.signal,
       });
       if (!res.ok) throw new Error('API error');
+      console.log('[gemini-live] /api/chat response OK, reading stream...');
 
       let thinkingData: ThinkingData | null = null;
       const thinkingHeader = res.headers.get('X-Tara-Thinking');
@@ -853,45 +1047,63 @@ export default function ChatPanel({
 
       // ── PHASE 2: Main LLM response — replace greeting with full reply ───
       const reader = res.body!.getReader(); const decoder = new TextDecoder(); let full = '';
-      setMessages(prev => { const c=[...prev]; c[c.length-1]={role:'assistant',content:''}; return c; });
+      const instantText = instantConfirmTextRef.current || '';
+      setMessages(prev => { const c=[...prev]; c[c.length-1]={role:'assistant',content: instantText || ''}; return c; });
 
       while (true) {
         const { done, value } = await reader.read(); if (done) break;
         full += decoder.decode(value, { stream:true });
-        const disp = full.replace(/<tara_thinking>[\s\S]*?<\/tara_thinking>/gi,'').trim();
+        const rawDisp = full.replace(/<tara_thinking>[\s\S]*?<\/tara_thinking>/gi,'').trim();
+        // Prepend instant confirmation so the first sentence always matches the instant reply
+        const disp = instantText ? `${instantText} ${rawDisp}` : rawDisp;
         setMessages(prev => { const c=[...prev]; c[c.length-1]={role:'assistant',content:disp}; return c; });
       }
 
-      const visible = cleanResponse(full);
+      const visibleRaw = cleanResponse(full);
+      // Prepend instant confirmation to final visible text (1st sentence matches instant reply)
+      const visible = instantText ? `${instantText} ${visibleRaw}` : visibleRaw;
       setMessages(prev => { const c=[...prev]; c[c.length-1]={role:'assistant',content:visible,...(thinkingData?{thinking:thinkingData}:{})}; return c; });
       lastReplyRef.current = visible;
-      // Speak the main response after the instant greeting finishes
-      if (speakerOn) {
+      console.log('[gemini-live] /api/chat full response (with instant prefix):', visible.slice(0, 100));
+
+      // ── TTS: Gemini Live handles TTS when handsfree mode is on ──
+      if (!usingGeminiLive && speakerOn) {
         const prevSpeak = speakPromiseRef.current;
         speakPromiseRef.current = (async () => {
-          if (prevSpeak) await prevSpeak; // wait for greeting TTS to finish
+          if (prevSpeak) await prevSpeak;
           await speak(visible);
         })();
       }
 
       const query = extractQuery(full);
       if (query) {
-        onSearching(true);
-        const searchStart = Date.now();
-        try {
-          const r2 = await fetch('/api/search', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({primary:query}) });
-          const d = await r2.json();
-          if (d.products?.length) {
-            // Sync product-card reveal with TARA's voice: wait out the remainder
-            // of a 1s window (measured from when the search request was sent) so
-            // cards land close to when speak() actually starts playing, instead
-            // of popping in before or well after audio begins.
-            const remaining = 1000 - (Date.now() - searchStart);
-            if (remaining > 0) await new Promise(resolve => setTimeout(resolve, remaining));
-            onProductsFound(d.products, d.quantum);
-            setMessages(prev => { const c=[...prev]; c[c.length-1]={...c[c.length-1],products:d.products.slice(0,8)}; return c; });
-          }
-        } catch {/***/} finally { onSearching(false); }
+        if (usingGeminiLive) {
+          // ── Immediate execution (NO confirmation) — Sequential TTS: search first, speak after ──
+          onSearching(true);
+          try {
+            const r2 = await fetch('/api/search', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({primary:query}) });
+            const d = await r2.json();
+            if (d.products?.length) {
+              onProductsFound(d.products, d.quantum);
+              setMessages(prev => { const c=[...prev]; c[c.length-1]={...c[c.length-1],products:d.products.slice(0,8)}; return c; });
+              lastSearchHadResultsRef.current = true;
+            }
+          } catch {/***/} finally { onSearching(false); }
+        } else {
+          // ── Immediate execution (existing behavior for non-Gemini mode) ──
+          onSearching(true);
+          const searchStart = Date.now();
+          try {
+            const r2 = await fetch('/api/search', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({primary:query}) });
+            const d = await r2.json();
+            if (d.products?.length) {
+              const remaining = 1000 - (Date.now() - searchStart);
+              if (remaining > 0) await new Promise(resolve => setTimeout(resolve, remaining));
+              onProductsFound(d.products, d.quantum);
+              setMessages(prev => { const c=[...prev]; c[c.length-1]={...c[c.length-1],products:d.products.slice(0,8)}; return c; });
+            }
+          } catch {/***/} finally { onSearching(false); }
+        }
       }
 
       const om = text.match(/\b([A-Z]{2,6}\d{4,}[A-Z0-9]*)\b/);
@@ -904,28 +1116,67 @@ export default function ChatPanel({
 
       const checkoutData = extractCheckoutFill(full);
       if (checkoutData) {
+        // ── Immediate execution for BOTH modes (NO confirmation when using Gemini Live) ──
         prefillCheckout(checkoutData);
         if (cartIds.size > 0) {
           window.dispatchEvent(new CustomEvent('tara:opencart'));
         } else {
           window.sessionStorage.setItem('tara_opencart_pending', '1');
         }
+        if (usingGeminiLive) {
+          // Open cart drawer to show filled details
+          setTimeout(() => window.dispatchEvent(new CustomEvent('tara:opencart')), 200);
+          lastWasCartFillRef.current = true;
+        }
+      }
+
+      // ── Sequential TTS: store main response text and attempt latch ──
+      // speakResponse is called only when BOTH gates are satisfied:
+      //   gate A: instant confirmation TTS finished (instantConfirmDoneRef)
+      //   gate B: /api/chat + search done, text ready (mainResponseTextRef)
+      // trySpeakMainResponse checks both and calls speakResponse if ready.
+      // If gate A isn't done yet, handleTTSComplete will call it when it fires.
+      if (usingGeminiLive) {
+        mainResponseTextRef.current = visible;
+        mainResponseLangRef.current = detected;
+        console.log('[gemini-live] main response ready, checking latch', {
+          instantDone: instantConfirmDoneRef.current,
+        });
+        trySpeakMainResponse();
       }
     } catch (err: unknown) {
       if ((err as Error).name!=='AbortError') setMessages(prev=>[...prev,{role:'assistant',content:'⚠️ Something went wrong. Please try again.'}]);
+      if (usingGeminiLive) {
+        // Error before speakResponse — reset all state so mic can resume
+        awaitingChatResponseRef.current = false;
+        pendingUpsellRef.current = null;
+        mainResponseTextRef.current = null;
+        instantConfirmDoneRef.current = false;
+      }
     } finally {
       setStreaming(false);
       const pending = speakPromiseRef.current;
       speakPromiseRef.current = null;
       lastReplyRef.current = '';
-      if (pending) {
+      if (usingGeminiLive) {
+        // Mic resume is handled by onTTSComplete callback (post-speech listening).
+        // If an error occurred and speakResponse was never called, resume now.
+        if (awaitingChatResponseRef.current && !mainResponseTextRef.current) {
+          awaitingChatResponseRef.current = false;
+          instantConfirmDoneRef.current = false;
+          geminiLive.resumeMic();
+        }
+      } else if (pending) {
         void (async () => {
-          await pending;                                          // no-op/non-fatal if TTS is unavailable
+          await pending;
           if (voiceModeOn) setTimeout(() => { void startRecording(); }, 500);
         })();
       }
     }
-  }, [streaming, lang, convLang, expatMode, onLangChange, onProductsFound, onSearching, speak, startRecording, voiceModeOn]);
+  }, [streaming, lang, convLang, expatMode, onLangChange, onProductsFound, onSearching, speak, startRecording, voiceModeOn, geminiLive, buildUpsell, trySpeakMainResponse]);
+
+  // Keep sendMessageRef in sync so handleGeminiTranscript can call it
+  useEffect(() => { sendMessageRef.current = sendMessage; }, [sendMessage]);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input.trim()); }
