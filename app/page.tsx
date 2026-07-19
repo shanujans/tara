@@ -9,12 +9,13 @@ import TaraBackground from '@/components/TaraBackground';
 import SidePanel, { PanelId } from '@/components/SidePanel';
 import SidebarShader from '@/components/SidebarShader';
 import LoginModal, { UserInfo } from '@/components/LoginModal';
+import Toast from '@/components/Toast';
 import { CartProvider, useCart, Product } from '@/context/CartContext';
 import { STRINGS, Lang } from '@/lib/strings';
 import {
   HomeIcon, HistoryIcon, RewardsIcon, BrowseIcon, CartIcon,
 PackageSearchIcon,
-  SettingsIcon, HelpIcon, BellIcon, MenuIcon, XIcon,
+  SettingsIcon, HelpIcon, BellIcon, MenuIcon,
   ChatIcon, BagIcon, SparkleIcon, StoreIcon, HeadsetIcon,
 } from '@/components/Icons';
 
@@ -38,15 +39,40 @@ const NAV_ITEMS: { key: NavKey; label: string; icon: React.ReactNode }[] = [
 ];
 
 /* ── Sidebar with the exact spec shader as background ──────── */
-function SideNavBar({ activeNav, onNavClick, onCartOpen, totalQty, user, onTrackOrder }:{
+const TEXT_COLLAPSE = (open: boolean) =>
+  `min-w-0 whitespace-nowrap overflow-hidden transition-all duration-300 ease-in-out ${
+    open ? 'opacity-100 max-w-[200px]' : 'opacity-0 max-w-0 pointer-events-none'
+  }`;
+
+function SideNavBar({ isOpen, isPinned, onTogglePinned, onHoverIn, onHoverOut, activeNav, onNavClick, onCartOpen, totalQty, user, onTrackOrder }:{
+  isOpen: boolean; isPinned: boolean; onTogglePinned: () => void;
+  onHoverIn: () => void; onHoverOut: () => void;
   activeNav: NavKey; onNavClick:(k:NavKey)=>void;
   onCartOpen:()=>void; totalQty:number; user:UserInfo; onTrackOrder:()=>void;
 }) {
+  const mutedNavRow = (key: NavKey, icon: React.ReactNode, label: string) => (
+    <button key={key} onClick={()=>onNavClick(key)}
+      style={{ display:'flex', alignItems:'center',
+        gap: isOpen ? 14 : 0,
+        width:'100%', padding:'9px 14px',
+        justifyContent:'flex-start',
+        borderRadius:10, marginBottom:2, fontSize:14, fontWeight:500, color:'rgba(255,255,255,0.45)', background:'transparent', border:'none', cursor:'pointer', transition:'all 0.15s', fontFamily:'var(--font-body)' }}
+      onMouseOver={e=>{ e.currentTarget.style.background='rgba(255,255,255,0.06)'; e.currentTarget.style.color='rgba(255,255,255,0.80)'; }}
+      onMouseOut={e=>{ e.currentTarget.style.background='transparent'; e.currentTarget.style.color='rgba(255,255,255,0.45)'; }}
+    >
+      <span style={{ display:'flex' }}>{icon}</span>
+      <span className={TEXT_COLLAPSE(isOpen)}>{label}</span>
+    </button>
+  );
+
   return (
-    <aside style={{
-      position:'fixed', left:0, top:64, bottom:0, width:256, zIndex:30,
-      display:'flex', flexDirection:'column', overflow:'hidden',
-    }}>
+    <aside
+      onMouseLeave={onHoverOut}
+      style={{
+        position:'relative', display:'flex', flexDirection:'column',
+        width:'100%', height:'100%', overflow:'hidden',
+      }}
+    >
       {/* Shader fills the sidebar */}
       <SidebarShader/>
 
@@ -57,26 +83,38 @@ function SideNavBar({ activeNav, onNavClick, onCartOpen, totalQty, user, onTrack
         backdropFilter:'blur(2px)',
       }}/>
 
-      {/* Content above the shader */}
-      <div style={{ position:'relative', zIndex:1, display:'flex', flexDirection:'column', height:'100%', padding:'20px 12px' }}>
-
+      {/* Upper region — hover-triggered: user tile + nav items */}
+      <div
+        onMouseEnter={onHoverIn}
+        style={{ position:'relative', zIndex:1, display:'flex', flexDirection:'column',
+                 flex:1, minHeight:0, padding:'20px 0' }}
+      >
         {/* User profile tile */}
-        <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:24, padding:'10px 12px', borderRadius:14, background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.10)', backdropFilter:'blur(4px)' }}>
+        <div style={{
+          display:'flex', alignItems:'center',
+          gap: isOpen ? 12 : 0,
+          marginBottom:24,
+          padding:'10px 14px',
+          justifyContent:'flex-start',
+          borderRadius:14, background:'rgba(255,255,255,0.07)',
+          border:'1px solid rgba(255,255,255,0.10)', backdropFilter:'blur(4px)',
+        }}>
           {user.isGuest ? (
-            <div style={{ width:40, height:40, borderRadius:'50%', background:'rgba(215,186,255,0.20)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, border:'1px solid rgba(215,186,255,0.30)' }}>
-              <span style={{ fontSize:18 }}>👤</span>
-            </div>
+            <img src="/cartoon.jpg" alt="Guest"
+              style={{ width:20, height:20, borderRadius:'50%', objectFit:'cover', flexShrink:0, background:'rgba(215,186,255,0.20)', border:'1px solid rgba(215,186,255,0.30)' }}
+              onError={e=>{(e.target as HTMLImageElement).style.display='none';}}
+            />
           ) : (
             <img src="/kapruka-logo.png" alt="User"
               style={{ width:40, height:40, borderRadius:'50%', objectFit:'contain', flexShrink:0, background:'rgba(255,255,255,0.12)', padding:4 }}
               onError={e=>{(e.target as HTMLImageElement).style.display='none';}}
             />
           )}
-          <div style={{ minWidth:0 }}>
-            <p style={{ fontSize:11, color:'rgba(255,255,255,0.55)', fontWeight:500 }}>
+          <div className={TEXT_COLLAPSE(isOpen)} style={{ minWidth:0 }}>
+            <p style={{ fontSize:11, color:'rgba(255,255,255,0.55)', fontWeight:500, lineHeight:1.2, margin:0 }}>
               {user.isGuest ? 'Shopping as' : 'Signed in as'}
             </p>
-            <p style={{ fontSize:13, fontWeight:700, color:'rgba(255,255,255,0.92)', lineHeight:1.2, fontFamily:'var(--font-headline)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+            <p style={{ fontSize:13, fontWeight:700, color:'rgba(255,255,255,0.92)', lineHeight:1.2, fontFamily:'var(--font-headline)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', margin:0 }}>
               {user.name}
             </p>
           </div>
@@ -87,8 +125,12 @@ function SideNavBar({ activeNav, onNavClick, onCartOpen, totalQty, user, onTrack
           {NAV_ITEMS.map(item => (
             <button key={item.key} onClick={()=>onNavClick(item.key)}
               style={{
-                display:'flex', alignItems:'center', gap:14, width:'100%',
-                padding:'11px 14px', borderRadius:12, marginBottom:4,
+                display:'flex', alignItems:'center',
+                gap: isOpen ? 14 : 0,
+                width:'100%',
+                padding:'11px 14px',
+                justifyContent:'flex-start',
+                borderRadius:12, marginBottom:4,
                 fontSize:14, fontWeight: activeNav===item.key ? 700 : 500,
                 color: activeNav===item.key ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.65)',
                 background: activeNav===item.key ? 'rgba(255,255,255,0.18)' : 'transparent',
@@ -100,49 +142,79 @@ function SideNavBar({ activeNav, onNavClick, onCartOpen, totalQty, user, onTrack
               onMouseOver={e=>{ if(activeNav!==item.key) e.currentTarget.style.background='rgba(255,255,255,0.10)'; }}
               onMouseOut={e=>{  if(activeNav!==item.key) e.currentTarget.style.background='transparent'; }}
             >
-              <span style={{ opacity: activeNav===item.key ? 1 : 0.7 }}>{item.icon}</span>
-              {item.label}
+              <span style={{ opacity: activeNav===item.key ? 1 : 0.7, display:'flex' }}>{item.icon}</span>
+              <span className={TEXT_COLLAPSE(isOpen)}>{item.label}</span>
             </button>
           ))}
 
           {/* Cart shortcut */}
           <button onClick={onCartOpen}
-            style={{ display:'flex', alignItems:'center', gap:14, width:'100%', padding:'11px 14px', borderRadius:12, marginTop:8, fontSize:14, fontWeight:500, color:'rgba(255,255,255,0.65)', background:'transparent', border:'none', cursor:'pointer', transition:'all 0.15s', fontFamily:'var(--font-body)' }}
+            style={{ display:'flex', alignItems:'center',
+              gap: isOpen ? 14 : 0,
+              width:'100%', padding:'11px 14px',
+              justifyContent:'flex-start',
+              borderRadius:12, marginTop:8, fontSize:14, fontWeight:500, color:'rgba(255,255,255,0.65)', background:'transparent', border:'none', cursor:'pointer', transition:'all 0.15s', fontFamily:'var(--font-body)' }}
             onMouseOver={e=>e.currentTarget.style.background='rgba(255,255,255,0.10)'}
             onMouseOut={e=>e.currentTarget.style.background='transparent'}
           >
-            <span style={{ opacity:0.7 }}><CartIcon size={20}/></span>
-            Cart
+            <span style={{ opacity:0.7, display:'flex' }}><CartIcon size={20}/></span>
+            <span className={TEXT_COLLAPSE(isOpen)}>Cart</span>
             {totalQty > 0 && (
-              <span style={{ marginLeft:'auto', background:'var(--c-secondary)', color:'var(--c-on-secondary)', borderRadius:9999, padding:'1px 7px', fontSize:11, fontWeight:800 }}>
+              <span className={TEXT_COLLAPSE(isOpen)} style={{
+                marginLeft: isOpen ? 'auto' : 0,
+                background:'var(--c-secondary)', color:'var(--c-on-secondary)',
+                borderRadius:9999, padding:'1px 7px', fontSize:11, fontWeight:800,
+              }}>
                 {totalQty > 9 ? '9+' : totalQty}
               </span>
             )}
           </button>
 
-          {/* Track Order — under Browse in the nav */}
+          {/* Track Order */}
           <button onClick={onTrackOrder}
-            style={{ display:'flex', alignItems:'center', gap:14, width:'100%', padding:'11px 14px', borderRadius:12, marginTop:4, fontSize:14, fontWeight:500, color:'rgba(255,255,255,0.65)', background:'transparent', border:'none', cursor:'pointer', transition:'all 0.15s', fontFamily:'var(--font-body)' }}
+            style={{ display:'flex', alignItems:'center',
+              gap: isOpen ? 14 : 0,
+              width:'100%', padding:'11px 14px',
+              justifyContent:'flex-start',
+              borderRadius:12, marginTop:4, fontSize:14, fontWeight:500, color:'rgba(255,255,255,0.65)', background:'transparent', border:'none', cursor:'pointer', transition:'all 0.15s', fontFamily:'var(--font-body)' }}
             onMouseOver={e=>e.currentTarget.style.background='rgba(255,255,255,0.10)'}
             onMouseOut={e=>e.currentTarget.style.background='transparent'}
           >
-            <span style={{ opacity:0.7 }}><PackageSearchIcon size={20}/></span>
-            Track Order
+            <span style={{ opacity:0.7, display:'flex' }}><PackageSearchIcon size={20}/></span>
+            <span className={TEXT_COLLAPSE(isOpen)}>Track Order</span>
           </button>
-        </nav>
 
-        {/* Bottom nav */}
-        <div style={{ borderTop:'1px solid rgba(255,255,255,0.12)', paddingTop:10 }}>
-          {([{key:'settings',icon:<SettingsIcon size={18}/>,label:'Settings'},{key:'help',icon:<HelpIcon size={18}/>,label:'Help'}] as {key:NavKey;icon:React.ReactNode;label:string}[]).map(item=>(
-            <button key={item.key} onClick={()=>onNavClick(item.key)}
-              style={{ display:'flex', alignItems:'center', gap:14, width:'100%', padding:'9px 14px', borderRadius:10, marginBottom:2, fontSize:13, fontWeight:500, color:'rgba(255,255,255,0.45)', background:'transparent', border:'none', cursor:'pointer', transition:'color 0.15s', fontFamily:'var(--font-body)' }}
-              onMouseOver={e=>e.currentTarget.style.color='rgba(255,255,255,0.80)'}
-              onMouseOut={e=>e.currentTarget.style.color='rgba(255,255,255,0.45)'}
-            >
-              {item.icon}{item.label}
-            </button>
-          ))}
-        </div>
+          {/* Settings + Help directly under Track Order */}
+          <div style={{ marginTop:10 }}>
+            {mutedNavRow('settings', <SettingsIcon size={18}/>, 'Settings')}
+            {mutedNavRow('help',     <HelpIcon    size={18}/>, 'Help')}
+          </div>
+        </nav>
+      </div>
+
+      {/* Lower region — no hover handlers; toggle is click-only */}
+      <div style={{ position:'relative', zIndex:1, borderTop:'1px solid rgba(255,255,255,0.12)', padding:'10px 0' }}>
+        <button onClick={onTogglePinned}
+          title={isPinned ? 'Collapse sidebar (Ctrl+B)' : 'Expand sidebar (Ctrl+B)'}
+          style={{ display:'flex', alignItems:'center', justifyContent:'flex-start',
+            width:'100%', padding:'11px 14px',
+            borderRadius:12,
+            background: isPinned ? 'rgba(189,147,249,0.12)' : 'transparent',
+            border:'none', cursor:'pointer',
+            transition:'all 0.15s',
+            color: isPinned ? 'var(--c-primary)' : 'rgba(255,255,255,0.65)',
+          }}
+          onMouseOver={e=>{ if(!isPinned) e.currentTarget.style.background='rgba(255,255,255,0.08)'; }}
+          onMouseOut={e=>{  if(!isPinned) e.currentTarget.style.background='transparent'; }}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: isPinned ? 1 : 0.7 }}>
+            <rect width="18" height="18" x="3" y="3" rx="2" />
+            <path
+              d="M9 3v18"
+              className={`transition-transform duration-300 ease-in-out origin-center ${!isPinned ? 'translate-x-[6px]' : 'translate-x-0'}`}
+            />
+          </svg>
+        </button>
       </div>
     </aside>
   );
@@ -176,6 +248,27 @@ function AppContent({ user }: { user: UserInfo }) {
   const [speakerOn,   setSpeakerOn]   = useState(true);
   const { totalQty } = useCart();
 
+  const [isPinned, setIsPinned]   = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+  const [toastMsg, setToastMsg]   = useState<string | null>(null);
+  const isOpen = isPinned || isHovered;
+  const togglePinned = () => setIsPinned(p => !p);
+  const pinnedRef = useRef(false);
+  useEffect(() => { pinnedRef.current = isPinned; }, [isPinned]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) {
+        e.preventDefault();
+        const next = !pinnedRef.current;
+        pinnedRef.current = next;
+        setIsPinned(next);
+        setToastMsg(next ? 'Sidebar pinned · Ctrl+B' : 'Sidebar collapsed · Ctrl+B');
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   /* Open cart drawer when ChatPanel detects a <checkout_fill> tag */
   useEffect(() => {
     const handler = () => setCartOpen(true);
@@ -314,7 +407,6 @@ function AppContent({ user }: { user: UserInfo }) {
       setCartOpen(true);
     }
   }, [totalQty]);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileTab,   setMobileTab]   = useState<MobileTab>('chat');
   const [activeNav,   setActiveNav]   = useState<NavKey>('home');
   const [panel,       setPanel]       = useState<PanelId>('none');
@@ -346,16 +438,10 @@ function AppContent({ user }: { user: UserInfo }) {
 
       {/* ── Header ───────────────────────────────────────── */}
       <header className="glass-header" style={{ height:64, padding:'0 14px', position:'fixed', top:0, left:0, right:0, zIndex:50, display:'flex', alignItems:'center', gap:6 }}>
-        <div className="hidden lg:block">
-          <IconBtn onClick={()=>setSidebarOpen(v=>!v)} title={sidebarOpen?'Close sidebar':'Open sidebar'}>
-            {sidebarOpen ? <XIcon size={20}/> : <MenuIcon size={20}/>}
-          </IconBtn>
-        </div>
-
         {/* Kapruka logo + TARA brand */}
-        <div style={{ display:'flex', alignItems:'center', gap:10, marginRight:'auto' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8, marginRight:'auto' }}>
           <img src="/kapruka-logo.png" alt="Kapruka"
-            style={{ height:34, width:'auto', objectFit:'contain', display:'block' }}
+            style={{ height:34, width:34, borderRadius:'50%', objectFit:'cover', display:'block', background:'#fff', padding:2 }}
             onError={e=>{ const t=e.target as HTMLImageElement; t.style.display='none'; }}
           />
           <div>
@@ -397,15 +483,13 @@ function AppContent({ user }: { user: UserInfo }) {
         </div>
       </header>
 
-      {/* ── Sidebar spacer + sidebar ─────────────────────── */}
-      <div className="hidden lg:block" style={{ position:'fixed', top:64, left:0, bottom:0, width:sidebarOpen?256:0, zIndex:30, overflow:'hidden', transition:'width 0.25s cubic-bezier(0.4,0,0.2,1)' }}>
-        {sidebarOpen && <SideNavBar activeNav={activeNav} onNavClick={handleNavClick} onCartOpen={()=>setCartOpen(true)} totalQty={totalQty} user={user} onTrackOrder={()=>setPanel('track')}/>}
+      {/* ── Sidebar (always mounted; width/colapses transitions) ── */}
+      <div className={`hidden lg:block fixed top-16 left-0 bottom-0 z-30 overflow-hidden flex flex-col transition-all duration-300 ease-in-out ${isOpen ? 'w-64' : 'w-16'} px-2`}>
+        <SideNavBar isOpen={isOpen} isPinned={isPinned} onTogglePinned={togglePinned} onHoverIn={() => setIsHovered(true)} onHoverOut={() => setIsHovered(false)} activeNav={activeNav} onNavClick={handleNavClick} onCartOpen={()=>setCartOpen(true)} totalQty={totalQty} user={user} onTrackOrder={()=>setPanel('track')}/>
       </div>
 
       {/* ── Main ──────────────────────────────────────────── */}
       <div style={{ display:'flex', flex:1, overflow:'hidden', marginTop:64 }}>
-        <div className="hidden lg:block flex-shrink-0" style={{ width:sidebarOpen?256:0, transition:'width 0.25s cubic-bezier(0.4,0,0.2,1)' }}/>
-
         {/* Chat */}
         <div style={{ flex:1, minWidth:0, flexDirection:'column', overflow:'hidden', display:mobileTab==='chat'?'flex':'none' }} className="md:!flex">
           <ChatPanel lang={lang} onLangChange={setLang} onProductsFound={handleProducts} onSearching={setSearching}
@@ -445,6 +529,8 @@ function AppContent({ user }: { user: UserInfo }) {
       <SidePanel panel={panel} lang={lang} onClose={()=>setPanel('none')}
         onCategorySearch={handleCategorySearch} onLangChange={setLang} onClearChat={handleClearChat}
         onNavigate={setPanel} speakerOn={speakerOn} onSpeakerToggle={()=>setSpeakerOn(v=>!v)}/>
+
+      {toastMsg && <Toast message={toastMsg} onDone={() => setToastMsg(null)} />}
     </div>
   );
 }

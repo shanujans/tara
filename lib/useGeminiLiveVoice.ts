@@ -18,6 +18,7 @@ export function useGeminiLiveVoice(opts: GeminiLiveVoiceOptions) {
   const [listening, setListening] = useState(false);
 
   const clientRef = useRef<GeminiLiveClient | null>(null);
+  const [analyserNode, setAnalyserNode] = useState<AnalyserNode | null>(null);
   const optsRef = useRef(opts);
   optsRef.current = opts;
 
@@ -43,6 +44,7 @@ export function useGeminiLiveVoice(opts: GeminiLiveVoiceOptions) {
           },
           onListeningChange: (lst) => {
             setListening(lst);
+            if (lst) setAnalyserNode(clientRef.current?.analyserNode ?? null);
             optsRef.current.onListeningChange?.(lst);
           },
         },
@@ -63,6 +65,7 @@ export function useGeminiLiveVoice(opts: GeminiLiveVoiceOptions) {
     setStatus('idle');
     setSpeaking(false);
     setListening(false);
+    setAnalyserNode(null);
   }, []);
 
   const speakResponse = useCallback((text: string) => {
@@ -91,5 +94,6 @@ export function useGeminiLiveVoice(opts: GeminiLiveVoiceOptions) {
     speakResponse,
     pauseMic,
     resumeMic,
+    analyserNode,
   };
 }

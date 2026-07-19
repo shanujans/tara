@@ -1,7 +1,7 @@
 'use client';
 
 import { GoogleGenAI, Modality, type Session, type LiveServerMessage } from '@google/genai';
-import { VOICE_SYSTEM_PROMPT } from '@/lib/voiceSystemPrompt';
+import { VOICE_SYSTEM_PROMPT, TTS_ONLY_SYSTEM_PROMPT } from '@/lib/voiceSystemPrompt';
 
 export type LiveStatus = 'idle' | 'connecting' | 'connected' | 'error' | 'closed';
 
@@ -26,6 +26,7 @@ export class GeminiLiveClient {
   private session: Session | null = null;
   private handlers: LiveClientHandlers;
   private model: string;
+  private ttsOnly: boolean;
 
   // Mic capture
   private micStream: MediaStream | null = null;
@@ -33,6 +34,7 @@ export class GeminiLiveClient {
   private micScriptNode: ScriptProcessorNode | null = null;
   private micActive = false;
   private micPaused = false;
+  private _analyser: AnalyserNode | null = null;
 
   // TTS playback
   private ttsContext: AudioContext | null = null;
@@ -41,13 +43,17 @@ export class GeminiLiveClient {
   private ttsNextTime = 0;
 
   // State
-  private isSpeakingResponse = false; // true when we sent text to speak
-  private turnDone = false;            // true after server signals turnComplete
-  private ttsCompleteFired = false;    // true after onTTSComplete fired for current turn
+  private isSpeakingResponse = false;
+  private turnDone = false;
+  private ttsCompleteFired = false;
 
-  constructor(handlers: LiveClientHandlers, model: string) {
+  // speakResponseAndWait() promise resolver
+  private ttsWaitResolve: ((value: void) => void) | null = null;
+
+  constructor(handlers: LiveClientHandlers, model: string, ttsOnly = false) {
     this.handlers = handlers;
     this.model = model;
+    this.ttsOnly = ttsOnly;
   }
 
   async connect(token: string): Promise<void> {
@@ -70,7 +76,7 @@ export class GeminiLiveClient {
           model: this.model,
           config: {
             responseModalities: [Modality.AUDIO],
-            systemInstruction: VOICE_SYSTEM_PROMPT,
+            systemInstruction: this.ttsOnly ? TTS_ONLY_SYSTEM_PROMPT : VOICE_SYSTEM_PROMPT,
             inputAudioTranscription: {},
             outputAudioTranscription: {},
             speechConfig: {
@@ -81,12 +87,14 @@ export class GeminiLiveClient {
           },
           callbacks: {
             onopen: () => {
-              console.log('[gemini-live] WSS open');
+              console.log('[gemini-live] WSS open', this.ttsOnly ? '(TTS-only)' : '(bidirectional)');
               this.handlers.onStatus('connected');
-              this.startMicCapture().catch(err => {
-                console.error('[gemini-live] mic capture failed:', err);
-                this.handlers.onError(`Mic: ${err.message}`);
-              });
+              if (!this.ttsOnly) {
+                this.startMicCapture().catch(err => {
+                  console.error('[gemini-live] mic capture failed:', err);
+                  this.handlers.onError(`Mic: ${err.message}`);
+                });
+              }
             },
             onmessage: (e: LiveServerMessage) => this.handleMessage(e),
             onerror: (e: ErrorEvent) => {
@@ -173,11 +181,13 @@ export class GeminiLiveClient {
 
   // ─── Mic pause / resume ─────────────────────────────────────────────────────
   pauseMic(): void {
+    if (this.ttsOnly) return;
     this.micPaused = true;
     this.handlers.onListeningChange?.(false);
   }
 
   resumeMic(): void {
+    if (this.ttsOnly) return;
     this.micPaused = false;
     if (this.micActive) this.handlers.onListeningChange?.(true);
   }
@@ -197,6 +207,36 @@ export class GeminiLiveClient {
       turnComplete: true,
     });
     console.log('[gemini-live] speakResponse sent:', text.slice(0, 80));
+  }
+
+  async speakResponseAndWait(text: string, timeoutMs = 25_000): Promise<void> {
+    if (!this.session || !text.trim()) return;
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.ttsWaitResolve = null;
+        console.warn('[gemini-live] speakResponseAndWait timed out');
+        reject(new Error('Gemini Live TTS timed out'));
+      }, timeoutMs);
+
+      const origResolve = this.ttsWaitResolve;
+      this.ttsWaitResolve = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+
+      try {
+        this.speakResponse(text);
+      } catch (err) {
+        clearTimeout(timer);
+        this.ttsWaitResolve = origResolve;
+        reject(err);
+      }
+    });
+  }
+
+  /** Public method to stop TTS playback (for stopSpeaking in useVoiceMode). */
+  stopSpeaking(): void {
+    this.stopTTS();
   }
 
   get getIsSpeakingResponse(): boolean {
@@ -226,6 +266,11 @@ export class GeminiLiveClient {
       this.ttsCompleteFired = true;
       console.log('[gemini-live] TTS complete — safe to resume mic');
       this.handlers.onTTSComplete?.();
+      if (this.ttsWaitResolve) {
+        const resolve = this.ttsWaitResolve;
+        this.ttsWaitResolve = null;
+        resolve();
+      }
     }
   }
 
@@ -264,6 +309,11 @@ export class GeminiLiveClient {
     this.ttsPlaying = false;
     this.ttsNextTime = 0;
     this.handlers.onSpeakingChange?.(false);
+    if (this.ttsWaitResolve) {
+      const resolve = this.ttsWaitResolve;
+      this.ttsWaitResolve = null;
+      resolve();
+    }
   }
 
   // ─── Message handling ───────────────────────────────────────────────────────
@@ -289,12 +339,9 @@ export class GeminiLiveClient {
       }
     }
 
-    // 2. Input transcription — what the user said
-    // ALWAYS fire, even during speakResponse — ChatPanel will handle dedup/gating.
-    // Some Gemini Live versions send transcription without `finished` flag, so
-    // we fire on any non-empty text and let the caller decide.
+    // 2. Input transcription — what the user said (skip in TTS-only mode)
     const inputText = sc.inputTranscription?.text?.trim();
-    if (inputText && inputText.length > 0) {
+    if (!this.ttsOnly && inputText && inputText.length > 0) {
       const isFinished = sc.inputTranscription?.finished !== false; // fire unless explicitly false
       if (isFinished) {
         console.log('[gemini-live] USER SAID:', inputText, '(isSpeakingResponse:', this.isSpeakingResponse + ')');
@@ -308,11 +355,13 @@ export class GeminiLiveClient {
       }
     }
 
-    // 3. Output transcription — what Gemini spoke aloud (instant confirmation / read-aloud)
-    const outputText = sc.outputTranscription?.text?.trim();
-    if (outputText && outputText.length > 0 && sc.outputTranscription?.finished) {
-      console.log('[gemini-live] GEMINI SAID:', outputText.slice(0, 80), '(isReadAloud:', this.isSpeakingResponse + ')');
-      this.handlers.onOutputTranscript?.(outputText, this.isSpeakingResponse);
+    // 3. Output transcription — skip in TTS-only mode (no conversational turns)
+    if (!this.ttsOnly) {
+      const outputText = sc.outputTranscription?.text?.trim();
+      if (outputText && outputText.length > 0 && sc.outputTranscription?.finished) {
+        console.log('[gemini-live] GEMINI SAID:', outputText.slice(0, 80), '(isReadAloud:', this.isSpeakingResponse + ')');
+        this.handlers.onOutputTranscript?.(outputText, this.isSpeakingResponse);
+      }
     }
 
     // 4. Turn complete
@@ -351,6 +400,17 @@ export class GeminiLiveClient {
 
   get isMicActive(): boolean {
     return this.micActive && !this.micPaused;
+  }
+
+  get analyserNode(): AnalyserNode | null {
+    if (!this.micStream || !this.micContext) return null;
+    if (!this._analyser) {
+      const source = this.micContext.createMediaStreamSource(this.micStream);
+      this._analyser = this.micContext.createAnalyser();
+      this._analyser.fftSize = 512;
+      source.connect(this._analyser);
+    }
+    return this._analyser;
   }
 
   private arrayBufferToBase64(buffer: ArrayBuffer): string {

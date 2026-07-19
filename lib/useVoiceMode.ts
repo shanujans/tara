@@ -1,5 +1,6 @@
 'use client';
 import { useRef, useState, useCallback, useEffect } from 'react';
+import { GeminiLiveClient, type LiveStatus } from '@/lib/geminiLiveClient';
 
 // Silence auto-stop (voice-mode hands-free loop only): once speech has been
 // sustained for MIN_SPEECH_MS, a pause of SILENCE_MS stops & sends.
@@ -43,6 +44,62 @@ export function useVoiceMode({ onTranscript, getLang, micDeniedMessage }: UseVoi
   const discardRef        = useRef(false);
   const sttAbortRef       = useRef<AbortController | null>(null);
 
+  // ── Gemini Live TTS (primary for all languages) ─────────────────────────
+  const geminiLiveRef      = useRef<GeminiLiveClient | null>(null);
+  const geminiLiveStatusRef = useRef<LiveStatus>('idle');
+  const geminiLiveConnectingRef = useRef(false);
+  const [geminiLiveTTSConnected, setGeminiLiveTTSConnected] = useState(false);
+
+  // Connect Gemini Live in TTS-only mode (no mic capture). Lazy — called on first
+  // voice interaction so the WSS is ready by the time speak() needs it.
+  const connectGeminiLiveTTS = useCallback(async () => {
+    if (geminiLiveStatusRef.current !== 'idle' || geminiLiveConnectingRef.current) return;
+    geminiLiveConnectingRef.current = true;
+    try {
+      const res = await fetch('/api/voice/token', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok || !data.token) throw new Error(data.error ?? 'Token request failed');
+
+      const client = new GeminiLiveClient(
+        {
+          onStatus: (s) => {
+            geminiLiveStatusRef.current = s;
+            setGeminiLiveTTSConnected(s === 'connected');
+          },
+          onUserTranscript: () => {},
+          onOutputTranscript: () => {},
+          onTTSComplete: () => {},
+          onError: (m) => console.warn('[voice] Gemini Live TTS error:', m),
+          onSpeakingChange: (spk) => {
+            if (spk) setIsPreparingSpeech(false);
+            setIsSpeaking(spk);
+          },
+          onListeningChange: () => {},
+        },
+        data.model,
+        true,
+      );
+      geminiLiveRef.current = client;
+      await client.connect(data.token);
+    } catch (err) {
+      console.warn('[voice] Gemini Live TTS connect failed:', err);
+      geminiLiveStatusRef.current = 'idle';
+      setGeminiLiveTTSConnected(false);
+    } finally {
+      geminiLiveConnectingRef.current = false;
+    }
+  }, []);
+
+  const disconnectGeminiLiveTTS = useCallback(async () => {
+    if (geminiLiveRef.current) {
+      await geminiLiveRef.current.disconnect();
+      geminiLiveRef.current = null;
+    }
+    geminiLiveStatusRef.current = 'idle';
+    geminiLiveConnectingRef.current = false;
+    setGeminiLiveTTSConnected(false);
+  }, []);
+
   useEffect(() => {
     setMicSupported(typeof window !== 'undefined' && !!navigator.mediaDevices && typeof MediaRecorder !== 'undefined');
   }, []);
@@ -80,12 +137,13 @@ export function useVoiceMode({ onTranscript, getLang, micDeniedMessage }: UseVoi
   // on every tap again.
   const releaseStream = useCallback(() => {
     cleanupTimers();
+    void disconnectGeminiLiveTTS();
     streamRef.current?.getTracks().forEach(t => t.stop());
     audioCtxRef.current?.close().catch(() => {});
     streamRef.current = null;
     audioCtxRef.current = null;
     analyserRef.current = null;
-  }, [cleanupTimers]);
+  }, [cleanupTimers, disconnectGeminiLiveTTS]);
 
   const stopRecording = useCallback(() => {
     discardRef.current = false;
@@ -126,6 +184,11 @@ export function useVoiceMode({ onTranscript, getLang, micDeniedMessage }: UseVoi
     if (!micSupported || isRecording) return;
     primeAudioElement();
     discardRef.current = false;
+
+    // Lazy-connect Gemini Live TTS on first voice interaction
+    if (geminiLiveStatusRef.current === 'idle' && !geminiLiveConnectingRef.current) {
+      void connectGeminiLiveTTS();
+    }
 
     // Reuse the existing stream/AudioContext if one from an earlier recording in
     // this session is still live — this is the fix for the ~5-10s startup delay,
@@ -264,13 +327,26 @@ export function useVoiceMode({ onTranscript, getLang, micDeniedMessage }: UseVoi
     });
   }, [getLang]);
 
-  // ---------- speak(): streamed <audio> for en/si/ta, Web Audio decode as fallback ----------
+  // ---------- speak(): Gemini Live TTS (primary) → Speechmatics/Azure → Web Speech API ----------
   const speak = useCallback((text: string): Promise<void> => {
     return new Promise(async (resolve) => {
       const clean = text.replace(/[*_#]/g, '').replace(/\p{Extended_Pictographic}/gu, '').trim();
       if (!clean) return resolve();
       const lang = getLang();
       setIsPreparingSpeech(true);
+
+      // ── PRIMARY: Gemini Live TTS (all languages) ──
+      if (geminiLiveRef.current?.isConnected) {
+        try {
+          await geminiLiveRef.current.speakResponseAndWait(clean, 25_000);
+          setIsSpeaking(false);
+          resolve();
+          return;
+        } catch (err) {
+          console.warn('[voice] Gemini Live TTS failed, falling back:', err);
+          setIsSpeaking(false);
+        }
+      }
 
       // Buffered path (POST + decodeAudioData) — used directly for sl/tl
       // (Gemini only, not wired for streaming), and as the fallback if
@@ -383,9 +459,7 @@ export function useVoiceMode({ onTranscript, getLang, micDeniedMessage }: UseVoi
   // ---------- end of speak ----------
 
   const stopSpeaking = useCallback(() => {
-    // English streamed path: we hold a real element reference now, so we can
-    // actually stop it (unlike the old Web-Audio-only path, which could only
-    // clear state and let playback finish naturally).
+    if (geminiLiveRef.current) geminiLiveRef.current.stopSpeaking();
     if (playerRef.current && !playerRef.current.paused) {
       playerRef.current.pause();
       playerRef.current.currentTime = 0;
@@ -408,5 +482,7 @@ export function useVoiceMode({ onTranscript, getLang, micDeniedMessage }: UseVoi
     startRecording, stopRecording, cancelRecording, primeAudioElement,
     speak, speakInstant, stopSpeaking, toggleVoiceMode,
     analyserRef,
+    releaseStream,
+    geminiLiveTTSConnected, disconnectGeminiLiveTTS,
   };
 }
