@@ -31,6 +31,7 @@
     micPermissionDenied: 'Allow microphone access to use voice mode.',
     cancelListeningTitle: 'Tap to cancel — won\'t be sent',
     instantGreeting: 'On it! Searching now… 🔍',
+    manualTitle: 'User Manual',
   },
   si: {
     headerTitle: 'TARA ✦', langBadge: 'සිං',
@@ -60,10 +61,11 @@
     voiceModeStopTitle: 'Voice mode ක්‍රියාත්මකයි — නැවැත්වීමට තට්ටු කරන්න',
     listeningStatus: '🎙 අහගෙන සිටියි…', transcribingStatus: '✦ පරිවර්තනය කරමින්…', speakingStatus: '🔊 කථා කරමින්…', preparingSpeechStatus: '✦ TARA කථා කිරීමට සූදානම් වෙයි…',
     micPermissionDenied: 'Voice mode භාවිතයට මයික්‍රොෆෝන් අවසර දෙන්න.',
-    instantGreeting: 'හරි, හොයනවා! 🔍',
+instantGreeting: 'හරි, හොයනවා! 🔍',
     cancelListeningTitle: 'අවලංගු කිරීමට තට්ටු කරන්න — යවන්නේ නැත',
+    manualTitle: 'පරිපාලන පොත',
   },
-  // Sihalish — romanized Sinhala + English.
+  // Sihalish
   sl: {
     headerTitle: 'TARA ✦', langBadge: 'SL',
     chatPlaceholder: 'Mokada ona kiyanna… (type what you need)',
@@ -92,9 +94,11 @@
     voiceModeStopTitle: 'Voice mode on tiyenne — nawathanna tap karanna',
     listeningStatus: '🎙 Ahagena innawa…', transcribingStatus: '✦ Type karamin…', speakingStatus: '🔊 Katha karamin…', preparingSpeechStatus: '✦ TARA katha karanna heduwannawa…',
     micPermissionDenied: 'Voice mode use karanna mic access denna.',
-    instantGreeting: 'Hondai, hoyanawa! 🔍',
-    cancelListeningTitle: 'Cancel karanna tap karanna — send wenne na',
+instantGreeting: 'Hondai, hoyanawa! 🔍',
+    cancelListeningTitle: 'Awalangu karanata thattu karanna — yavanne ne',
+    manualTitle: 'User Manual',
   },
+  // Tamil (Unicode)
   ta: {
     headerTitle: 'TARA ✦', langBadge: 'தமிழ்',
     chatPlaceholder: 'நீங்கள் தேடுவதை கேளுங்கள்…',
@@ -123,9 +127,11 @@
     voiceModeStopTitle: 'Voice mode ஆன் — நிறுத்த தட்டவும்',
     listeningStatus: '🎙 கேட்கிறது…', transcribingStatus: '✦ எழுதுகிறது…', speakingStatus: '🔊 பேசுகிறது…', preparingSpeechStatus: '✦ TARA பேச தயாராகிறது…',
     micPermissionDenied: 'Voice mode பயன்படுத்த மைக் அனுமதி கொடுங்கள்.',
-    instantGreeting: 'நிச்சயமாக! தேடுகிறேன்… 🔍',
-    cancelListeningTitle: 'ரத்து செய்ய தட்டவும் — அனுப்பப்படாது',
+instantGreeting: 'நிச்சயமாக! தேடுகிறேன்… 🔍',
+    cancelListeningTitle: 'ரத்து செய்யத் தட்டவும் — அனுப்பப்படாது',
+    manualTitle: 'பயனர் கைநிரல்',
   },
+  // Tanglish
   tl: {
     headerTitle: 'TARA ✦', langBadge: 'TL',
     chatPlaceholder: 'Machan, ask me ethuvaanalum…',
@@ -156,6 +162,7 @@
     micPermissionDenied: 'Voice mode use panna mic access kudunga la.',
     instantGreeting: 'Sari machan, kandupidikiren… 🔍',
     cancelListeningTitle: 'Cancel panna tap pannunga — send aagadhu',
+    manualTitle: 'User Manual',
   },
 };
 

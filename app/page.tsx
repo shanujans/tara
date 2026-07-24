@@ -29,13 +29,14 @@ const SplashScreen = dynamic(() => import('@/components/SplashScreen'), {
 });
 
 type MobileTab = 'chat' | 'products' | 'discover' | 'menu';
-type NavKey    = 'home' | 'history' | 'rewards' | 'browse' | 'settings' | 'help';
+type NavKey    = 'home' | 'history' | 'rewards' | 'browse' | 'settings' | 'help' | 'manual';
 
 const NAV_ITEMS: { key: NavKey; label: string; icon: React.ReactNode }[] = [
   { key:'home',    label:'Home',    icon:<HomeIcon    size={20}/> },
   { key:'history', label:'History', icon:<HistoryIcon size={20}/> },
   { key:'rewards', label:'Rewards', icon:<RewardsIcon size={20}/> },
   { key:'browse',  label:'Browse',  icon:<BrowseIcon  size={20}/> },
+  { key:'manual',  label:'Manual',  icon:<span style={{fontSize:18}}>📖</span> },
 ];
 
 /* ── Sidebar with the exact spec shader as background ──────── */
@@ -184,10 +185,11 @@ function SideNavBar({ isOpen, isPinned, onTogglePinned, onHoverIn, onHoverOut, a
             <span className={TEXT_COLLAPSE(isOpen)}>Track Order</span>
           </button>
 
-          {/* Settings + Help directly under Track Order */}
+          {/* Settings + Help + Manual directly under Track Order */}
           <div style={{ marginTop:10 }}>
             {mutedNavRow('settings', <SettingsIcon size={18}/>, 'Settings')}
             {mutedNavRow('help',     <HelpIcon    size={18}/>, 'Help')}
+            {mutedNavRow('manual',   <span style={{fontSize:18}}>📖</span>, 'User Manual')}
           </div>
         </nav>
       </div>
@@ -427,6 +429,7 @@ function AppContent({ user }: { user: UserInfo }) {
     else if (key==='rewards')  setPanel('rewards');
     else if (key==='settings') setPanel('settings');
     else if (key==='help')     setPanel('help');
+    else if (key==='manual')   setPanel('manual');
   };
 
   const handleCategorySearch = useCallback((q:string) => { setMobileTab('chat'); setAutoSend(q); }, []);
