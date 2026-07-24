@@ -32,8 +32,165 @@ const LOG = {
 // exempt them so local dev doesn't burn the rate-limit bucket.
 const LOOPBACK = new Set(['::1', '127.0.0.1', '::ffff:127.0.0.1', 'localhost']);
 
-const SL_WORDS = new Set(['mama','oyage','oyata','api','apita','mata','eka','ekak','ona','onee','nehe','koheda','kohomada','mokada','puluwan','bohoma','hariyata','gedara','amma','thaththa','putha','akka','aiya','nangi','malli','hondai','hondhai','hari','tika','tikak','godak','isthuti','ayubowan','denna','ganna','ganda','wage','witharak','kiyala','yanna','karanna','karala','kamak','nae','newei','sellam','kema','kanna','bonna','danna','enava','yanawa','karanawa','tiyenawa','thiyenawa','nattang','epa','inna','wela','balanna','hadanna']);
-const TL_WORDS = new Set(['machang','machan','aiyo','oneda','aney','yako','oru','naan','nee','ungal','ungaluku','ungalukku','enakku','avan','aval','avanga','ivanga','nanga','romba','rombha','konjam','konju','niraya','ellam','illa','aama','sari','seri','venum','venuma','venumla','venumda','vendum','vendaam','vendam','vendanum','pannunga','pannu','panren','panniten','sollunga','sollu','kudunga','kudu','vaanga','vaa','vangunga','vanganum','anuppu','anuppanum','anuppuvoma','anuppa','appaku','ammaku','thambiku','akkaku','annaku','rupai','rupaiku','rupaikulla','ulla','kitta','kooda','mattum','evlo','evvalo','epdi','eppadi','enna','yenna','enga','epo','eppo','yepo','nalla','aaguma','aagum','kaattu','kaattunga','poda','podi','vaanunga','da','la','neh','nu']);
+const TL_WORDS = new Set([
+  // 1. E-commerce Actions & Intent (Buying, Paying, Delivery)
+  'order', 'parcel', 'delivery', 'deliver', 'cart', 'checkout', 'bill', 
+  'pay', 'kattu', 'katta', 'vaangu', 'vaangava', 'vaanganum', 'vendi', 'edukka',
+  'anuppu', 'anuppanum', 'anuppa', 'cancel', 'return', 'track', 'thedi',
+  'thiruppi', 'maathu', 'marakkama', 'amukku', 'thodu', 'konduva', 'tharava',
+
+  // 2. Pricing, Money & Offers
+  'vilai', 'rate', 'price', 'kaasi', 'salli', 'panam', 'rupai', 'rupaiku', 
+  'discount', 'offer', 'kurai', 'kuraiva', 'koraivu', 'kooda', 'micham', 
+  'udane', 'free', 'illavasa', 
+
+  // 3. Kapruka Product Categories (Cakes, Gifts, Groceries, etc.)
+  'cake', 'cakeku', 'poo', 'flower', 'malargal', 'rose', 'bouquet', 
+  'gift', 'parisu', 'hamper', 'chocolates', 'sweet', 'sweets', 
+  'udupu', 'thuni', 'dress', 'saree', 'shirt', 
+  'maligai', 'saaman', 'pazham', 'fruits', 'bommai', 'toys', 
+  'book', 'pusthakam', 'phone', 'electronics', 'kade', 'kadai',
+
+  // 4. Relationships: Lovers & Partners
+  'lover', 'loveruku', 'aalu', 'aaluku', 'kaathalan', 'kaathali', 
+  'purushan', 'kanavan', 'pondati', 'manaivi', 'jodi', 'kalyanam', 'wedding',
+
+  // 5. Relationships: Friends (Boy/Girl)
+  'nanban', 'nanbenda', 'thozhan',
+  'nanbi', 'tholi', 'thozhi',
+  'machi', 'machan', 'nanbanga', 'friends', 'friend', 'friendu', 'frienduku', 'friendga',
+
+  // 6. Relationships: Family & Relatives
+  'amma', 'ammaku', 'appa', 'appaku', 
+  'anna', 'annaku', 'thambi', 'thambiku', 
+  'akka', 'akkaku', 'thangachi', 'thangachiku', 
+  'thatha', 'patti', 'mama', 'mami', 'nandamma',
+  'kudumbam', 'family', 'pasanga', 'kuzhandhai', 'kids',
+
+  // 7. Greetings, Exclamations & Conversational Fillers
+  'vanakkam', 'hello', 'hi', 'saptacha', 'eppadi', 'epdi', 'nallarkingala',
+  'aama', 'illa', 'illai', 'sari', 'seri', 'ok', 'okay', 'summa', 'chumma',
+  'kandippa', 'nichayam', 'oruvelai', 'athellam', 'aana', 'illana',
+  'aiyo', 'aiyayo', 'ada', 'che', 'paavam', 
+  
+  // 8. Core Pronouns
+  'naan', 'nee', 'enakku', 'unakku', 'ennoda', 'unnoda', 'nanga', 'namma', 
+  'nammal', 'avan', 'aval', 'avanga', 'ivanga', 'avana', 'avala', 'ungal', 
+  'ungaluku', 'ungalukku', 'ungaloda', 'yar', 'yaaru', 'yaruku', 'yara',
+  'adhu', 'idu', 'edu', 'ithu', 'ethu', 'ava', 'ivu',
+
+  // 9. Question Words
+  'enna', 'yenna', 'yennu', 'yen', 'en', 'enga', 'anga', 'inga', 'ingae', 
+  'ingane', 'epo', 'eppo', 'yepo', 'epavum', 'eppothum', 'evlo', 'evvalo', 
+  'ethanai', 'ethuku', 'yedhukku', 'edhuku', 'yethukku',
+
+  // 10. Time, Days & Occasions
+  'inikku', 'innaiku', 'nalaikku', 'nethu', 'ippo', 'apa', 'aprom', 'apparam', 
+  'kalaila', 'mathiyam', 'sayangalam', 'night', 'nightu', 'rathiri', 'odane', 
+  'seekiram', 'late', 'time', 'thirumba', 'marupadiyum', 'birthday', 'anniversary',
+
+  // 11. Quantifiers, Sizes & Prepositions
+  'romba', 'rombha', 'rombu', 'konjam', 'konju', 'niraya', 'ellam', 'onnum', 
+  'onum', 'mikavum', 'miga', 'periya', 'chinna', 'pudhu', 'pudhusa', 'pazhaya',
+  'vegama', 'methuva', 'podhum', 'pothaathu', 'ulla', 'kitta', 'kooda', 
+  'mattum', 'mela', 'keela', 'veliya', 'munnadi', 'pinnaadi', 'suthama',
+  'nalla', 'nallathu', 'oru', 'orua',
+
+  // 12. App Actions, Needs & States of Being
+  'pannunga', 'pannu', 'panren', 'panniten', 'panni', 'pannalam',
+  'sollunga', 'sollu', 'kudunga', 'kudu', 'tharunga', 'thara', 'tharu', 'tharungal', 'tharung',
+  'vaanga', 'vaa', 'vangunga', 'vanganum', 'vandu',
+  'thed', 'eduthu', 'eduth', 'eduku', 'eduka', 'eduthanga', 'eduthangale',
+  'kaattu', 'kaattunga', 'pakaran', 'pakaram', 'parkan', 'paaru', 'parunga', 'paakran',
+  'pakuren', 'paakuren', 'pathe', 'pathu', 'paathu', 'pathen', 'paathen', 'paathengala', 'pathutu',
+  'sapidu', 'sapita', 'vandha', 'vandhuta', 'poita', 'porathu', 'poren', 'varen', 'varan',
+  'pesu', 'pesunga', 'pesalam', 'kettu', 'kelu', 
+  'vachiko', 'vai', 'vechikonga', 'vidu', 'vidunga', 'kandu', 'pidi',
+  'iruku', 'irukku', 'venum', 'venuma', 'venumla', 'venumda', 'vendum', 'vendaam', 
+  'vendam', 'vendanum', 'thevai', 'mudiyum', 'mudiyathu', 'theriyum', 'theriyathu', 
+  'puriyum', 'puriyathu', 'purinjudha', 'aaguma', 'aagum',
+
+  // 13. Numbers & Slang
+  'onnu', 'rendu', 'moonu', 'nalu', 'anju', 'aaru', 'ezhu', 'ettu', 'ombadhu', 'pathu',
+  'da', 'la', 'neh', 'nu', 'ka', 'kaa', 'ma', 'pa', 'nga', 'di', 'd',
+  'poda', 'podi', 'vaanunga', 'loosu', 'paithiyam', 
+  'super', 'semma', 'sema', 'semmaya', 'mass', 'gethu', 'jolly', 'joly', 'mokka', 'kaduppu', 'vera', 'mathi',
+  'santhosham', 'kavalai', 'kovam'
+]);
+
+const SL_WORDS = new Set([
+  // 1. E-commerce Actions & Intent (Buying, Paying, Delivery)
+  'order', 'delivery', 'deliver', 'cart', 'checkout', 'bill', 
+  'gewanna', 'gewanawa', 'ewanna', 'ewanawa', 
+  'ganna', 'ganda', 'denna', 'return', 'cancel', 
+  'maru', 'marukaranna', 'hadanna', 
+  'hoyanna', 'balanna', 'karanna', 'karala', 'karanawa',
+
+  // 2. Pricing, Money & Offers
+  'gaana', 'mila', 'salli', 'kiyada', 
+  'discount', 'offer', 'adui', 'adu', 'wadi', 
+  'laabai', 'free', 
+
+  // 3. Kapruka Product Categories (Cakes, Gifts, Groceries, etc.)
+  'cake', 'mal', 'flower', 'rose', 'thegi', 'gift', 'hamper', 
+  'chocolates', 'sweet', 'rasum', 'adum', 'kema', 'kaama', 
+  'badu', 'elawalu', 'palathuru', 
+  'phone', 'sellam', 'bonna', 'kanna',
+
+  // 4. Relationships: Lovers & Partners
+  'adare', 'adaraya', 'lover', 'kella', 
+  'kolla', 'mahaththaya', 'nona', 
+  'husband', 'wife', 'joduwa', 'bandala',
+
+  // 5. Relationships: Friends
+  'yaluwa', 'yaluwo', 'machan', 'machang', 
+  'bokka', 'fit', 'mithura',
+
+  // 6. Relationships: Family & Relatives
+  'amma', 'thaththa', 'putha', 'duwa', 
+  'akka', 'aiya', 'nangi', 
+  'malli', 'seeya', 'aachchi', 
+  'nenda', 'massina', 'pavula', 
+  'babala', 'lamai', 'gedara',
+
+  // 7. Greetings, Exclamations & Conversational Fillers
+  'ayubowan', 'hello', 'hi', 'kohomada', 'hondai', 'hondhai', 'hari', 
+  'ow', 'nehe', 'nae', 'naha', 'newei', 'kamak', 
+  'ane', 'sha', 'maru', 'niyamai', 
+  'ela', 'elakiri', 'bohoma', 'isthuti',
+
+  // 8. Core Pronouns
+  'mama', 'mata', 'mage', 
+  'oya', 'oyage', 'oyata', 
+  'eya', 'eyage', 'eyala', 
+  'api', 'apita', 
+  'meka', 'eka', 'ekak', 'arak',
+
+  // 9. Question Words
+  'mokada', 'mokakda', 'koheda', 'kawadda', 
+  'kawda', 'ai', 'kohomada', 'kiyada',
+
+  // 10. Time, Days & Occasions
+  'ada', 'heta', 'eye', 
+  'ude', 'dawal', 'hawasa', 'raa', 're', 
+  'dan', 'passe', 'wela', 'dawasa', 
+  'sathiya', 'maasaya', 'birthday', 'anniversary',
+
+  // 11. Quantifiers, Sizes & Prepositions
+  'godak', 'tika', 'tikak', 'loku', 'podi', 
+  'aluth', 'parana', 'athule', 'eliye', 
+  'uda', 'yata', 'hariyata', 'wage', 'witharak',
+
+  // 12. App Actions, Needs & States of Being
+  'yanna', 'yanawa', 'enna', 'enava', 'inna', 
+  'kiyanna', 'kiyala', 'ahanawa', 'danna', 
+  'tiyenawa', 'thiyenawa', 'nattang', 
+  'ona', 'onee', 'epa', 'puluwan', 'ba', 'baha', 
+  'therenawa',
+
+  // 13. Numbers & Slang
+  'eka', 'deka', 'thuna', 'hathara', 'paha', 'haya', 'hatha', 'ata', 'namaya', 'dahaya'
+]);
 function detectLang(text: string): Lang {
   const t = text.trim();
   if (!t) return 'en';
@@ -55,17 +212,24 @@ Tone: warm, like a helpful younger sibling (malli/nangi). Use 😊🙏 occasiona
 IMPORTANT: <search_query> tag content must ALWAYS be in English only.`,
 
   sl: `LANGUAGE: Reply in Sihalish — romanized Sinhala mixed with English. This is how Sri Lankans type on WhatsApp.
-Use real Sinhala words spelled in English letters naturally: mama, api, eka, ekak, ona, nehe, puluwan, hondai, bohoma, mokada, koheda, hadamu, ganna, denna, balanna, karanna, yanawa, thiyanawa, gedara, amma, thaththa, wada, igenma, heta, aye, aiyo.
-Example: "Aiyo sorry, e item eka out of stock wela. Meka balamu — meka hondai weda!"
+MANDATORY: ~50% of words MUST be Sinhala words in Roman script. Do NOT default to English.
+Use these Sinhala words NATURALLY in every sentence (not just greetings):
+mama, api, eka, ekak, ona, nehe, puluwan, hondai, bohoma, mokada, koheda, hadamu, ganna, denna, balanna, karanna, yanawa, thiyanawa, gedara, amma, thaththa, wada, igenma, heta, aye, aiyo, kiyala, wage, tikak, hari, godak, isthuti, ayubowan, dennako, gannako, karanko, balanko, kiwwako.
+Example (CORRECT — ~50% Sinhala): "Aiyo mama e item eka balance wela. Meka balamu — meka hondai weda!"
+Example (WRONG — too much English): "Aiyo sorry, that item is out of stock. Let me check — this one works!"
 IMPORTANT: <search_query> tag content must ALWAYS be in English only.`,
 
   ta: `LANGUAGE: Reply FULLY in Tamil Unicode script.
 Tone: warm, like a trusted elder (anna/akka). Use 😊 occasionally.
 IMPORTANT: <search_query> tag content must ALWAYS be in English only.`,
 
-  tl: `LANGUAGE: Reply in Sri Lankan Tanglish — mix of English + Sinhala/Tamil slang.
-Use: machang, aiyo, la, neh, da, oneda naturally. Sound like a local friend texting.
-Example: "Aiyo machang, that one is super nice la! Let me find the best for you neh 🏸"
+  tl: `LANGUAGE: Reply in Sri Lankan Tanglish — romanized Tamil mixed with English. This is how Sri Lankan Tamil speakers chat on WhatsApp.
+MANDATORY: ~50% of words MUST be Tamil words in Roman script. Do NOT default to English or Sinhala.
+Use these Tamil words NATURALLY in every sentence (not just greetings):
+machan, machi, aiyo, la, neh, da, saria, seri, sari, aama, illa, illai, nalla, romba, konjam, iruku, irukku, venum, vendam, unakku, enakku, ungalukku, paakren, pakuren, paarunga, parunga, vaangu, vaangunga, panren, pannu, sollunga, tharen, tharunga, oru, sema, semma, epdi, eppadi, enna, yenna, enga, eppo, yen, en, evlo, evvalo, inikku, innaiku, nalaikku, nethu, aprom, seekiram, pothum.
+Example (CORRECT — ~50% local Tamil): "Aiyo machan, nalla laptop onnu paakuren. Inga paarunga, nalla best price la laptop irukku, ungalukku nalla deal neh? 💻"
+Example (WRONG — too much English): "Aiyo machan, that laptop is super nice! Let me check the best deal for you."
+Example (WRONG — using Sinhala / Singlish): "Aiyo machang, laptop ekak hoyamu — best deals tika mama dennam la! Meka balamu."
 IMPORTANT: <search_query> tag content must ALWAYS be in English only.`,
 
   en: `LANGUAGE: Reply in warm, friendly English. Keep it casual and local.`,
@@ -384,7 +548,7 @@ function processResponse(
   cleanText = cleanText.trim();
 
   // ── Reasoning‑leak guard ──────────────────────────────────────────────
-  const REASONING_LEAK_RE = /"intent"\s*:\s*"|"goal"\s*:\s*"|"constraints"\s*:|"plan"\s*:|"recipient_name"\s*:|"recipient_phone"\s*:|"delivery_date"\s*:\s*"|"sender_email"\s*:|"sender_name"\s*:|"location_type"\s*:|\blet me analyze\b|\blet me think\b|\bthe user wants\b|\bthe user is asking\b|\blooking at this message\b|\bi need to (?:resolve|figure out|determine)\b/i;
+  const REASONING_LEAK_RE = /"intent"\s*:\s*"|"goal"\s*:\s*"|"constraints"\s*:|"plan"\s*:|"recipient_name"\s*:|"recipient_phone"\s*:|"delivery_date"\s*:\s*"|"sender_email"\s*:|"sender_name"\s*:|"location_type"\s*:|\blet me analyze\b|\blet me think\b|\bthe user wants\b|\bthe user is asking\b|\blooking at this message\b|\bi need to (?:resolve|figure out|determine)\b|considering the input|i'?m now focusing on|working to understand|prioriti[sz]ing clarity|based on the (?:input|request|message)|interpreting (?:user )?input|i'?ve got it|i have got it|focusing on the|inferring the|implied request|relating the|clarifying (?:initial )?doubts|starting with a sense of|primary goal is|address them through|intend to ask|additional information to help|sense of needing|\bdefining search parameters\b|currently focused on|precisely defining|the user'?s intent is (?:clearly|to)|i need to translate this into|structured search|key constraints are|as defined by standard rules|tanglish language for the search|search terms?\b.*category|minimum price of\b.*defined by|i'?m currently focused on|\bsearch parameters\b|\btranslate this into a\b/i;
 
   const proseOnly = cleanText
     .replace(/<search_query>[\s\S]*?<\/search_query>/gi, '')

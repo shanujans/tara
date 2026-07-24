@@ -6,6 +6,7 @@ import { detectExpat, detectExpatCountry } from '@/lib/expat';
 import ExpatBanner from './ExpatBanner';
 import { MicIcon, SendIcon, AttachIcon, AddCartIcon, CheckIcon, GlobeIcon, ThumbsUpIcon, ThumbsDownIcon, ChevronRightIcon, VoiceSparkleIcon } from './Icons';
 import { useVoiceMode } from '@/lib/useVoiceMode';
+import { useGeminiLiveVoice } from '@/lib/useGeminiLiveVoice';
 import AudioVisualizer from './AudioVisualizer';
 
 import InvoiceTemplate, { type InvoiceData } from './InvoiceTemplate';
@@ -45,8 +46,190 @@ interface ChatPanelProps {
 }
 
 /* ── Utils ─────────────────────────────────────────────────── */
-const SL_WORDS = new Set(['mama','oyage','oyata','api','apita','mata','eka','ekak','ona','onee','nehe','koheda','kohomada','mokada','puluwan','bohoma','hariyata','gedara','amma','thaththa','putha','akka','aiya','nangi','malli','hondai','hondhai','hari','tika','tikak','godak','isthuti','ayubowan','denna','ganna','ganda','wage','witharak','kiyala','yanna','karanna','karala','kamak','nae','newei','sellam','kema','kanna','bonna','danna','enava','yanawa','karanawa','tiyenawa','thiyenawa','nattang','epa','inna','wela','balanna','hadanna']);
-const TL_WORDS = new Set(['machang','machan','aiyo','oneda','aney','yako','oru','naan','nee','ungal','ungaluku','ungalukku','enakku','avan','aval','avanga','ivanga','nanga','romba','rombha','konjam','konju','niraya','ellam','illa','aama','sari','seri','venum','venuma','venumla','venumda','vendum','vendaam','vendam','vendanum','pannunga','pannu','panren','panniten','sollunga','sollu','kudunga','kudu','vaanga','vaa','vangunga','vanganum','anuppu','anuppanum','anuppuvoma','anuppa','appaku','ammaku','thambiku','akkaku','annaku','rupai','rupaiku','rupaikulla','ulla','kitta','kooda','mattum','evlo','evvalo','epdi','eppadi','enna','yenna','enga','epo','eppo','yepo','nalla','aaguma','aagum','kaattu','kaattunga','poda','podi','vaanunga','da','la','neh','nu']);
+const SL_WORDS = new Set([
+  // 1. E-commerce Actions & Intent (Buying, Paying, Delivery)
+  'order', 'delivery', 'deliver', 'cart', 'checkout', 'bill', 
+  'gewanna', 'gewanawa', 'ewanna', 'ewanawa', 
+  'ganna', 'ganda', 'denna', 'return', 'cancel', 
+  'maru', 'marukaranna', 'hadanna', 
+  'hoyanna', 'balanna', 'karanna', 'karala', 'karanawa',
+
+  // 2. Pricing, Money & Offers
+  'gaana', 'mila', 'salli', 'kiyada', 
+  'discount', 'offer', 'adui', 'adu', 'wadi', 
+  'laabai', 'free', 
+
+  // 3. Kapruka Product Categories (Cakes, Gifts, Groceries, etc.)
+  'cake', 'mal', 'flower', 'rose', 'thegi', 'gift', 'hamper', 
+  'chocolates', 'sweet', 'rasum', 'adum', 'kema', 'kaama', 
+  'badu', 'elawalu', 'palathuru', 
+  'phone', 'sellam', 'bonna', 'kanna',
+
+  // 4. Relationships: Lovers & Partners
+  'adare', 'adaraya', 'lover', 'kella', 
+  'kolla', 'mahaththaya', 'nona', 
+  'husband', 'wife', 'joduwa', 'bandala',
+
+  // 5. Relationships: Friends
+  'yaluwa', 'yaluwo', 'machan', 'machang', 
+  'bokka', 'fit', 'mithura',
+
+  // 6. Relationships: Family & Relatives
+  'amma', 'thaththa', 'putha', 'duwa', 
+  'akka', 'aiya', 'nangi', 
+  'malli', 'seeya', 'aachchi', 
+  'nenda', 'massina', 'pavula', 
+  'babala', 'lamai', 'gedara',
+
+  // 7. Greetings, Exclamations & Conversational Fillers
+  'ayubowan', 'hello', 'hi', 'kohomada', 'hondai', 'hondhai', 'hari', 
+  'ow', 'nehe', 'nae', 'naha', 'newei', 'kamak', 
+  'ane', 'sha', 'maru', 'niyamai', 
+  'ela', 'elakiri', 'bohoma', 'isthuti',
+
+  // 8. Core Pronouns
+  'mama', 'mata', 'mage', 
+  'oya', 'oyage', 'oyata', 
+  'eya', 'eyage', 'eyala', 
+  'api', 'apita', 
+  'meka', 'eka', 'ekak', 'arak',
+
+  // 9. Question Words
+  'mokada', 'mokakda', 'koheda', 'kawadda', 
+  'kawda', 'ai', 'kohomada', 'kiyada',
+
+  // 10. Time, Days & Occasions
+  'ada', 'heta', 'eye', 
+  'ude', 'dawal', 'hawasa', 'raa', 're', 
+  'dan', 'passe', 'wela', 'dawasa', 
+  'sathiya', 'maasaya', 'birthday', 'anniversary',
+
+  // 11. Quantifiers, Sizes & Prepositions
+  'godak', 'tika', 'tikak', 'loku', 'podi', 
+  'aluth', 'parana', 'athule', 'eliye', 
+  'uda', 'yata', 'hariyata', 'wage', 'witharak',
+
+  // 12. App Actions, Needs & States of Being
+  'yanna', 'yanawa', 'enna', 'enava', 'inna', 
+  'kiyanna', 'kiyala', 'ahanawa', 'danna', 
+  'tiyenawa', 'thiyenawa', 'nattang', 
+  'ona', 'onee', 'epa', 'puluwan', 'ba', 'baha', 
+  'therenawa',
+
+  // 13. Numbers & Slang
+  'eka', 'deka', 'thuna', 'hathara', 'paha', 'haya', 'hatha', 'ata', 'namaya', 'dahaya'
+]);
+const TL_WORDS = new Set([
+  // 1. E-commerce Actions & Intent (Buying, Paying, Delivery)
+  'order', 'parcel', 'delivery', 'deliver', 'cart', 'checkout', 'bill', 
+  'pay', 'kattu', 'katta', 'vaangu', 'vaangava', 'vaanganum', 'vendi', 'edukka',
+  'anuppu', 'anuppanum', 'anuppa', 'cancel', 'return', 'track', 'thedi',
+  'thiruppi', 'maathu', 'marakkama', 'amukku', 'thodu', 'konduva', 'tharava',
+
+  // 2. Pricing, Money & Offers
+  'vilai', 'rate', 'price', 'kaasi', 'salli', 'panam', 'rupai', 'rupaiku', 
+  'discount', 'offer', 'kurai', 'kuraiva', 'koraivu', 'kooda', 'micham', 
+  'udane', 'free', 'illavasa', 
+
+  // 3. Kapruka Product Categories (Cakes, Gifts, Groceries, etc.)
+  'cake', 'cakeku', 'poo', 'flower', 'malargal', 'rose', 'bouquet', 
+  'gift', 'parisu', 'hamper', 'chocolates', 'sweet', 'sweets', 
+  'udupu', 'thuni', 'dress', 'saree', 'shirt', 
+  'maligai', 'saaman', 'pazham', 'fruits', 'bommai', 'toys', 
+  'book', 'pusthakam', 'phone', 'electronics', 'kade', 'kadai',
+
+  // 4. Relationships: Lovers & Partners
+  'lover', 'loveruku', 'aalu', 'aaluku', 'kaathalan', 'kaathali', 
+  'purushan', 'kanavan', 'pondati', 'manaivi', 'jodi', 'kalyanam', 'wedding',
+
+  // 5. Relationships: Friends (Boy/Girl)
+  'nanban', 'nanbenda', 'thozhan' /* Boy friend */,
+  'nanbi', 'tholi', 'thozhi' /* Girl friend */,
+  'machi', 'machan', 'nanbanga', 'friends', 'friend', 'friendu', 'frienduku', 'friendga',
+
+  // 6. Relationships: Family & Relatives
+  'amma', 'ammaku', 'appa', 'appaku', 
+  'anna', 'annaku', 'thambi', 'thambiku', 
+  'akka', 'akkaku', 'thangachi', 'thangachiku', 
+  'thatha', 'patti', 'mama', 'mami', 'nandamma' /* Mother-in-law */,
+  'kudumbam', 'family', 'pasanga', 'kuzhandhai', 'kids',
+
+  // 7. Greetings, Exclamations & Conversational Fillers
+  'vanakkam', 'hello', 'hi', 'saptacha', 'eppadi', 'epdi', 'nallarkingala',
+  'aama', 'illa', 'illai', 'sari', 'seri', 'ok', 'okay', 'summa', 'chumma',
+  'kandippa', 'nichayam', 'oruvelai', 'athellam', 'aana', 'illana',
+  'aiyo', 'aiyayo', 'ada', 'che', 'paavam',
+  
+  // Nouns, Friends & Pronouns
+  'machi', 'machan', 'nanba', 'nanban', 'nanbenda', 'mama', 'mami', 
+  'naan', 'nee', 'enakku', 'unakku', 'ennoda', 'unnoda', 'nanga', 'namma', 
+  'nammal', 'avan', 'aval', 'avanga', 'ivanga', 'avana', 'avala', 'ungal', 
+  'ungaluku', 'ungalukku', 'ungaloda', 'yar', 'yaaru', 'yaruku', 'yara',
+  'adhu', 'idu', 'edu', 'ithu', 'ethu', 'ava', 'ivu',
+
+  // Question Words
+  'enna', 'yenna', 'yennu', 'yen', 'en', 'enga', 'anga', 'inga', 'ingae', 
+  'ingane', 'epo', 'eppo', 'yepo', 'epavum', 'eppothum', 'evlo', 'evvalo', 
+  'ethanai', 'ethuku', 'yedhukku', 'edhuku', 'yethukku', 'epdi',
+
+  // Time, Days & Directions
+  'inikku', 'innaiku', 'nalaikku', 'nethu', 'ippo', 'apa', 'aprom', 'apparam', 
+  'kalaila', 'mathiyam', 'sayangalam', 'night', 'nightu', 'rathiri', 'odane', 
+  'seekiram', 'late', 'time', 'thirumba', 'marupadiyum',
+
+  // Quantifiers, Sizes & Prepositions
+  'romba', 'rombha', 'rombu', 'konjam', 'konju', 'niraya', 'ellam', 'onnum', 
+  'onum', 'mikavum', 'miga', 'periya', 'chinna', 'pudhu', 'pudhusa', 'pazhaya',
+  'vegama', 'methuva', 'podhum', 'pothaathu', 'ulla', 'kitta', 'kooda', 
+  'mattum', 'mela', 'keela', 'veliya', 'munnadi', 'pinnaadi', 'suthama',
+  'nalla', 'nallathu', 'oru', 'orua',
+
+  // App Actions & Verbs
+  'pannunga', 'pannu', 'panren', 'panniten', 'panni', 'pannalam',
+  'sollunga', 'sollu', 'kudunga', 'kudu', 'tharunga', 'thara', 'tharu', 'tharungal', 'tharung',
+  'vaanga', 'vaa', 'vangunga', 'vanganum', 'vandu',
+  'anuppu', 'anuppanum', 'anuppuvoma', 'anuppa',
+  'thedi', 'thed', 'eduthu', 'eduth', 'eduku', 'eduka', 'eduthanga', 'eduthangale',
+  'kaattu', 'kaattunga', 'pakaran', 'pakaram', 'parkan', 'paaru', 'parunga', 'paakran',
+  'pakuren', 'paakuren', 'pathe', 'pathu', 'paathu', 'pathen', 'paathen', 'paathengala', 'pathutu',
+  'sapidu', 'sapita', 'vandha', 'vandhuta', 'poita', 'porathu', 'poren', 'varen', 'varan',
+  'pesu', 'pesunga', 'pesalam', 'kettu', 'kelu', 
+  'vachiko', 'vai', 'vechikonga', 'vidu', 'vidunga', 'kandu', 'pidi',
+  'amukku', 'thodu', 'maathu', 'marakkama',
+
+  // States of Being & Needs
+  'iruku', 'irukku', 'venum', 'venuma', 'venumla', 'venumda', 'vendum', 'vendaam', 
+  'vendam', 'vendanum', 'thevai',
+  'mudiyum', 'mudiyathu', 'theriyum', 'theriyathu', 
+  'puriyum', 'puriyathu', 'purinjudha', 'aaguma', 'aagum',
+
+  // Numbers & Relatives
+  'onnu', 'rendu', 'moonu', 'nalu', 'anju', 'aaru', 'ezhu', 'ettu', 'ombadhu', 'pathu',
+  'appaku', 'ammaku', 'thambiku', 'akkaku', 'annaku', 'thatha', 'patti',
+  'rupai', 'rupaiku', 'rupaikulla', 'reason', 'vazhi',
+
+  // Tags, Slang & Modifiers
+  'da', 'la', 'neh', 'nu', 'ka', 'kaa', 'ma', 'pa', 'nga', 'di', 'd',
+  'poda', 'podi', 'vaanunga', 'loosu', 'paithiyam',
+  'super', 'semma', 'sema', 'semmaya', 'mass', 'gethu', 'jolly', 'joly', 'mokka', 'kaduppu', 'vera', 'mathi',
+  'santhosham', 'kavalai', 'kovam'
+]);
+const SUPPORTED_LANGS: Lang[] = ['en', 'si', 'sl', 'ta', 'tl'];
+const UNSUPPORTED_SCRIPTS = [
+  { name: 'Korean', regex: /[\uAC00-\uD7AF]/ },
+  { name: 'Hindi/Devanagari', regex: /[\u0900-\u097F]/ },
+  { name: 'Bengali', regex: /[\u0980-\u09FF]/ },
+  { name: 'Gujarati', regex: /[\u0A80-\u0AFF]/ },
+  { name: 'Gurmukhi', regex: /[\u0A00-\u0A7F]/ },
+  { name: 'Kannada', regex: /[\u0C80-\u0CFF]/ },
+  { name: 'Malayalam', regex: /[\u0D00-\u0D7F]/ },
+  { name: 'Odia', regex: /[\u0B00-\u0B7F]/ },
+  { name: 'Telugu', regex: /[\u0C00-\u0C7F]/ },
+  { name: 'Thai', regex: /[\u0E00-\u0E7F]/ },
+  { name: 'Chinese', regex: /[\u4E00-\u9FFF]/ },
+  { name: 'Japanese', regex: /[\u3040-\u30FF\u31F0-\u31FF]/ },
+];
+
 function detectLangClient(text: string, currentLang: Lang = 'en'): Lang {
   const t = text.trim();
   if (!t) return currentLang;
@@ -58,6 +241,8 @@ function detectLangClient(text: string, currentLang: Lang = 'en'): Lang {
     if (SL_WORDS.has(w)) slScore++;
     if (TL_WORDS.has(w)) tlScore++;
   }
+  // If no strong Singlish/Tanglish signals, DON'T switch to English.
+  // This prevents English transcripts of Tamil speech from flipping the conversation language.
   if (slScore === 0 && tlScore === 0) return currentLang;
   if (slScore === tlScore) {
     if (currentLang === 'sl' || currentLang === 'tl') return currentLang;
@@ -65,6 +250,44 @@ function detectLangClient(text: string, currentLang: Lang = 'en'): Lang {
   }
   return tlScore > slScore ? 'tl' : 'sl';
 }
+
+// Detect unsupported scripts (Korean, Hindi/Devanagari, Arabic, Chinese, Japanese, etc.)
+// Returns { supported: boolean, detectedScript: string }
+function detectUnsupportedScript(text: string): { supported: boolean; detectedScript: string } {
+  const t = text.trim();
+  if (!t) return { supported: true, detectedScript: 'empty' };
+  // Allowed scripts: Latin (English/Singlish/Tanglish), Sinhala, Tamil
+  const hasSinhala = /[\u0D80-\u0DFF]/.test(t);
+  const hasTamil = /[\u0B80-\u0BFF]/.test(t);
+  const hasLatin = /[a-zA-Z]/.test(t);
+  // If only allowed scripts, it's supported
+  const onlyAllowed = [...t].every(ch => {
+    const code = ch.charCodeAt(0);
+    // Latin (basic + extended)
+    if (code <= 0x024F) return true;
+    // Sinhala
+    if (code >= 0x0D80 && code <= 0x0DFF) return true;
+    // Tamil
+    if (code >= 0x0B80 && code <= 0x0BFF) return true;
+    // Common punctuation/whitespace
+    if (code <= 0x007F) return true;
+    return false;
+  });
+  if (onlyAllowed) return { supported: true, detectedScript: hasSinhala ? 'Sinhala' : hasTamil ? 'Tamil' : 'Latin' };
+  // Identify the problematic script
+  if (/[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/.test(t)) return { supported: false, detectedScript: 'Korean' };
+  if (/[\u0900-\u097F]/.test(t)) return { supported: false, detectedScript: 'Devanagari (Hindi/Marathi)' };
+  if (/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(t)) return { supported: false, detectedScript: 'Arabic' };
+  if (/[\u4E00-\u9FFF\u3400-\u4DBF]/.test(t)) return { supported: false, detectedScript: 'Chinese' };
+  if (/[\u3040-\u309F\u30A0-\u30FF]/.test(t)) return { supported: false, detectedScript: 'Japanese' };
+  if (/[\u0E00-\u0E7F]/.test(t)) return { supported: false, detectedScript: 'Thai' };
+  if (/[\u0E80-\u0EFF]/.test(t)) return { supported: false, detectedScript: 'Lao' };
+  if (/[\u1000-\u109F]/.test(t)) return { supported: false, detectedScript: 'Myanmar' };
+  if (/[\u1200-\u137F]/.test(t)) return { supported: false, detectedScript: 'Ethiopic' };
+  if (/[\u1B00-\u1B7F]/.test(t)) return { supported: false, detectedScript: 'Balinese' };
+  return { supported: false, detectedScript: 'Unknown/Unsupported' };
+}
+
 function cleanResponse(t: string) {
   return t
     .replace(/<tara_thinking>[\s\S]*?<\/tara_thinking>/g,'')
@@ -81,10 +304,77 @@ function extractCheckoutFill(t: string): Record<string,string>|null {
   try { return JSON.parse(m[1].trim()); } catch { return null; }
 }
 function proxyImg(url: string) { if (!url) return ''; return url.includes('kapruka.com') ? `/api/img?url=${encodeURIComponent(url)}` : url; }
+
+// Skip first sentence if it mirrors instant confirmation AND products were found
+function skipFirstSentenceIfEcho(text: string, instantText: string, hasProducts: boolean): string {
+  if (!hasProducts || !instantText || !text) return text;
+  const sentences = text.split(/(?<=[.!?])\s+/);
+  if (sentences.length < 2) return text;
+  const first = sentences[0].trim().toLowerCase();
+  const instant = instantText.trim().toLowerCase();
+  // If first sentence is substantially similar to instant confirmation, drop it
+  const similarity = first.length > 0 && instant.length > 0
+    ? first.split(' ').filter(w => instant.includes(w)).length / first.split(' ').length
+    : 0;
+  if (similarity > 0.5) {
+    console.log('[gemini-live] skipping echoed first sentence:', sentences[0].slice(0, 60));
+    return sentences.slice(1).join(' ').trim();
+  }
+  return text;
+}
+
 const LANG_OPTS: { key:Lang; label:string }[] = [
   {key:'si',label:'🇱🇰 සිං'},{key:'sl',label:'🇱🇰 SL'},
   {key:'ta',label:'🇱🇰 த'},{key:'tl',label:'🇱🇰 TL'},{key:'en',label:'🇬🇧 EN'},
 ];
+
+// Convert future/present tense to past tense when products are found
+function convertToPastTense(text: string, lang: Lang): string {
+  if (!text) return text;
+  const t = text.trim();
+  switch (lang) {
+    case 'ta': // Tamil - append completed aspect markers
+      return t
+        .replace(/\b(தேடுகிறேன்|தேடுவேன்|காண்பேன்|சொல்வேன்|பார்ப்பேன்|நோக்குவேன்)\b/g, 'தேடியேன்')
+        .replace(/\b(நான்\s+தேடுகிறேன்|நான்\s+தேடுவேன்|நான்\s+காண்பேன்|நான்\s+பார்ப்பேன்|நான்\s+நோக்குவேன்)\b/g, 'நான் கண்டேன்')
+        .replace(/\b(எனக்கு\s+தேடுகிறேன்|எனக்கு\s+தேடுவேன்)\b/g, 'எனக்கு கண்டுபிடித்திருக்கிறது')
+        .replace(/\b(நான்\s+சொல்கிறேன்|நான்\s+விளக்குகிறேன்|நான்\s+பார்த்து\s+சொல்கிறேன்)\b/g, 'நான் விளக்கினேன்')
+        .replace(/\b(முடியும்|முடியாது)\b/g, 'முடிந்தது')
+        .replace(/\b(விளக்கம்\s+கொடுப்பேன்|சொல்கிறேன்)\b/g, 'விளக்கினேன்')
+        .replace(/\b(தேடித்\s+தருகிறேன்|தேடித்\s+தருவேன்)\b/g, 'தேடித்து தந்தேன்')
+        .replace(/\b(காண்பிக்கிறேன்|காண்பிக்குவேன்)\b/g, 'காண்பித்தேன்');
+    case 'si': // Sinhala - past tense
+      return t
+        .replace(/\b(හෝදින්න|හෝදින්නේ)\b/g, 'හොයාගත්තා')
+        .replace(/\b(මම\s+හෝදින්න|මම\s+බලන්න)\b/g, 'මම හොයාගත්තා')
+        .replace(/\b(මම\s+කියන්න|මම\s+දැන්වාදෙන්න)\b/g, 'මම කිව්වා')
+        .replace(/\b(පුළුවන්|බැහැ)\b/g, 'හැකි විය');
+    case 'sl': // Singlish - past tense
+      return t
+        .replace(/\b(oya\s+hoya|mama\s+hoya|hoya\s+ganna)\b/gi, 'hoya gannawa')
+        .replace(/\b(mama\s+balanna|mama\s+balanawa)\b/gi, 'mama bala gannawa')
+        .replace(/\b(mama\s+kiyanna|mama\s+danne)\b/gi, 'mama kiya gannawa')
+        .replace(/\b(puluwan|baha)\b/gi, 'puluwan');
+    case 'tl': // Tanglish - past tense
+      return t
+        .replace(/\b(main\s+search\s+karta|main\s+dhoondhta|search\s+karta)\b/gi, 'main dhoondh liya')
+        .replace(/\b(main\s+batata|main\s+bolta)\b/gi, 'main bola diya')
+        .replace(/\b(ho\s+jaega|mil\s+jayega|pata\s+chalega)\b/gi, 'ho gaya')
+        .replace(/\b(dekhta|dekhunga)\b/gi, 'dekh liya');
+    case 'en': // English - past tense
+      return t
+        .replace(/\b(I'?ll\s+find|I\s+will\s+find|I\s+am\s+finding|I\s+am\s+searching|I\s+am\s+looking)\b/gi, 'I found')
+        .replace(/\b(I'?ll\s+search|I\s+will\s+search|I\s+am\s+searching)\b/gi, 'I searched')
+        .replace(/\b(I'?ll\s+look|I\s+will\s+look)\b/gi, 'I looked')
+        .replace(/\b(I'?ll\s+check|I\s+will\s+check)\b/gi, 'I checked')
+        .replace(/\b(I\s+can\s+find|I\s+can\s+search)\b/gi, 'I found')
+        .replace(/\b(let\s+me\s+find|let\s+me\s+search|let\s+me\s+check|let\s+me\s+look)\b/gi, 'I found')
+        .replace(/\b(will\s+be|is\s+available|are\s+available)\b/gi, 'are available')
+        .replace(/\b(here\s+are|here\s+is|these\s+are|this\s+is)\b/gi, 'here are');
+    default:
+      return t;
+  }
+}
 
 /* ── Inline chat card ─────────────────────────────────────── */
 const InlineChatCard = memo(function InlineChatCard({ product, lang, onViewDetail, isTaraPick }: {
@@ -665,11 +955,147 @@ export default function ChatPanel({
   const {
     isRecording, isSending: sttSending, isSpeaking, isPreparingSpeech, voiceModeOn, micSupported,
     startRecording, stopRecording, cancelRecording, speak, speakInstant, stopSpeaking, toggleVoiceMode, analyserRef,
+    releaseStream, geminiLiveTTSConnected, disconnectGeminiLiveTTS,
   } = useVoiceMode({
     onTranscript: (text) => sendMessage(text),
     getLang: () => convLangRef.current,
     micDeniedMessage: s.micPermissionDenied,
   });
+
+  // ── Gemini Live Voice (replaces STT→TTS loop when handsfree mode is on) ──
+  // Target workflow: no confirmation prompts. Search + cart fill execute immediately.
+  // Mic stays paused from user transcript until ALL TTS (instant confirmation + main
+  // response + upselling) finishes, then resumes via onTTSComplete.
+  //
+  // RACE CONDITION FIX: Two async processes run in parallel after user speech:
+  //   A) Gemini Live generates + plays instant confirmation (ends via onTTSComplete)
+  //   B) /api/chat + /api/search run in sendMessage (ends with visible text ready)
+  // speakResponse(visible) must only fire AFTER BOTH A and B complete. We use
+  // instantConfirmDoneRef + mainResponseTextRef as a two-gate latch.
+  const sendMessageRef = useRef<(text: string, forcedLang?: Lang, fromGeminiLive?: boolean) => void>(() => {});
+  const awaitingChatResponseRef = useRef(false);     // true from user transcript until main response spoken
+  const instantConfirmDoneRef = useRef(false);        // gate A: instant confirmation TTS finished
+  const mainResponseTextRef = useRef<string | null>(null);  // gate B: /api/chat response ready to speak
+  const lastProcessedTranscriptRef = useRef<string | null>(null); // dedup guard for transcripts
+  const instantConfirmTextRef = useRef<string | null>(null);    // captures Gemini's instant confirmation text
+  const lastSearchHadResultsRef = useRef(false);                // tracks if products found this turn
+  // Ref to the geminiLive hook API — avoids temporal-dead-zone issues since the
+  // handlers below are passed into useGeminiLiveVoice() but also need to call its methods.
+  const geminiLiveApiRef = useRef<{
+    pauseMic: () => void; resumeMic: () => void; speakResponse: (t: string) => void;
+  } | null>(null);
+
+  // Helper: attempt to speak the main response if BOTH gates are satisfied
+  const trySpeakMainResponse = useCallback(() => {
+    if (instantConfirmDoneRef.current && mainResponseTextRef.current && awaitingChatResponseRef.current) {
+      const text = mainResponseTextRef.current;
+      mainResponseTextRef.current = null;
+      awaitingChatResponseRef.current = false;
+      console.log('[gemini-live] both gates satisfied — speaking main response');
+      geminiLiveApiRef.current?.speakResponse(text);
+    }
+  }, []);
+
+  const handleGeminiTranscript = useCallback((text: string) => {
+    console.log('[gemini-live] handleGeminiTranscript CALLED:', text);
+    // Guard: prevent duplicate processing of the same transcript
+    if (lastProcessedTranscriptRef.current === text) {
+      console.log('[gemini-live] duplicate transcript, skipping');
+      return;
+    }
+    // Strict language validation — reject unsupported scripts (Korean, Hindi, etc.)
+    const langCheck = detectUnsupportedScript(text);
+    if (!langCheck.supported) {
+      const msg = `Sorry, I can only understand English, Sinhala, Tamil, Singlish, or Tanglish. Detected: ${langCheck.detectedScript}. Please speak in a supported language.`;
+      console.log('[gemini-live] unsupported language detected:', langCheck.detectedScript);
+      setMessages(prev => [...prev, { role: 'user', content: text }, { role: 'assistant', content: msg }]);
+      // Resume mic so user can try again
+      geminiLiveApiRef.current?.resumeMic();
+      return;
+    }
+    lastProcessedTranscriptRef.current = text;
+    // Strict mic control — pause immediately, no interruption allowed
+    geminiLiveApiRef.current?.pauseMic();
+    // Reset all per-turn state
+    awaitingChatResponseRef.current = true;
+    instantConfirmDoneRef.current = false;
+    mainResponseTextRef.current = null;
+    instantConfirmTextRef.current = null;
+    lastSearchHadResultsRef.current = false;
+    // Forward raw transcription to /api/chat (Backend Delegation — no local extraction)
+    // sendMessage adds the user transcript bubble (Complete Visual Transcript Logging)
+    console.log('[gemini-live] calling sendMessageRef.current...');
+    sendMessageRef.current(text, undefined, true);
+  }, []);
+
+  const handleOutputTranscript = useCallback((text: string, isReadAloud: boolean) => {
+    console.log('[gemini-live] handleOutputTranscript:', { text: text.slice(0, 60), isReadAloud });
+    if (isReadAloud) {
+      // This is Gemini reading the system-provided text aloud — already displayed
+      // from the /api/chat stream, so skip to avoid duplication.
+      return;
+    }
+    // Gemini's OWN content — the instant short confirmation.
+    // Store it so the main response can prepend it (first sentence matches instant reply).
+    instantConfirmTextRef.current = text;
+    // Fill the existing last assistant placeholder bubble (don't add a new one,
+    // since sendMessage already added an empty placeholder).
+    setMessages(prev => {
+      const c = [...prev];
+      if (c.length > 0 && c[c.length - 1].role === 'assistant') {
+        c[c.length - 1] = { ...c[c.length - 1], content: text };
+      } else {
+        c.push({ role: 'assistant', content: text });
+      }
+      return c;
+    });
+  }, []);
+
+  const handleTTSComplete = useCallback(() => {
+    console.log('[gemini-live] handleTTSComplete', {
+      awaiting: awaitingChatResponseRef.current,
+      instantDone: instantConfirmDoneRef.current,
+      mainText: mainResponseTextRef.current?.slice(0, 40),
+    });
+    if (awaitingChatResponseRef.current) {
+      // The instant confirmation just finished playing.
+      instantConfirmDoneRef.current = true;
+      // In BOTH modes, proceed to Job 2 (main response) if ready.
+      // trySpeakMainResponse will speak it and set awaitingChatResponseRef.current = false.
+      // Do NOT resume mic here — wait for main response TTS to complete.
+      trySpeakMainResponse();
+      return;
+    }
+    // All TTS done (instant confirmation + main response) — resume mic
+    console.log('[gemini-live] all TTS done — resuming mic');
+    geminiLiveApiRef.current?.resumeMic();
+  }, [trySpeakMainResponse]);
+
+  const geminiLive = useGeminiLiveVoice({
+    onUserTranscript: (text) => handleGeminiTranscript(text),
+    onOutputTranscript: (text, isReadAloud) => handleOutputTranscript(text, isReadAloud),
+    onTTSComplete: () => handleTTSComplete(),
+  });
+
+  // Keep geminiLiveApiRef in sync so the handlers above can call hook methods
+  useEffect(() => {
+    geminiLiveApiRef.current = geminiLive;
+  }, [geminiLive]);
+
+  // Connect/disconnect Gemini Live when handsfree mode toggles.
+  // When going handsfree, disconnect the press-to-talk TTS-only connection
+  // so the full bidirectional session (useGeminiLiveVoice) takes over.
+  // When leaving handsfree, the TTS-only connection reconnects lazily
+  // on the next startRecording() call.
+  useEffect(() => {
+    if (voiceModeOn && geminiLive.status === 'idle') {
+      releaseStream?.();
+      void disconnectGeminiLiveTTS();
+      void geminiLive.connect();
+    } else if (!voiceModeOn && geminiLive.status !== 'idle') {
+      void geminiLive.disconnect();
+    }
+  }, [voiceModeOn, geminiLive.status, releaseStream, disconnectGeminiLiveTTS]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setConvLang(lang);
@@ -813,8 +1239,23 @@ export default function ChatPanel({
   }, [expatMode, convLang, onProductsFound, onSearching]);
 
   /* ── Send text message ──────────────────────────────────── */
-  const sendMessage = useCallback(async (text: string, forcedLang?: Lang) => {
-    if (!text.trim() || streaming) return;
+  const sendMessage = useCallback(async (text: string, forcedLang?: Lang, fromGeminiLive = false) => {
+    console.log('[gemini-live] sendMessage called:', { text: text.slice(0, 60), streaming, hasText: !!text.trim(), fromGeminiLive });
+    if (!text.trim()) return;
+    // Allow Gemini Live to bypass the streaming guard (interrupt previous response)
+    if (streaming && !fromGeminiLive) {
+      console.log('[gemini-live] sendMessage returning early: streaming & not from Gemini Live');
+      return;
+    }
+    // If Gemini Live is interrupting a previous streaming response, abort it
+    if (streaming && fromGeminiLive) {
+      console.log('[gemini-live] Gemini Live interrupting previous streaming response');
+      abortRef.current?.abort();
+    }
+
+    // When Gemini Live is connected, pause mic during processing
+    const usingGeminiLive = geminiLive.status === 'connected';
+    if (usingGeminiLive) geminiLive.pauseMic();
 
     const detected = forcedLang ?? detectLangClient(text, convLang);
     setConvLang(detected);
@@ -828,22 +1269,25 @@ export default function ChatPanel({
     setMessages(history); setInput(''); setStreaming(true);
     abortRef.current = new AbortController();
 
-    // ── PHASE 1: Instant greeting — show immediately + start TTS via Web Speech API ──
-    // Uses browser's built-in speechSynthesis for zero-latency TTS (~50ms, no network).
-    // The main LLM response uses the real TTS pipeline (speak()) which has better
-    // voice quality but takes 2-5s to start due to network latency.
-    const instantGreeting = STRINGS[detected].instantGreeting ?? 'On it! 🔍';
-    setMessages(prev => [...prev, { role:'assistant', content: instantGreeting }]);
-    lastReplyRef.current = instantGreeting;
-    if (speakerOn) speakPromiseRef.current = speakInstant(instantGreeting);
+    // ── Instant greeting — skip when using Gemini Live (it handles TTS) or in handsfree mode ──
+    if (!usingGeminiLive && !voiceModeOn) {
+      const instantGreeting = STRINGS[detected].instantGreeting ?? 'On it! 🔍';
+      setMessages(prev => [...prev, { role:'assistant', content: instantGreeting }]);
+      lastReplyRef.current = instantGreeting;
+      if (speakerOn) speakPromiseRef.current = speakInstant(instantGreeting);
+    } else {
+      setMessages(prev => [...prev, { role:'assistant', content: '' }]);
+    }
 
     try {
+      console.log('[gemini-live] calling /api/chat...');
       const res = await fetch('/api/chat', {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ messages:history, expatMode: expatMode||isNewExpat, lang:detected }),
         signal: abortRef.current.signal,
       });
       if (!res.ok) throw new Error('API error');
+      console.log('[gemini-live] /api/chat response OK, reading stream...');
 
       let thinkingData: ThinkingData | null = null;
       const thinkingHeader = res.headers.get('X-Tara-Thinking');
@@ -853,45 +1297,77 @@ export default function ChatPanel({
 
       // ── PHASE 2: Main LLM response — replace greeting with full reply ───
       const reader = res.body!.getReader(); const decoder = new TextDecoder(); let full = '';
-      setMessages(prev => { const c=[...prev]; c[c.length-1]={role:'assistant',content:''}; return c; });
 
       while (true) {
         const { done, value } = await reader.read(); if (done) break;
         full += decoder.decode(value, { stream:true });
-        const disp = full.replace(/<tara_thinking>[\s\S]*?<\/tara_thinking>/gi,'').trim();
+        const rawDisp = full.replace(/<tara_thinking>[\s\S]*?<\/tara_thinking>/gi,'').trim();
+        // Prepend instant confirmation (read live from ref — it may arrive mid-stream)
+        const instantText = instantConfirmTextRef.current || '';
+        const disp = instantText ? `${instantText} ${rawDisp}` : rawDisp;
         setMessages(prev => { const c=[...prev]; c[c.length-1]={role:'assistant',content:disp}; return c; });
       }
 
-      const visible = cleanResponse(full);
+      const visibleRaw = cleanResponse(full);
+      // Prepend instant confirmation to final visible text (1st sentence matches instant reply)
+      const instantText = instantConfirmTextRef.current || '';
+      const visible = instantText ? `${instantText} ${visibleRaw}` : visibleRaw;
       setMessages(prev => { const c=[...prev]; c[c.length-1]={role:'assistant',content:visible,...(thinkingData?{thinking:thinkingData}:{})}; return c; });
       lastReplyRef.current = visible;
-      // Speak the main response after the instant greeting finishes
-      if (speakerOn) {
+      console.log('[gemini-live] /api/chat full response (with instant prefix):', visible.slice(0, 100));
+      console.log('[gemini-live] /api/chat speakResponse will use CLEAN text (no instant prefix):', visibleRaw.slice(0, 100));
+
+      // ── TTS: speak() now tries Gemini Live TTS first (all langs), then Speechmatics/Azure/Web Speech API ──
+      if (!usingGeminiLive && speakerOn) {
         const prevSpeak = speakPromiseRef.current;
         speakPromiseRef.current = (async () => {
-          if (prevSpeak) await prevSpeak; // wait for greeting TTS to finish
+          if (prevSpeak) await prevSpeak;
           await speak(visible);
         })();
       }
 
       const query = extractQuery(full);
       if (query) {
-        onSearching(true);
-        const searchStart = Date.now();
-        try {
-          const r2 = await fetch('/api/search', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({primary:query}) });
-          const d = await r2.json();
-          if (d.products?.length) {
-            // Sync product-card reveal with TARA's voice: wait out the remainder
-            // of a 1s window (measured from when the search request was sent) so
-            // cards land close to when speak() actually starts playing, instead
-            // of popping in before or well after audio begins.
-            const remaining = 1000 - (Date.now() - searchStart);
-            if (remaining > 0) await new Promise(resolve => setTimeout(resolve, remaining));
-            onProductsFound(d.products, d.quantum);
-            setMessages(prev => { const c=[...prev]; c[c.length-1]={...c[c.length-1],products:d.products.slice(0,8)}; return c; });
+        if (usingGeminiLive) {
+          // ── Immediate execution (NO confirmation) — Sequential TTS: search first, speak after ──
+          onSearching(true);
+          try {
+            const r2 = await fetch('/api/search', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({primary:query}) });
+            const d = await r2.json();
+            if (d.products?.length) {
+              onProductsFound(d.products, d.quantum);
+              setMessages(prev => {
+                const c = [...prev];
+                const lastMsg = c[c.length - 1];
+                const convertedText = convertToPastTense(lastMsg.content, detected);
+                c[c.length - 1] = { ...lastMsg, content: convertedText, products: d.products.slice(0, 8) };
+                return c;
+              });
+              lastSearchHadResultsRef.current = true;
+            }
+          } catch {/***/} finally { onSearching(false); }
+        } else {
+          // ── Immediate execution (existing behavior for non-Gemini mode) ──
+          onSearching(true);
+          const searchStart = Date.now();
+          try {
+            const r2 = await fetch('/api/search', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({primary:query}) });
+            const d = await r2.json();
+            if (d.products?.length) {
+              const remaining = 1000 - (Date.now() - searchStart);
+              if (remaining > 0) await new Promise(resolve => setTimeout(resolve, remaining));
+              onProductsFound(d.products, d.quantum);
+              setMessages(prev => {
+                const c = [...prev];
+                const lastMsg = c[c.length - 1];
+                const convertedText = convertToPastTense(lastMsg.content, detected);
+                c[c.length - 1] = { ...lastMsg, content: convertedText, products: d.products.slice(0, 8) };
+return c;
+                });
+                lastSearchHadResultsRef.current = true;
+              }
+            } catch {/***/} finally { onSearching(false); }
           }
-        } catch {/***/} finally { onSearching(false); }
       }
 
       const om = text.match(/\b([A-Z]{2,6}\d{4,}[A-Z0-9]*)\b/);
@@ -904,28 +1380,67 @@ export default function ChatPanel({
 
       const checkoutData = extractCheckoutFill(full);
       if (checkoutData) {
+        // ── Immediate execution for BOTH modes (NO confirmation when using Gemini Live) ──
         prefillCheckout(checkoutData);
         if (cartIds.size > 0) {
           window.dispatchEvent(new CustomEvent('tara:opencart'));
         } else {
           window.sessionStorage.setItem('tara_opencart_pending', '1');
         }
+        if (usingGeminiLive) {
+          // Open cart drawer to show filled details
+          setTimeout(() => window.dispatchEvent(new CustomEvent('tara:opencart')), 200);
+        }
+      }
+
+      // ── Sequential TTS: handsfree mode (voiceModeOn) speaks Job 2 but skips echoed first sentence
+      if (usingGeminiLive) {
+        const hasProducts = lastSearchHadResultsRef.current;
+        // Filter out first sentence if it echoes instant confirmation
+        let ttsText = skipFirstSentenceIfEcho(visibleRaw, instantConfirmTextRef.current || '', hasProducts);
+        // Convert future/present tense to past tense when products were found
+        ttsText = convertToPastTense(ttsText, detected);
+        mainResponseTextRef.current = ttsText;
+        console.log('[gemini-live] main response ready', {
+          mode: voiceModeOn ? 'handsfree' : 'gemini-live',
+          hasProducts,
+          skippedEcho: ttsText !== visibleRaw,
+          ttsText: ttsText.slice(0, 60),
+        });
+        trySpeakMainResponse();
       }
     } catch (err: unknown) {
       if ((err as Error).name!=='AbortError') setMessages(prev=>[...prev,{role:'assistant',content:'⚠️ Something went wrong. Please try again.'}]);
+      if (usingGeminiLive) {
+        // Error before speakResponse — reset all state so mic can resume
+        awaitingChatResponseRef.current = false;
+        mainResponseTextRef.current = null;
+        instantConfirmDoneRef.current = false;
+      }
     } finally {
       setStreaming(false);
       const pending = speakPromiseRef.current;
       speakPromiseRef.current = null;
       lastReplyRef.current = '';
-      if (pending) {
+      if (usingGeminiLive) {
+        // Mic resume is handled by onTTSComplete callback (post-speech listening).
+        // If an error occurred and speakResponse was never called, resume now.
+        if (awaitingChatResponseRef.current && !mainResponseTextRef.current) {
+          awaitingChatResponseRef.current = false;
+          instantConfirmDoneRef.current = false;
+          geminiLive.resumeMic();
+        }
+      } else if (pending) {
         void (async () => {
-          await pending;                                          // no-op/non-fatal if TTS is unavailable
+          await pending;
           if (voiceModeOn) setTimeout(() => { void startRecording(); }, 500);
         })();
       }
     }
-  }, [streaming, lang, convLang, expatMode, onLangChange, onProductsFound, onSearching, speak, startRecording, voiceModeOn]);
+  }, [streaming, lang, convLang, expatMode, onLangChange, onProductsFound, onSearching, speak, startRecording, voiceModeOn, geminiLive, trySpeakMainResponse]);
+
+  // Keep sendMessageRef in sync so handleGeminiTranscript can call it
+  useEffect(() => { sendMessageRef.current = sendMessage; }, [sendMessage]);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input.trim()); }
@@ -1178,6 +1693,7 @@ export default function ChatPanel({
                 {micSupported && !pendingImg && (
                   <>
                     {isRecording && <AudioVisualizer analyser={analyserRef.current} />}
+                    {voiceModeOn && geminiLive.listening && !isRecording && <AudioVisualizer analyser={geminiLive.analyserNode} />}
                     {isRecording && (
                       <button onClick={stopRecording} title="Finish talking & send now"
                         style={{width:32,height:32,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',background:'var(--c-primary)',color:'var(--c-on-primary)',border:'none',cursor:'pointer'}}>
@@ -1210,7 +1726,7 @@ export default function ChatPanel({
                       onClick={toggleVoiceMode}
                       title={s.voiceModeTitle}
                       style={{
-                        padding:'6px',
+                        padding:'8px',
                         borderRadius:'50%',
                         border:'none',
                         cursor:'pointer',
@@ -1222,7 +1738,7 @@ export default function ChatPanel({
                         transition:'all 0.18s',
                       }}>
                       {/* Using your new waveform+sparkle icon */}
-                      <VoiceSparkleIcon size={16} />
+                      <VoiceSparkleIcon size={18} />
                     </button>
                   </>
                 )}

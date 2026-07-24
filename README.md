@@ -37,6 +37,8 @@ TARA replaces the traditional Kapruka website UI with a warm, voice-enabled, AI-
 | 🔄 Product detail fallback | MCP search fallback when get_product fails (CATSYM/delisted) — uses search by name, matches by ID |
 | 🗂️ Order history | 20-entry localStorage log with reorder-in-one-tap |
 | 👍 / 👎 Feedback loop | Per-reply quality signals → structured `mistakes.md` log |
+| 🖱️ Sidebar & panel UX | Collapsible icon rail with hover preview + Ctrl+B shortcut; pin-to-open; font-and-background hover highlight across every button; cart count badge keeps showing (with pop + pulse animation) when sidebar is collapsed so users never miss additions; proper X close icon in every panel header |
+| 📖 In-app User Manual | 22-section, 5-language guide (EN · SI · SL · TA · TL) reachable from the **Manual** slot in the sidebar — covers text chat, voice (Legacy STT+TTS + Gemini Live), vision, per-product AI Summary & AI Q&A, checkout, in-app payment, gift chains, quick chips, settings, and an Order Completion Timeline (min 30s) |
 | 🔌 Chrome extension | Floats TARA inside Kapruka.com on product pages |
 | 🪟 Embeddable widget | `/widget` + `/embed-demo` iframe integration |
 
@@ -53,7 +55,7 @@ flowchart TD
         CP["ChatPanel\nSTT · TTS · vision · checkout-fill"]
         PP["ProductPanel\nsort · filter · skeleton"]
         CD["CartDrawer\ninvoice · QR · payment link"]
-        SP["SidePanel\nhistory · browse · settings"]
+        SP["SidePanel\nhistory · browse · settings · manual"]
         PM["ProductModal\noverview · AI summary · Ask AI · compare"]
         AV["AudioVisualizer\n12-bar canvas"]
         VM["useVoiceMode hook\nMediaRecorder · silence detection"]
@@ -83,6 +85,7 @@ flowchart TD
         HF["HuggingFace\nInference Router"]
         SPEECHM["Speechmatics\nEN TTS"]
         AZURE["Azure Speech\nSI/SL TTS"]
+        VTOKEN["Gemini Live\nToken Mint\n@google/genai v1alpha"]
     end
 
     subgraph MCP["Kapruka MCP\nmcp.kapruka.com — 7 live tools"]
@@ -120,57 +123,16 @@ flowchart TD
     PAI -->|primary: flash-lite| GENAISDK
     PAI -->|fallback chain| ZENMUX
     VISION -->|flash-lite| GENAISDK
-    VSTTS -->|flash-lite STT| GENAISDK
+VSTTS -->|flash-lite STT| GENAISDK
     VTTS -->|EN fast path| SPEECHM
     VTTS -->|SI/SL fast path| AZURE
     VTTS -->|TA/TL, or fallback| GENAISDK
+    VTOKEN -->|token mint| GENAISDK
     GIFTCARD -->|FLUX.1-schnell/dev| HF
 
     SEARCH & CHECKOUT & COMPARE & TRACK & MISC -->|7 tools| MCP
     MCP --> SESS
     SEARCH --> MEMCACHE
-```
-
-### AI Provider Routing
-
-```mermaid
-flowchart LR
-    subgraph chat["/api/chat"]
-        C1["AIML: claude-sonnet-4.6\n(EN · SI · SL) 14s"] --> CF1
-        C2["AIML: gemini-3-1-pro-preview\n(TA · TL) 14s"] --> CF1
-        CF1["Google AI Studio\ngemini-3.1-flash-lite\nGEMINI_API_CHAT01"] -->|fail| CF2
-        CF2["Google AI Studio\ngemini-3.1-flash-lite\nGEMINI_API_CHAT02"] -->|fail| CFALL
-        CFALL["TIMEOUT_FALLBACK\nstatic string per lang"]
-    end
-
-    subgraph productai["/api/product-ai"]
-        P1["Gemini\ngemini-3.1-flash-lite\nGEMINI_API_KEY 10s"] -->|429/5xx/timeout/truncated| P2
-        P2["ZenMux\nglm-4.7-flash-free"] -->|fail| P3
-        P3["ZenMux\nstep-3.7-flash-free"] -->|fail| P4
-        P4["ZenMux\nglm-4.6v-flash-free"] -->|fail| PFALL
-        PFALL["Static fallback\nEnglish summary"]
-    end
-
-    subgraph voice["/api/voice-stt  &  /api/voice-tts"]
-        VS1["STT: gemini-3.1-flash-lite\nGEMINI_API_KEY — 18s"] -->|fail| VS2
-        VS2["STT backup key\nGEMINI_FALLBACK_API_KEY"] -->|fail| SFALL
-        T1["TTS: language-routed fast path\nEN→Speechmatics(sarah) · SI/SL→Azure(si-LK-SameeraNeural)"] -->|fail, or TA/TL| T2
-        T2["TTS: Gemini\ngemini-3.1-flash-tts-preview\nGEMINI_API_KEY"] -->|fail| T3
-        T3["TTS backup keys\nGEMINI_FALLBACK_API_KEYS list"] -->|fail| SFALL
-        SFALL["503 — non-fatal\ncaller shows type-prompt / skips TTS"]
-    end
-
-    subgraph vision["/api/vision-search"]
-        V1["gemini-3.1-flash-lite\nGEMINI_API_KEY 9s"] -->|fail| V2
-        V2["gemini-3.1-flash-lite\nGEMINI_API_VISION_FALLBACK 7s"] -->|fail| VFALL
-        VFALL["Safe default\ngeneric 'gift' query"]
-    end
-
-    subgraph giftcard["/api/generate-gift-card"]
-    G1["HuggingFace\nFLUX.1-schnell 40s"] -->|fail| G2
-    G2["HuggingFace\nSDXL 1.0 40s"] -->|fail| GFALL
-        GFALL["502 — non-fatal\nPDF still generates without art"]
-    end
 ```
 
 ### Chat Request Lifecycle
@@ -242,6 +204,7 @@ All routes export `dynamic = 'force-dynamic'`. Rate limits are per-IP, per-minut
 | `/api/vision-search` | POST | Gemini vision → product search query | 20/min | default |
 | `/api/voice-stt` | POST | Speech-to-text (audio/webm → transcript) | 20/min | 30 s |
 | `/api/voice-tts` | POST | Text-to-speech → audio/wav (Speechmatics/Azure/Gemini, language-routed) | 20/min | 30 s |
+| `/api/voice/token` | POST | Mints ephemeral Gemini Live token (v1alpha, 10-min expiry, 1 use) | 10/min | default |
 | `/api/generate-gift-card` | POST | AI illustration for invoice header (FLUX) | 5/min | default |
 | `/api/checkout` | POST | 3-step: city canonicalise → delivery check → create order | 5/min | 15 s |
 | `/api/validate-delivery` | POST | Fuzzy city match + delivery date pre-check | 60/min | default |
@@ -359,35 +322,41 @@ Product AI uses a system-prompt language-matching rule — it does not share the
 
 ## Voice Mode
 
-Implemented in `lib/useVoiceMode.ts`, rendered in `ChatPanel.tsx` with `AudioVisualizer.tsx`.
+TARA provides two voice interaction modes that coexist in `ChatPanel.tsx`:
 
-### Constants
+### 1. Legacy STT + TTS Mode (`lib/useVoiceMode.ts`)
+
+Traditional push-to-talk with server-side Speech-to-Text and Text-to-Speech.
+
+**Files:**
+- `lib/useVoiceMode.ts` — React hook encapsulating all STT + TTS + hands-free loop logic (400+ lines)
+- `components/AudioVisualizer.tsx` — 12-bar canvas frequency visualizer during recording
+- `app/api/voice-stt/route.ts` — Speech-to-text via Gemini (`gemini-3.1-flash-lite`)
+- `app/api/voice-tts/route.ts` — Text-to-speech → audio/wav (language-routed: Speechmatics/Azure/Gemini)
+
+**Constants:**
 
 | Constant | Value | Purpose |
 |---|---|---|
 | `MIN_SPEECH_MS` | 350 ms | Minimum sustained speech before arming silence detection |
-| `SILENCE_MS` | 1 500 ms | Pause that counts as done talking |
+| `SILENCE_MS` | 1,500 ms | Pause that counts as done talking |
 | `MAX_RECORD_MS` | 60 s | Hard recording cap |
 | `STT_TIMEOUT_MS` | 20 s | Abort if STT request takes longer |
 | Max audio size | 8 MB | ~60 s of webm/opus |
 | Max TTS input | 600 chars | Text truncated before sending |
 
-### Flow
-
+**Flow:**
 ```
 Mic button tapped (user gesture)
   → primeAudioElement() — plays silent WAV to unlock iOS Safari audio
-  → mic stream + AudioContext are reused if still live from an earlier recording
-    this session (only re-acquired via getUserMedia the first time), keeping
-    repeat taps fast
+  → mic stream + AudioContext reused if still live from earlier recording
+    (only re-acquired via getUserMedia the first time), keeping repeat taps fast
   → MediaRecorder starts, AnalyserNode monitors RMS for silence detection
-  → tap mic again to cancel, or tap the send button to finish & submit
+  → tap mic again to cancel, or tap send button to finish & submit
     (hands-free mode also auto-stops on detected silence)
   → POST audio/webm to /api/voice-stt → transcript
   → sendMessage(transcript) → ChatPanel streaming reply
-  → speak(replyText) splits the reply into sentences and requests TTS for all
-    of them in parallel, then plays them back in order — audio starts as soon
-    as the first sentence is ready rather than waiting on the full reply
+  → speak(replyText) requests TTS and plays audio
   → [if hands-free mode on] → 500 ms delay → restart recording
 ```
 
@@ -395,19 +364,84 @@ Mic button tapped (user gesture)
 
 **Manual vs. hands-free mic button:** tapping the mic mid-recording always cancels (discards) the recording in both modes; a dedicated send button appears next to it whenever recording is active, in both manual and hands-free mode, to actually submit.
 
-### Text-to-Speech Provider Routing
-
-TTS is language-routed to a fast provider first, falling back to Gemini if that fails:
+**Text-to-Speech Provider Routing:**
 
 | Language | Primary provider | Voice |
 |---|---|---|
 | English | Speechmatics | `sarah` |
 | Sinhala / Singlish | Azure Speech | `si-LK-SameeraNeural` |
-| Tamil / Tanglish | Gemini directly | `Kore` (no fast provider covers Tamil TTS yet) |
+| Tamil / Tanglish | Gemini directly | `Kore` |
 
-If the primary provider fails for any language, the request falls back to the original Gemini path: `gemini-3.1-flash-tts-preview` (voice `Kore`), trying `GEMINI_API_KEY` then each key in `GEMINI_FALLBACK_API_KEYS` in order.
+If the primary provider fails, the request falls back to `gemini-3.1-flash-tts-preview` (voice `Kore`), trying `GEMINI_API_KEY` then each key in `GEMINI_FALLBACK_API_KEYS` in order.
 
-> Requires `SPEECHMATICS_API_KEY`, `AZURE_SPEECH_KEY`, and `AZURE_SPEECH_REGION` to be set — see [Environment Variables](#environment-variables). Without them, English/Sinhala/Singlish requests fall straight through to the Gemini path.
+> Requires `SPEECHMATICS_API_KEY`, `AZURE_SPEECH_KEY`, and `AZURE_SPEECH_REGION` — see [Environment Variables](#environment-variables). Without them, requests fall through to the Gemini path.
+
+### 2. Gemini Live Voice Mode (Real-time Bidirectional)
+
+New hands-free mode using **Gemini 3 Flash Live** (`gemini-3.1-flash-live-preview`) over a persistent WebSocket connection. Replaces the STT→chat→TTS loop with a single real-time session.
+
+**Files created:**
+- `app/api/voice/token/route.ts` — mints ephemeral Gemini Live token via `@google/genai` v1alpha `ai.authTokens.create()` (10-min expiry, 1 use). Key priority: `GEMINI_LIVE_API` → `GEMINI_API_KEY` → `GEMINI_API_CHAT01`. Rate limited: 10/min per IP.
+- `lib/geminiLiveClient.ts` — `GeminiLiveClient` class wrapping `@google/genai` live WSS connection. Handles: mic capture (16 kHz PCM via ScriptProcessorNode), TTS playback (24 kHz PCM gapless via AudioContext), `pauseMic()`/`resumeMic()`, `speakResponse()`, barge-in (`sc.interrupted`), callbacks (`onUserTranscript`, `onOutputTranscript`, `onTTSComplete`, `onSpeakingChange`, `onListeningChange`, `onError`). Uses ScriptProcessorNode (not AudioWorklet) due to CSP `blob:` URL restrictions.
+- `lib/voiceSystemPrompt.ts` — System prompt defining TARA's voice role: (1) instant short confirmation in user's language, (2) read system-provided text aloud. Strict restrictions: no cart filling, no search, no recommendations. Mic control: system pauses mic during speech.
+- `lib/useGeminiLiveVoice.ts` — React hook managing `GeminiLiveClient` lifecycle. Fetches token from `/api/voice/token`, connects, exposes: `status`, `error`, `speaking`, `listening`, `connect()`, `disconnect()`, `speakResponse()`, `pauseMic()`, `resumeMic()`.
+- `lib/useVoiceSession.ts` — Empty stub (was used by removed `VoicePanel`; kept to avoid import errors).
+
+**Files modified:**
+- `components/ChatPanel.tsx` — Major integration: two-gate latch for sequential TTS (instant confirmation + main response), immediate search + cart fill (no confirmation prompts), contextual upselling in 5 languages, complete visual transcript logging, strict mic control via `onTTSComplete` callback.
+- `app/page.tsx` — Removed `VoicePanel` import and render.
+
+**Files deleted:**
+- `components/VoicePanel.tsx` — Standalone FAB panel (functionality merged into `ChatPanel`).
+- `public/pcm-processor.js` — AudioWorklet file (replaced by ScriptProcessorNode).
+
+**New environment variables:**
+- `GEMINI_LIVE_API` — Primary key for token minting
+- `GEMINI_LIVE_MODEL` — Optional model override (default: `gemini-3.1-flash-live-preview`)
+
+**Architecture — Two-gate latch (race-condition fix):**
+
+After user speech, two async processes run in parallel:
+- **Gate A** (`instantConfirmDoneRef`): Gemini Live instant confirmation TTS finishes
+- **Gate B** (`mainResponseTextRef`): `/api/chat` + `/api/search` complete, response text ready
+
+`speakResponse(visible)` fires only when **both gates are satisfied** — prevents turn collision where main response TTS would start while instant confirmation is still playing.
+
+**Target workflow per user speech:**
+```
+User speaks → Gemini transcribes → onUserTranscript fires
+  → Mic PAUSED (strict mic control)
+  → User transcript appears as chat bubble (visual logging)
+  → sendMessage(text, fromGeminiLive=true) → POST /api/chat
+  → SIMULTANEOUSLY: Gemini Live generates instant confirmation audio
+    (e.g. "Searching for iPhone 17 on Kapruka right now!") in user's language
+  → onOutputTranscript (isReadAloud=false) → instant confirmation text in chat
+  → Instant confirmation TTS plays → onTTSComplete fires (Gate A satisfied)
+  → /api/chat response streams → visible text (prepended with instant text)
+  → <search_query> parsed → /api/search executes IMMEDIATELY (no confirmation prompt)
+  → Products appear → speakResponse(visible) called (Gate B satisfied via two-gate latch)
+  → Main response TTS plays → onTTSComplete fires
+  → Upselling follow-up: speakResponse(upsell) in 5 languages
+  → Upselling TTS plays → onTTSComplete fires
+  → Mic resumes (post-speech listening — only after ALL TTS done)
+```
+
+**Key behavioral rules:**
+- **Language match**: Instant confirmation in user's exact language (EN/SI/TA/Singlish/Tanglish)
+- **Complete visual transcript logging**: Every audio event has a visible text block
+- **Backend delegation**: Gemini Live only captures speech; all extraction (`<search_query>`, `<checkout_fill>`) and cart filling happens in backend
+- **Strict mic control**: Mic disabled during processing, TTS, rendering; resumes only via `onTTSComplete`
+- **Sequential TTS**: Main response TTS only after search results return; upselling after main response
+- **No local cart filling**: Only `prefillCheckout()` from `<checkout_fill>` tag in backend response
+- **Instant confirmation prepended**: First sentence of main TTS matches instant reply
+
+**Coexistence with legacy mode:**
+- `lib/useVoiceMode.ts` is untouched — handles STT→TTS when Gemini Live is NOT connected
+- When `voiceModeOn=true` AND Gemini Live status=`connected`: Gemini Live takes over mic control; legacy `startRecording()` auto-loop is skipped
+- When `voiceModeOn=true` but Gemini Live NOT connected (e.g., token fetch failed): legacy STT→TTS runs as fallback
+- `/api/voice-stt` and `/api/voice-tts` are NOT used by Gemini Live mode
+
+**Debug logging:** grep `[gemini-live]` in browser console (client-side). Key log points: `USER SAID`, `GEMINI SAID`, `turn complete`, `TTS complete`, `handleGeminiTranscript`, `sendMessage called`, `/api/chat response`, `both gates satisfied`, `speaking upselling`, `resuming mic`.
 
 ---
 
@@ -565,6 +599,8 @@ ChatPanel reads the header → stores `ThinkingData` on the message → renders 
 | `ZENMUX_PRODUCT_AI_MODEL` | Optional | `/api/product-ai` | Override first ZenMux model |
 | `ZENMUX_FALLBACK_MODEL` | Optional | `/api/product-ai` | Appended to end of ZenMux chain |
 | `HUGGING_FACE_API_KEY` | ✅ | `/api/generate-gift-card` | HuggingFace FLUX image generation |
+| `GEMINI_LIVE_API` | Recommended | `/api/voice/token` | Primary key for Gemini Live token minting |
+| `GEMINI_LIVE_MODEL` | Optional | `/api/voice/token` | Override Gemini Live model (default: `gemini-3.1-flash-live-preview`) |
 | `MCP_URL` | Optional | all MCP routes | Default: `https://mcp.kapruka.com/mcp` |
 
 **Key routing at a glance:**
@@ -576,7 +612,8 @@ Vision search          → GEMINI_API_KEY    → GEMINI_API_VISION_FALLBACK
 Product AI (Gemini)    → GEMINI_API_KEY    (model: GEMINI_MODEL)
 Voice STT              → GEMINI_API_KEY    → GEMINI_FALLBACK_API_KEY
 Voice TTS              → Speechmatics (EN) / Azure (SI, SL) / Gemini (TA, TL)
-                          → fallback: GEMINI_API_KEY → each in GEMINI_FALLBACK_API_KEYS
+                           → fallback: GEMINI_API_KEY → each in GEMINI_FALLBACK_API_KEYS
+Gemini Live token      → GEMINI_LIVE_API   → GEMINI_API_KEY → GEMINI_API_CHAT01
 ```
 
 > ⚠️ `GEMINI_API_CHAT01`/`CHAT02` are **not** the same as `GEMINI_API_KEY` or `GEMINI_FALLBACK_API_KEY`. These are four distinct slots serving different routes.
@@ -698,6 +735,7 @@ All routes use a `LOG` object with `.info` / `.warn` / `.error`. Grep these pref
 | `[TARA:GIFT-CARD]` | `/api/generate-gift-card` |
 | `[TARA:VOICE-STT]` | `/api/voice-stt` |
 | `[TARA:VOICE-TTS]` | `/api/voice-tts` |
+| `[gemini-live]` | browser console (client-side only) — `USER SAID`, `GEMINI SAID`, `turn complete`, `TTS complete`, `handleGeminiTranscript`, `sendMessage called`, `/api/chat response`, `both gates satisfied`, `speaking upselling`, `resuming mic` |
 | `[checkout]` | `/api/checkout` |
 | `[feedback]` | `/api/feedback` |
 
@@ -721,6 +759,7 @@ tara/
 │       ├── vision-search/route.ts  # Image → search query
 │       ├── voice-stt/route.ts      # Speech-to-text
 │       ├── voice-tts/route.ts      # Text-to-speech → WAV
+│       ├── voice/token/route.ts    # Gemini Live ephemeral token mint
 │       ├── generate-gift-card/     # FLUX.1 AI illustration
 │       ├── checkout/route.ts       # 3-step order creation
 │       ├── validate-delivery/      # Delivery pre-check
@@ -740,7 +779,7 @@ tara/
 │   ├── ProductCard.tsx             # Card with skeleton shimmer (live)
 │   ├── CartDrawer.tsx              # Checkout + invoice PDF (live)
 │   ├── InvoiceTemplate.tsx         # Hidden invoice renderer (live)
-│   ├── SidePanel.tsx               # History / Browse / Settings (live)
+│   ├── SidePanel.tsx               # History / Browse / Settings / Help / User Manual (live)
 │   ├── LoginModal.tsx              # Guest + account auth (live)
 │   ├── SplashScreen.tsx            # Three.js animated sprite (live)
 │   ├── AudioVisualizer.tsx         # 12-bar canvas visualizer (live)
@@ -759,6 +798,10 @@ tara/
 ├── lib/
 │   ├── mcp.ts                      # MCP session cache + typed tool helpers
 │   ├── useVoiceMode.ts             # STT + TTS + hands-free loop hook
+│   ├── useGeminiLiveVoice.ts       # Gemini Live WSS client lifecycle hook
+│   ├── geminiLiveClient.ts         # WSS wrapper: mic capture (16kHz) + TTS playback (24kHz)
+│   ├── voiceSystemPrompt.ts        # System prompt for Gemini Live (instant ack + read aloud)
+│   ├── useVoiceSession.ts          # Empty stub (was VoicePanel, kept to avoid import errors)
 │   ├── cache.ts                    # In-process cache (cacheGet / cacheSet / TTL)
 │   ├── security.ts                 # rateLimit · sanitizeInput · validateCheckout
 │   ├── strings.ts                  # UI strings in 5 languages
