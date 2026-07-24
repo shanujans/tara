@@ -14,6 +14,18 @@ TARA replaces the traditional Kapruka website UI with a warm, voice-enabled, AI-
 
 ---
 
+## Latest Updates (this build)
+
+Brief summary of UI work landed in this build session:
+
+- **Sidebar UX** — collapsible/expandable with hover preview, pinned-open mode, Ctrl+B shortcut, click-to-toggle affordance, font + background highlight on hover across all sidebar buttons.
+- **Icon refresh** — Settings (cog), Help & FAQ (message-bubble question mark), User Manual (notebook tabs); proper X close-icon in panel headers.
+- **Cart count visibility** — cart-item badge continues to show in the collapsed sidebar (with pop + pulse animation) so users don't miss additions.
+- **User Manual panel** — full 5-language in-product guide. `manual` sector in the sidebar; in-panel heading reads "User Manual". 22 sections covering text chat, voice (Legacy STT+TTS + Gemini Live), vision, per-product AI Summary & Q&A, checkout, in-app payment, gift chains, quick chips, settings, and an Order Completion Timeline (min 30s).
+- **Settings footer** — TARA v1.0 credit block with the build stack (Next.js 16, Gemini) and the minimum-order note.
+
+---
+
 ## Feature Overview
 
 | Feature | Details |

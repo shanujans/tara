@@ -129,7 +129,7 @@ instantGreeting: 'Hondai, hoyanawa! 🔍',
     micPermissionDenied: 'Voice mode பயன்படுத்த மைக் அனுமதி கொடுங்கள்.',
 instantGreeting: 'நிச்சயமாக! தேடுகிறேன்… 🔍',
     cancelListeningTitle: 'ரத்து செய்யத் தட்டவும் — அனுப்பப்படாது',
-    manualTitle: 'பயனர் கைநிரல்',
+    manualTitle: 'பயனர் கையேடு',
   },
   // Tanglish
   tl: {

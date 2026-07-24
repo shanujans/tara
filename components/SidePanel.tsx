@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { XIcon, PackageIcon, RewardsIcon, BrowseIcon, SettingsIcon, HelpIcon, ChevronRightIcon, TrashIcon, PackageSearchIcon } from './Icons';
+import { XIcon, PackageIcon, RewardsIcon, BrowseIcon, SettingsIcon, HelpIcon, ChevronRightIcon, TrashIcon, PackageSearchIcon, UserManualIcon } from './Icons';
 import { Lang, STRINGS } from '@/lib/strings';
 
 export type PanelId = 'none' | 'history' | 'rewards' | 'browse' | 'settings' | 'help' | 'notifications' | 'menu' | 'track' | 'manual';
@@ -47,8 +47,57 @@ const FAQS = [
 function UserManualPanel({ lang }: { lang: Lang }) {
   const strings = STRINGS[lang] ?? STRINGS.en;
 
+  type TimelineRow = {
+    step: number;
+    time: string;
+    topic?: Partial<Record<Lang, string>>;
+    whatHappens: Partial<Record<Lang, string>>;
+  };
+
   // Section data
   const sections = [
+    {
+      id: 'timeline',
+      title: { en: 'Order Completion Timeline (min 30s)', si: 'ඇණවුම් සම්පූර්ණ කිරීමේ කාල රේඛාව (මිනිම් 30s)', sl: 'Aenum sampurna kireemaye kaala rekhawa (min 30s)', ta: 'ஆர்டர் நிறைவு காலவரிசை (குறைந்தது 30s)', tl: 'Order nilairoo kaalavarichai (kuraivadhu 30s)' },
+      icon: '⏱️',
+      items: [
+        {
+          title: { en: 'What TARA does in min 30s', si: 'මිනිම් 30s කින් TARA කරන දේ', sl: 'Min 30s kin TARA karana de', ta: 'குறைந்தது 30s-ல் TARA செய்வது', tl: 'Kuraivadhu 30s-il TARA seivadhu' },
+          desc: {
+            en: 'Minimum 30s end-to-end. Times depend on user & flow — network speed, delivery city, date format, model latency. Cleaner / shorter queries finish closer to 30s; queries that need translation or many fields may take a bit longer, but completion is always under 60s. Below: "Find iPhone 16 Pro under 500k LKR from Suresh to Karthik in Batticaloa (077… karthik@… No. 12 Arasadi Veethi) for delivery on 2026-07-18 with gift message."',
+            si: 'අවම මිනිම් 30s අන්ත-අන්තය. කාලය පරිශ්‍රීලාකාරක සහ ප්‍රවාහය අනුව — ජාල වේගය, ලබාදීමේ නගරය, දින ආකෘතිය, ආකෘති ප්‍රමාදනය. පිරිසිදු/කෙටි queries 30s ට ළඟින් අවසන් වේ; පරිවර්තනය හෝ බොහෝ ක්ෂේත්‍ර අවශ්‍ය query වලට මදක් වැඩි කාලයක් ගත හැක, නමුත් සම්පූර්ණ කිරීම සෑම විටකම 60s ට අඩුය. පහත: "Find iPhone 16 Pro under 500k LKR from Suresh to Karthik in Batticaloa (077… karthik@… No. 12 Arasadi Veethi) for delivery on 2026-07-18 with gift message."',
+            sl: 'Avama min 30s antha-anthaya. Kaalaya parishreelaakaraka saha prawahaya anuwa — jaala wegaya, labadimaye nagaraya, dina aakruthiya, aakruthi pramaadhanaya. Parisidu/keti queries 30s ta langin awasan wei; parivarthanaya ho baho kshethra awashya query wulata madak wadi kaalayak gata hecaka, namuth sampurna kireema seema wita kama 60s ta aduya. Pahasa: "Find iPhone 16 Pro under 500k LKR from Suresh to Karthik in Batticaloa (077… karthik@… No. 12 Arasadi Veethi) for delivery on 2026-07-18 with gift message."',
+            ta: 'குறைந்தபட்சம் 30s முடிவு-க்கு-முடிவு. நேரம் பயனர் & ஓட்டத்தைப் பொறுத்தது — வலையமைப்பு வேகம், விநியோக நகரம், தேதி வடிவம், மாதிரி தாமதம். சுத்தமான/குறுகிய வினவல்கள் 30s-க்கு அருகில் முடிகின்றன; மொழிபெயர்ப்பு/பல புலங்கள் தேவைப்படும் வினவல்கள் கொஞ்சம் அதிக நேரம் எடுக்கலாம், ஆனால் நிறைவு எப்போதும் 60s-க்குக் குறைவாக. கீழே: "Find iPhone 16 Pro under 500k LKR from Suresh to Karthik in Batticaloa (077… karthik@… No. 12 Arasadi Veethi) for delivery on 2026-07-18 with gift message."',
+            tl: 'Kuraivadpacham 30s mudivu-kku-mudivu. Neram payanr & oattaththaip poluththadhu — valaiyamaippu vegam, viniyoga nagaram, thedhi vadivam, maathiri thaamadham. Suddhamāna/kurukiya vinavalkal 30s-kku arukile mudiykinrana; mozhi peyarppu/pala pulanggal thevai ppadum vinavalkal konjam adhik neram edukkalam, aanāl nilairoo eppodhum 60s-kkuk kuraivaaga. Keezhe: "Find iPhone 16 Pro under 500k LKR from Suresh to Karthik in Batticaloa (077… karthik@… No. 12 Arasadi Veethi) for delivery on 2026-07-18 with gift message."'
+          },
+          timeline: [
+            { step: 1, time: '0s',     topic: { en: 'Extract fields', si: 'ක්ෂේත්‍ර උපුටා ගන්න', sl: 'Kshethra uputa ganna', ta: 'புலங்களை பிரி', tl: 'Pulangalai piri' }, whatHappens: { en: 'All 10 fields extracted from your message via one <checkout_fill> JSON tool call.', si: '10ම ක්ෂේත්‍ර එකවර <checkout_fill> JSON tool call එකකින් උපුටා ගනී.', sl: '10ma kshethra ekwara <checkout_fill> JSON tool call ekakin uputa gani.', ta: '10 புலங்கள் அனைத்தும் ஒரே <checkout_fill> JSON tool call மூலம் பிரிக்கப்படுகின்றன.', tl: '10 pulanggal ellaadhum ore <checkout_fill> JSON tool call moolam pirikkappadukirana.' } },
+            { step: 2, time: '0–5s',   topic: { en: 'Search Kapruka', si: 'Kapruka සොයන්න', sl: 'Kapruka soyanna', ta: 'Kapruka-வை தேடு', tl: 'Kapruka-vai thedu' }, whatHappens: { en: 'Searches Kapruka for your product (e.g. iPhone 16 Pro under 500k LKR).', si: 'ඔබේ භාණ්ඩය Kapruka හි සොයයි (උදා: 500k LKR ට අඩු iPhone 16 Pro).', sl: 'Obe bhandaya Kapruka hi soyayi (uda: 500k LKR ta adu iPhone 16 Pro).', ta: 'உங்கள் பொருளை Kapruka-வில் தேடுகிறது (எ.கா: 500k LKR-க்கு குறைவான iPhone 16 Pro).', tl: 'Ungal porulai Kapruka-vil thedukirathu (e.gaa: 500k LKR-kku kuraivaana iPhone 16 Pro).' } },
+            { step: 3, time: '5–8s',   topic: { en: 'AI ranks', si: 'AI ශ්‍රේණි', sl: 'AI shreni', ta: 'AI தரவரிசை', tl: 'AI tharavarichai' }, whatHappens: { en: 'AI ranks results, highlights "TARA\'s Pick" top 3.', si: 'AI ප්‍රතිඵල ශ්‍රේණිගත කරයි, "TARA තේරීම" ඉහළ 3 පෙන්වයි.', sl: 'AI prathipala shrenigath karayi, "TARA therima" ihaala 3 penvayi.', ta: 'AI முடிவுகளை தரவரிசை செய்கிறது, "TARA-வின் தேர்வு" சிறந்த 3-ஐ சுட்டிக்காட்டுகிறது.', tl: 'AI thudivugalai tharavarichai seikirathu, "TARA-vin tharchu" sirantha 3-ai suttikkaattukirathu.' } },
+            { step: 4, time: '8–10s',  topic: { en: 'You pick', si: 'ඔබ තෝරනවා', sl: 'Oba thoranawaa', ta: 'நீங்கள் தேர்வு', tl: 'Neengal tharchu' }, whatHappens: { en: 'You tap your preferred product card (or say a number like "2nd one").', si: 'ඔබ ඔබේ කැමති භාණ්ඩ කාඩ් එක තට්ටු කරයි (හෝ "2 වැනි" කියන්න).', sl: 'Oba obe kamathi bhandaya kaard ek thattu karayi (ho "2 weni" kiyanna).', ta: 'நீங்கள் விரும்பிய பொருள் அட்டையைத் தட்டவும் (அல்லது "2-வது" என்று சொல்லவும்).', tl: 'Neengal virumbiya porul attaiyait thattavum (allathu "2-vadhu" endru solluvum).' } },
+            { step: 5, time: '10–12s', topic: { en: 'Translate', si: 'පරිවර්තනය', sl: 'Parivarthanaya', ta: 'மொழிபெயர்', tl: 'Mozhi peyar' }, whatHappens: { en: 'Translates non-English names/addresses to English (கார்த்திக் → Karthik, மட்டக்களப்பு → Batticaloa).', si: 'ඉංග්‍රීසි නොවන නම්/ලිපින ඉංග්‍රීසි අකුරු වලට පරිවර්තනය කරයි (கார்த்திக் → Karthik, மட்டக்களப்பு → Batticaloa).', sl: 'Ingiresi nowana nam/lipiya ingiresi akuru walata parivarthanaya karayi (கார்த்திக் → Karthik, மட்டக்களப்பு → Batticaloa).', ta: 'ஆங்கிலம் அல்லாத பெயர்கள்/முகவரிகளை ஆங்கில எழுத்துகளுக்கு மொழிபெயர்க்கிறது (கார்த்திக் → Karthik, மட்டக்களப்பு → Batticaloa).', tl: 'Aankilam allaadha peyangal/mugavarikalai aankila ezhuthukalukku mozhi peyarkirathu (கார்த்திக் → Karthik, மட்டக்களப்பு → Batticaloa).' } },
+            { step: 6, time: '12–15s', topic: { en: 'Validate', si: 'වලංගු කරන්න', sl: 'Walangu karanna', ta: 'சரிபார்', tl: 'Saripaar' }, whatHappens: { en: 'Validates delivery: city (e.g. Batticaloa) + date (July 18).', si: 'ලබාදීම වලංගු කරයි: නගරය (උදා: මඩකලපුව) + දිනය (උදා: ජූලි 18).', sl: 'Labadima walangu karayi: nagaraya (uda: Madakalapuw) + dinaya (uda: July 18).', ta: 'விநியோகத்தை சரிபார்க்கிறது: நகரம் (எ.கா: மட்டக்களப்பு) + தேதி (எ.கா: ஜூலை 18).', tl: 'Viniyogaththaai saripaarkirathu: nagaram (e.gaa: Mattakkalappu) + thedhi (e.gaa: July 18).' } },
+            { step: 7, time: '15s',    topic: { en: 'Pre-fill', si: 'පෙර පුරවන්න', sl: 'Pera puravanna', ta: 'முன் நிரப்பு', tl: 'Mun nirappu' }, whatHappens: { en: 'Pre-fills cart: your name, phone, address, city, delivery date.', si: 'කරත්තය පෙර පුරවයි: ඔබේ නම, දුරකථනය, ලිපිනය, නගරය, ලබාදීමේ දිනය.', sl: 'Karthuwa pera puravayi: obe nama, durakathanaya, lipiynaya, nagaraya, labadimaye dinaya.', ta: 'கார்ட்டை முன் நிரப்புகிறது: உங்கள் பெயர், தொலைபேசி, முகவரி, நகரம், விநியோக தேதி.', tl: 'Kaarttai mun nirappukirathu: ungal peyar, tholaipesi, mugavari, nagaram, viniyoga thedhi.' } },
+            { step: 8, time: '15–30s', topic: { en: 'Cart opens', si: 'කරත්තය විවෘතයි', sl: 'Karthuwa vivruthayayi', ta: 'கார்ட் திறக்கிறது', tl: 'Cart thirakirathu' }, whatHappens: { en: 'Cart drawer opens — review, edit qty, add gift message, then tap Checkout.', si: 'කරත්තය විවෘත වේ — සමාලෝචනය, ප්‍රමාණය සංස්කරණය, උපහාර පණිවුඩයක් එකතු කරන්න, ඉන්පසු Checkout තට්ටු කරන්න.', sl: 'Karthuwa vivrutha wei — samalochchanaya, pramanaya sanskaranaya, upahara panividayak ekathu karanna, inpasa Checkout thattu karanna.', ta: 'கார்ட் டிராயர் திறக்கிறது — மதிப்பாய்வு, அளவு திருத்து, பரிசு செய்தி சேர்க்க, பின்னர் Checkout தட்டவும்.', tl: 'Cart drawer thirakirathu — madhippaayvu, alav thiruththu, parichu seidhi serkka, pinnar Checkout thattavum.' } },
+            { step: 9, time: '30s',   topic: { en: 'Checkout', si: 'චෙක්අවුට්', sl: 'Check-out', ta: 'செக்அவுட்', tl: 'Checkout' }, whatHappens: { en: 'Tap Checkout → order placed on Kapruka. Order completion in min ~30s on a clean query.', si: 'Checkout තට්ටු කරන්න → Kapruka හි ඇණවුම් කරනු ලැබේ. පිරිසිදු query එකක් මත ඇණවුම් සම්පූර්ණ කිරීම මිනිම් 30s.', sl: 'Check-out thattu karanna → Kapruka hi aenum karanu labeyi. Parisidu query ekaka matha aenum sampurna kireema min 30s.', ta: 'Checkout தட்டவும் → Kapruka-வில் ஆர்டர் செய்யப்படுகிறது. சுத்தமான வினவலில் ஆர்டர் நிறைவு குறைந்தது 30s.', tl: 'Checkout thattavum → Kapruka-vil order seiyappadukirathu. Suddhamāna vinavalil order nilairoo kuraivadhu 30s.' } },
+          ],
+          examples: [
+            { lang: 'en', text: 'Receipt (product image, totals, "Pay Now", ❌ Download AI Receipt, Share Receipt) appears at the end.' },
+            { lang: 'si', text: 'අවසානයේ රිසිට් පත (භාණ්ඩ රූපය, එකතු, "දැන් ගෙවන්න", ❌ AI රිසිට් බාගත් ගන්න, රිසිට් බෙදාහැරන්න) පෙන්වයි.' },
+            { lang: 'sl', text: 'Avasaneyi risiit patha (bhandaya rupaya, ekathu, "Dan dewanne", ❌ AI risiit bagath ganna, risiit bedaha heranna) penvayi.' },
+            { lang: 'ta', text: 'இறுதியில் ரசீது (பொருள் படம், மொத்தங்கள், "இப்போது செலுத்து", ❌ AI ரசீது பதிவிறக்கு, ரசீது பகிர்வு) காட்டப்படுகிறது.' },
+            { lang: 'tl', text: 'Iruudhilal rasidhu (porul padam, moththangal, "Ippodhu seluthu", ❌ AI rasidhu padhivirakkam, rasidhu pagirvu) kaaṭṭappadukirathu.' },
+          ],
+          footer: {
+            en: '⏱️ Goal: min ~30s. Times depend on user & flow — faster on simpler queries, slower when translation or many fields are needed.',
+            si: '⏱️ ඉලක්කය: මිනිම් ~30s. කාලය පරිශ්‍රීලාකාරක සහ ප්‍රවාහය අනුව — සරල queries වලදී වේගවත්, පරිවර්තනය/බොහෝ ක්ෂේත්‍ර අවශ්‍ය විට මන්දගාමී.',
+            sl: '⏱️ Ilakkaya: min ~30s. Kaalaya parishreelaakaraka saha prawahaya anuwa — sarala queries waladi wega, parivarthanaya/baho kshethra awashya wita mandagaamiyi.',
+            ta: '⏱️ இலக்கு: குறைந்தது ~30s. நேரம் பயனர் & ஓட்டத்தைப் பொறுத்தது — எளிய வினவல்களில் வேகம், மொழிபெயர்ப்பு/பல புலங்கள் தேவைப்படும்போது மெதுவாக.',
+            tl: '⏱️ Ilakku: kuraivadhu ~30s. Neram payanr & oattaththaip poluththadhu — eliya vinavalkalil vegam, mozhi peyarppu/pala pulanggal thevai ppadumbothu medhuvaga.'
+          }
+        },
+      ]
+    },
     {
       id: 'text-chat',
       title: { en: 'Text Chat', si: 'පාඨ කතාබහ', sl: 'Text Chat', ta: 'உரை அரட்டை', tl: 'Text Chat' },
@@ -74,11 +123,11 @@ function UserManualPanel({ lang }: { lang: Lang }) {
         {
           title: { en: 'Combined search + checkout in one message', si: 'එක් පණිවුඩයෙන් සොයීම හා චෙක්අවුට්', sl: 'Eka pinividayen soyiya ha check-out', ta: 'ஒரு செய்தியில் தேடல் + செக்அவுட்', tl: 'Oru seidhiyil thaedal + checkout' },
           desc: { 
-            en: 'Provide product + full delivery details together. TARA emits <search_query> then <checkout_fill> and opens the cart.',
-            si: 'භාණ්ඩය + පූර්ණ ලබාදීමේ විස්තර එක්ව දෙන්න. TARA <search_query> පසු <checkout_fill> නිකුත් කර කාට් විවෘත කරයි.',
-            sl: 'Bhandaya + poorna labadima vistara ekwe dennna. TARA <search_query> pasu <checkout_fill> nikuth kara kathuwa vivruth karayi.',
-            ta: 'தொழில் + முழு விநியோக விவரங்களையும் சேர்த்து கொடுக்கவும். TARA <search_query> பிறகு <checkout_fill> வெளியிடுகின்றது மற்றும் கார்ட் திறக்கிறது.',
-            tl: 'Thozhil + muzh u viniyoga vivarangalaium serthu kodukkavum. TARA <search_query> piragu <checkout_fill> veliyaidukirathu matrum card thirakkirathu.'
+            en: 'Provide product + full delivery details together. TARA emits <search_query> then <checkout_fill> and opens the cart. Note: address, name spelling, and email can have minor errors — always verify manually in the filled cart section before checkout.',
+            si: 'භාණ්ඩය + පූර්ණ ලබාදීමේ විස්තර එක්ව දෙන්න. TARA <search_query> පසු <checkout_fill> නිකුත් කර කාට් විවෘත කරයි. සටහන: ලිපිනය, නමේ අක්ෂර වින්‍යාසය සහ ඊමේල් එකේ සුළු දෝෂ තිබිය හැක — චෙක්අවුට් කිරීමට පෙර සෑම විටකම පිරවූ කරත්තය තුළ අත්නිලිලේ සත්‍යාපනය කරන්න.',
+            sl: 'Bhandaya + poorna labadima vistara ekwe dennna. TARA <search_query> pasu <checkout_fill> nikuth kara kathuwa vivruth karayi. Note: lipiynaya, namae akshara vinyaasaya saha eemail ekke sulu dosha thibiyi hecaka — checkout karanata pera sema wita kama pirawu karthuwa thula athnili lel sathyapanawa karanna.',
+            ta: 'தொழில் + முழு விநியோக விவரங்களையும் சேர்த்து கொடுக்கவும். TARA <search_query> பிறகு <checkout_fill> வெளியிடுகின்றது மற்றும் கார்ட் திறக்கிறது. குறிப்பு: முகவரி, பெயரின் எழுத்துப்பிழை மற்றும் மின்னஞ்சலில் சிறிய பிழைகள் இருக்கலாம் — செக்அவுட் செய்வதற்கு முன்பு நிரப்பப்பட்ட கார்ட் பிரிவில் எப்போதும் கைமுறையாக சரிபார்க்கவும்.',
+            tl: 'Thozhil + muzh u viniyoga vivarangalaium serthu kodukkavum. TARA <search_query> piragu <checkout_fill> veliyaidukirathu matrum card thirakkirathu. Kuzhipu: mugavari, peyarin ezhuthupizhai matrum minnanjalil siriya pizhaigal irukkalam — checkout seivatharku munbu nirappappatta card pirivil eppolum kaimuriyaaga saripaarkavum.'
           },
           examples: [
             { lang: 'en', text: 'Send iPhone 16 Pro to Priya, 23 Galle Road Colombo 3, 0771234567, tomorrow, House, shanu@gmail.com' },
@@ -89,7 +138,7 @@ function UserManualPanel({ lang }: { lang: Lang }) {
           ]
         },
         {
-          title: { en: 'Complex example (your Tamil sample)', si: 'සංකීර්ණ උදාහරණය (ඔබේ දෙමළ උදාහරණය)', sl: 'Sankirana udaharanaya (Owge Tamil udaharanaya)', ta: 'சிக்கலான உதாரணம் (உங்கள் தமிழ் மாதிரி)', tl: 'Sikkalana udharanam (Ungal Tamil maathiri)' },
+          title: { en: 'Complex example', si: 'සංකීර්ණ උදාහරණය', sl: 'Sankirana udaharanaya', ta: 'சிக்கலான உதாரணம்', tl: 'Sikkalana udharanam' },
           desc: { 
             en: 'Full gift message + delivery instructions + occasion in one sentence.',
             si: 'සම්පූර්ණ උපහාර පණිවුඩය + ලබාදීමේ නිර්දේශ + සුළු සිරුර එක් වාක්යයකින්.',
@@ -97,19 +146,19 @@ function UserManualPanel({ lang }: { lang: Lang }) {
             ta: 'முழு காதல் செய்தி + விநியோக அறிவிப்புகள் + விழா எல்லாம் ஒரு வாக்கியத்தில்.',
             tl: 'Muzhu kadhal seidhi + viniyoga arivipugalum vizha ellam oru vaakkiyathil.'
           },
-          examples: [
-            { lang: 'en', text: 'Send iPhone 16 Pro worth Rs. 485,000 from Suresh to Karthik in Batticaloa (0771234567, karthik@email.com, No. 12, Arasadi Veethi) for delivery on 2026-07-18 with gift message "Celebrate life"' },
-            { lang: 'si', text: 'සුරේශ් විසින් මඩකලපුවට පැමිණි කාර්තික්ට 0771234567, karthik@email.com, 12 වෙනි අරසාදි වීදිහි 2026-07-18 දින රු. 485,000 අගයන් iPhone 16 Pro එක වෙන්නේ "ජීවිතය සමරන්න" යන උපහාර පණිවුඩයෙන්' },
-            { lang: 'sl', text: 'Suresh wisin Madakalapuwata penimu Karthikta 0771234567, karthik@email.com, 12 weni Arasadi Veediya 2026-07-18 din Rs. 485,000 agayen iPhone 16 Pro ek venne "Jivithaya samaranna" yana upahara pinividayen' },
-            { lang: 'ta', text: 'சுரேஷ் என்பவரால் மட்டக்களப்பைச் சேர்ந்த கார்த்திக்கிற்கு (0771234567, karthik@email.com, இலக்கம் 12, அரசடி வீதி) 2026 ஜூலை 18 அன்று வழங்கப்பட்ட ரூபா 485,000 பெறுமதியான iPhone 16 Pro இற்கான வாழ்த்துச் செய்தி, "வாழ்க்கையை கொண்டாடுங்கள்" என்ற குறிப்புடன் அனுப்பப்படும்.' },
-            { lang: 'tl', text: 'Suresh enpavaral Mattakkalappaich cherndha Karthikkirku (0771234567, karthik@email.com, ilakkam 12, Arasadi Veethi) 2026 July 18 andru vangaipatta Rubai 485,000 perumathiyaana iPhone 16 Pro irukka vazhthu seidhi, "Vaazhkaiyai kondadungal" endra kurippudan anuppappadum.' },
-          ]
+examples: [
+            { lang: 'en', text: 'Find iPhone 16 Pro under 400k LKR from Suresh to Karthik in Batticaloa (0771234567, karthik@email.com, No. 12, Arasadi Veethi) for delivery on 2026-07-18 with gift message "Celebrate life"' },
+            { lang: 'si', text: 'සුරේෂ්ගෙන් මඩකලපුවේ සිටින කාර්තික් වෙත (0771234567, karthik@email.com, නො. 12, අරසාදි වීදිය) 2026-07-18 දින ලබා දීම සඳහා "ජීවිතය සමරන්න" යන තෑගි පණිවුඩය සහිත රු. 400,000 ට අඩු iPhone 16 Pro එකක් සොයන්න.' },
+            { lang: 'sl', text: 'Sureshgen Madakalapuwe sitina Karthik wetha (0771234567, karthik@email.com, No. 12, Arasadi Veediya) 2026-07-18 dina laba deema sandaha "Jivithaya samaranna" yana thaagi panividaya sahitha LKR 400,000 ta adu iPhone 16 Pro ekak soyanna.' },
+            { lang: 'ta', text: 'சுரேஷிடமிருந்து மட்டக்களப்பில் உள்ள கார்த்திக்கிற்கு (0771234567, karthik@email.com, இல. 12, அரசடி வீதி) 2026-07-18 அன்று விநியோகிப்பதற்காக "வாழ்க்கையைக் கொண்டாடுங்கள்" என்ற வாழ்த்துச் செய்தியுடன் 400,000 LKR இற்கும் குறைவான iPhone 16 Pro ஐக் கண்டறியவும்.' },
+            { lang: 'tl', text: 'Sureshidamirthu Mattakkalappil ulla Karthikkirku (0771234567, karthik@email.com, Ila. 12, Arasadi Veethi) 2026-07-18 andru viniyogippatharkaga "Vaazhkaiyai kondadungal" endra vazhthu seidhiyudan 400,000 LKR irkum kuraivana iPhone 16 Pro ai kandariyavum.' },
+          ] 
         },
       ]
     },
     {
       id: 'voice',
-      title: { en: 'Voice Mode (Two Options)', si: 'ද්විත්ව විකල්ප (දෙකක්)', sl: 'Dwithwa vikalpa (Dekak)', ta: 'உரை பயன்முறை (இரண்டு விருப்பங்கள்)', tl: 'Urai payanmurai (Irandu viruppangal)' },
+      title: { en: 'Voice Mode (Two Options)', si: 'ද්විත්ව විකල්ප (දෙකක්)', sl: 'Dwithwa vikalpa (Dekak)', ta: 'குரல் பயன்முறை (இரண்டு விருப்பங்கள்)', tl: 'Kural payanmurai (Irandu viruppangal)' },
       icon: '🎙️',
       items: [
         {
@@ -132,19 +181,19 @@ function UserManualPanel({ lang }: { lang: Lang }) {
         {
           title: { en: '2️⃣ Gemini Live Voice (Real-time, hands-free)', si: '2️⃣ Gemini Live පාවාදේශීය (සාවාදීය, මුළු ප්‍රමාණයෙන්)', sl: '2️⃣ Gemini Live pawadeshiya (Savadhiya, Mul pramanayen)', ta: '2️⃣ Gemini Live குரல் (நேரடி, கையில்லாமல்)', tl: '2️⃣ Gemini Live kural (Neradi, kaiyillamal)' },
           desc: { 
-            en: 'Click the ✨ sparkle button in chat header. One persistent WebSocket — no push-to-talk needed. Speak naturally; TARA replies instantly with voice. Mic auto-pauses during TTS, resumes after. Two-gate latch ensures instant confirmation plays first, then main response, then upsell.',
-            si: 'කතා හැඩේ ✨ ප්‍රභාව බොත්තම ක්ලික් කරන්න. එක් ස්ථාවර WebSocket — push-to-talk අවශ්‍ය නැහැ. සාමාන්‍යව කතා කරන්න; TARA කාලීන ආවේගයෙන් ප්‍රතිචාර දෙයි. TTS දී මයික් ස්වයංක්‍රීයව විරාම වෙයි, පසුව ආරම්භ වෙයි. දෙක් දැක්වීම තහවුරු කිරීම ස්වයංක්‍රීයව පළමුව සන්නිවේදනය, පසුව ප්‍රධාන ප්‍රතිචාර, අවසානයේ උපසෙල් ප්‍රතිචාර පැවතීමට උදව් කරයි.',
-            sl: 'Katha hadae ✨ prabhava button click karanna. Eka sthawara WebSocket — push-to-talk awashya naae. Samanawai kata karanna; TARA kalina awegen prathichara deyayi. TTS di mic swayankriyawa viraya wemi, pasu aramba wemi. Deka dakweema thahuwa karanwa swayankriyawa prathama sannivedanaya, pasu pradhana prathichara, awasane upasela prathichara pravesha karanata udaw karayi.',
-            ta: 'அரட்டை தலையில் ✨ மின்னல் பொத்தானைக் கிளிக் செய்யவும். ஒரே தொடர்ச்சியான WebSocket — push-to-talk தேவை இல்லை. இயல்பாக பேசுங்கள்; TARA உடனடி குரலովா பதிலளிக்கும். TTS நேரத்தில் மைக் தானாக இடைநிறுத்தம், பிறகு தொடர்ந்து. இருநிலை ஸ்விட்ச் உடனடி உறுதிப்படுத்தல் முதலில் பேட்ர retenir, பின்னர் முக்கிய பதில், முடிவில் உப்பூசல்.',
-            tl: 'Aratta thalaiail ✨ minnal pothanai click seiyavum. Orey thodarchiyana WebSocket — push-to-talk thevai illai. Iyalpaga pesungal; TARA udanadi kuralova pathilalikkum. TTS nerathil mic thaanaga idainirutham, piragu thodarum. Irunilai switch udanadi uruthippaduthal muthal uruthi, pinnar mukkiya pathil, mudivil uppusal.'
+            en: 'Click the ✨ sparkle button in chat header. One persistent WebSocket — no push-to-talk needed. Speak naturally; TARA replies instantly with voice. Mic auto-pauses during TTS, resumes after. Two-gate latch ensures instant confirmation plays first, then main response, then upsell. Note: address, name spelling, and email can have minor errors — always verify manually in the filled cart section before checkout.',
+            si: 'කතා හැඩේ ✨ ප්‍රභාව බොත්තම ක්ලික් කරන්න. එක් ස්ථාවර WebSocket — push-to-talk අවශ්‍ය නැහැ. සාමාන්‍යව කතා කරන්න; TARA කාලීන ආවේගයෙන් ප්‍රතිචාර දෙයි. TTS දී මයික් ස්වයංක්‍රීයව විරාම වෙයි, පසුව ආරම්භ වෙයි. දෙක් දැක්වීම තහවුරු කිරීම ස්වයංක්‍රීයව පළමුව සන්නිවේදනය, පසුව ප්‍රධාන ප්‍රතිචාර, අවසානයේ උපසෙල් ප්‍රතිචාර පැවතීමට උදව් කරයි. සටහන: ලිපිනය, නමේ අක්ෂර වින්‍යාසය සහ ඊමේල් එකේ සුළු දෝෂ තිබිය හැක — චෙක්අවුට් කිරීමට පෙර සෑම විටකම පිරවූ කරත්තය තුළ අත්නිලිලේ සත්‍යාපනය කරන්න.',
+            sl: 'Katha hadae ✨ prabhava button click karanna. Eka sthawara WebSocket — push-to-talk awashya naae. Samanawai kata karanna; TARA kalina awegen prathichara deyayi. TTS di mic swayankriyawa viraya wemi, pasu aramba wemi. Deka dakweema thahuwa karanwa swayankriyawa prathama sannivedanaya, pasu pradhana prathichara, awasane upasela prathichara pravesha karanata udaw karayi. Note: lipiynaya, namae akshara vinyaasaya saha eemail ekke sulu dosha thibiyi hecaka — checkout karanata pera sema wita kama pirawu karthuwa thula athnili lel sathyapanawa karanna.',
+            ta: 'அரட்டை தலையில் ✨ மின்னல் பொத்தானைக் கிளிக் செய்யவும். ஒரே தொடர்ச்சியான WebSocket — push-to-talk தேவை இல்லை. இயல்பாக பேசுங்கள்; TARA உடனடி குரலில் பதிலளிக்கும். TTS நேரத்தில் மைக் தானாக இடைநிறுத்தம், பிறகு தொடர்ந்து. இருநிலை ஸ்விட்ச் உடனடி உறுதிப்படுத்தல் முதலில் பின்னர் முக்கிய பதில், முடிவில் உப்பூசல். குறிப்பு: முகவரி, பெயரின் எழுத்துப்பிழை மற்றும் மின்னஞ்சலில் சிறிய பிழைகள் இருக்கலாம் — செக்அவுட் செய்வதற்கு முன்பு நிரப்பப்பட்ட கார்ட் பிரிவில் எப்போதும் கைமுறையாக சரிபார்க்கவும்.',
+            tl: 'Aratta thalaiail ✨ minnal pothanai click seiyavum. Orey thodarchiyana WebSocket — push-to-talk thevai illai. Iyalpaga pesungal; TARA udanadi kuralova pathilalikkum. TTS nerathil mic thaanaga idainirutham, piragu thodarum. Irunilai switch udanadi uruthippaduthal muthal uruthi, pinnar mukkiya pathil, mudivil uppusal. Kuzhipu: mugavari, peyarin ezhuthupizhai matrum minnanjalil siriya pizhaigal irukkalam — checkout seivatharku munbu nirappappatta card pirivil eppolum kaimuriyaaga saripaarkavum.'
           },
-          examples: [
-            { lang: 'en', text: '"I need a gift for my mom — maybe flowers or chocolates, deliver to Kandy by Friday"' },
-            { lang: 'si', text: '"මට මාමට උපහාරයක් අවශ්‍යයි — මල් හෝ චොක්ලට් වෙන්න, ශුක්‍රවාරයේ දිනේ මහනුවරට ලබා දෙන්න"'},
-            { lang: 'sl', text: '"Mata mamata upaharayak awashyai — mal ho chocolates wenne, shukravaraye dine Mahanuwarata labba dennna"'},
-            { lang: 'ta', text: '"எனக்கு அம்மா க்கு ஒரு காதல் வேண்டும் — கூடிதாக மலர்கள் அல்லது சாக்லேட்கள், வெள்ளிக்கிழமை மடித்துரையில் வழங்கவும்"'},
-            { lang: 'tl', text: '"Enakku amma ku oru kadhal vendum — koodithaaga malargal allathu chocolates, vellikizhamai madithuraiyil vangaippavum"'},
-          ]
+examples: [
+            { lang: 'en', text: 'Find flowers or chocolates from Amal to Kamala in Kandy (0777654321, kamala@email.com, No. 45, Peradeniya Road) for delivery on 2026-07-31 with gift message "Love you Mom"' },
+            { lang: 'si', text: 'අමල්ගෙන් මහනුවර සිටින කමලා වෙත (0777654321, kamala@email.com, නො. 45, පේරාදෙණිය පාර) 2026-07-31 දින ලබා දීම සඳහා "ආදරෙයි අම්මේ" යන තෑගි පණිවුඩය සහිත මල් හෝ චොක්ලට් සොයන්න.' },
+            { lang: 'sl', text: 'Amalgen Mahanuwara sitina Kamala wetha (0777654321, kamala@email.com, No. 45, Peradeniya Para) 2026-07-31 dina laba deema sandaha "Aadareyi Amme" yana thaagi panividaya sahitha mal ho chocolates soyanna.' },
+            { lang: 'ta', text: 'அமலிடமிருந்து கண்டியில் உள்ள கமலாவுக்கு (0777654321, kamala@email.com, இல. 45, பேராதனை வீதி) 2026-07-31 அன்று விநியோகிப்பதற்காக "அன்பு அம்மா" என்ற வாழ்த்துச் செய்தியுடன் மலர்கள் அல்லது சாக்லேட்டுகளைக் கண்டறியவும்.' },
+            { lang: 'tl', text: 'Amalidarminthu Kandiyil ulla Kamalavukku (0777654321, kamala@email.com, Ila. 45, Peradeniya Veethi) 2026-07-31 andru viniyogippatharkaga "Anbu Amma" endra vazhthu seidhiyudan malargal allathu chocolates ai kandariyavum.' },
+          ] 
         },
       ]
     },
@@ -168,6 +217,64 @@ function UserManualPanel({ lang }: { lang: Lang }) {
             { lang: 'sl', text: '(Oralosuwaak, suganda bothalak allathu adina pinthurayak pita path karanna)' },
             { lang: 'ta', text: '(ஓர் மணி, மணம் batzல், அல்லது உடை படத்தை ஒட்டவும்)' },
             { lang: 'tl', text: '(Oru mani, manam bottle, allathu udai padathai ottavum)' },
+          ]
+        },
+      ]
+    },
+    {
+      id: 'product-ai',
+      title: { en: 'Product AI (per product)', si: 'භාණ්ඩ AI (එක් භාණ්ඩයකට)', sl: 'Bhandaya AI (eka bhandaykata)', ta: 'பொருள் AI (ஒரு பொருளுக்கு)', tl: 'Porul AI (oru porulukku)' },
+      icon: '🤖',
+      items: [
+        {
+          title: { en: 'AI Summary', si: 'AI සාරාංශය', sl: 'AI saaranchaya', ta: 'AI சுருக்கம்', tl: 'AI surukkam' },
+          desc: {
+            en: 'Tap any product card → product modal → tap the "✨ Summary" tab. TARA reads the Kapruka product (name, price, description, shipping) and writes a 4-bullet friendly summary (highlight, what it is, key benefit, gift suitability). First tap loads; subsequent visits cache for that browsing session.',
+            si: 'ඕනෑම භාණ්ඩ කාඩ් එකක් තට්ටු කරන්න → භාණ්ඩ modal → "✨ සාරාංශය" ටැබ් එක තට්ටු කරන්න. TARA Kapruka භාණ්ඩය (නම, මිල, විස්තර, නැවේබෙදීම) කියවා සුහදු 4-බුලට් සාරාංශයක් ලියයි. පළමු තට්ටුව load කරයි; ඊළඟ visits එකතු කරන browsing session එකට cache.',
+            sl: 'Onama bhandaya karth ekak thattu karanna → bhandaya modal → "✨ Saaranchaya" tab ek thattu karanna. TARA Kapruka bhandaya (nama, mila, vishthara, nawenbedeema) kiyawa suhadu 4-bulat saaranchayak liyayi. Pramu thattuwa load karayi; eelaga visits ekathu karana browsing session ekata cache.',
+            ta: 'ஏதேனும் பொருள் அட்டையைத் தட்டவும் → பொருள் modal → "✨ சுருக்கம்" தாவலைத் தட்டவும். TARA Kapruka பொருளை (பெயர், விலை, விவரம், அனுப்புதல்) படித்து 4-புல்லட் நட்பு சுருக்கத்தை எழுதுகிறது. முதல் தட்டல் ஏற்றுகிறது; அடுத்த வருகைகள் அந்த உலாவல் அமர்வுக்கு cache செய்யப்படும்.',
+            tl: 'Edhanum porul attaiyait thattavum → porul modal → "✨ Surukkam" taavalai thattavum. TARA Kapruka porulai (peyar, vilai, vivaram, anuppudal) padiththu 4-bullat natpu surukkathaai ezhuthukirathu. Mudhal thattal erukirathu; aduttha varugaigal antha ulaval amarrvukku cache seiyappadum.'
+          },
+          examples: [
+            { lang: 'en', text: '(Click any product on Kapruka → tap ✨ Summary tab)' },
+            { lang: 'si', text: '(Kapruka හි ඕනෑම භාණ්ඩයක් ක්ලික් කරන්න → ✨ සාරාංශය ටැබ් එක තට්ටු කරන්න)' },
+            { lang: 'sl', text: '(Kapruka hi onama bhandayak click karanna → ✨ Saaranchaya tab ek thattu karanna)' },
+            { lang: 'ta', text: '(Kapruka-வில் ஏதேனும் பொருளைக் கிளிக் செய்யவும் → ✨ சுருக்கம் தாவலைத் தட்டவும்)' },
+            { lang: 'tl', text: '(Kapruka-vil edhanum porulaik click seivavum → ✨ Surukkam taavalai thattavum)' }
+          ]
+        },
+        {
+          title: { en: 'AI Q&A (Ask about this product)', si: 'AI ප්‍රශ්නෝත්තර (මේ භාණ්ඩය ගැන අහන්න)', sl: 'AI prashnotthara (Me bhandaya gana ahanna)', ta: 'AI கேள்வி பதில் (இந்த பொருளைப் பற்றி கேள்)', tl: 'AI kelvi pathil (Indha porulaip patri kelu)' },
+          desc: {
+            en: 'Same product modal → tap the "💬 Ask" tab. Type any natural-language question about THIS product only — TARA replies in your language (EN/SI/SL/TA/TL, picked from your last message), max 3 sentences. Examples: warranty, ingredients, delivery time, size, safe for kids? Use the suggested question chips for common queries.',
+            si: 'එකම භාණ්ඩ modal → "💬 අහන්න" ටැබ් එක තට්ටු කරන්න. මේ භාණ්ඩය ගැන පමණක් ඕනෑම ස්වාභාවික භාෂා ප්‍රශ්නයක් ලියන්න — TARA ඔබේ භාෂාවෙන් පිළිතුරු දෙයි (EN/SI/SL/TA/TL, ඔබේ අවසන් පණිවුඩයෙන් තෝරා ගනී), උපරිම වාක්‍ය 3ක්. උදාහරණ: වගකීම්, අමුද්‍රව්‍ය, බෙදාහැරීමේ කාලය, ප්‍රමාණය, ළමයින්ට ආරක්ෂිතද? පොදු ප්‍රශ්න සඳහා යෝජිත ප්‍රශ්න chip භාවිතා කරන්න.',
+            sl: 'Ekama bhandaya modal → "💬 Ahanna" tab ek thattu karanna. Me bhandaya gana pamanak onama swabhavika bhasha prashnayak liyanna — TARA obe bhashaween pilithuru deyi (EN/SI/SL/TA/TL, obe avasana panividayen thora gani), uparima vakya 3ak. Udaharanaya: wagakeem, amudhdravya, bedaahareemaye kaalaya, pramanaya, lamayinta aarakshithada? Poduwa prashna sandaha yojitha prashna chip bawidha karanna.',
+            ta: 'அதே பொருள் modal → "💬 கேள்" தாவலைத் தட்டவும். இந்த பொருளைப் பற்றி மட்டும் ஏதேனும் இயல்பான மொழி கேள்வியைத் தட்டச்சு செய்யவும் — TARA உங்கள் மொழியில் பதிலளிக்கும் (EN/SI/SL/TA/TL, உங்கள் கடைசி செய்தியில் இருந்து தேர்ந்தெடுக்கப்படுகிறது), அதிகபட்சம் 3 வாக்கியங்கள். எடுத்துக்காட்டுகள்: உத்தரவாதம், பொருட்கள், விநியோக நேரம், அளவு, குழந்தைகளுக்கு பாதுகாப்பானதா? பொதுவான கேள்விகளுக்கு பரிந்துரைக்கப்பட்ட கேள்வி சில்லுகளைப் பயன்படுத்தவும்.',
+            tl: 'Adhe porul modal → "💬 Kelu" taavalai thattavum. Indha porulaip pattri mattum edhanum iyalpaana mozhi kelviyai thattachu seivavum — TARA ungal mozhiyil pathilalikkum (EN/SI/SL/TA/TL, ungal kadaisi seidhiyil irundhu ternthedukkappadukirathu), adhikpadcham 3 vaakkiyangal. Eduthukkaattugal: uththaravaadham, porutgal, viniyoga neram, alav, kuzhanthaigalukku paadhugappanatha? Podhuvaana kelvigalukku parindhuraikkappatta kelvi stillukalai payanpaduththavum.'
+          },
+          examples: [
+            { lang: 'en', text: '"Does this cake need refrigeration?" / "Is it safe for kids?"' },
+            { lang: 'si', text: '"මේ කේක් එකට ශීත කිරීමක් අවශ්‍යද?" / "ළමයින්ට ආරක්ෂිතද?"' },
+            { lang: 'sl', text: '"Me cake ekata sheetha kireemak awashyada?" / "Lamayinta aarakshithada?"' },
+            { lang: 'ta', text: '"இந்த கேக்கிற்கு குளிர்சாதனம் தேவையா?" / "குழந்தைகளுக்கு பாதுகாப்பானதா?"' },
+            { lang: 'tl', text: '"Indha cakekku kulirshaadhanam thevaiyaa?" / "Kuzhanthaigalukku paadhugappanatha?"' }
+          ]
+        },
+        {
+          title: { en: 'Compare (similar Kapruka products)', si: 'සංසන්දනය (සමාන Kapruka භාණ්ඩ)', sl: 'Samsanandanaya (samantha Kapruka bhandaya)', ta: 'ஒப்பீடு (ஒத்த Kapruka பொருட்கள்)', tl: 'Oppidu (oththa Kapruka porutgal)' },
+          desc: {
+            en: 'Same product modal → tap the "⚖️ Compare" tab. TARA calls /api/compare with the product name to fetch up to 8 in-stock similar items from Kapruka (current item excluded, capped at 4). Side-by-side rows show: image, name, price, category, in-stock, and a "View" link that opens the product page in a new tab. Loaded once per product (cached for the session).',
+            si: 'එකම භාණ්ඩ modal → "⚖️ සංසන්දනය" ටැබ් එක තට්ටු කරන්න. TARA /api/compare ට භාණ්ඩ නම සමඟ කියයි, Kapruka වෙතින් තොගයේ ඇති සමාන භාණ්ඩ දක්වා 8ක් ලබා ගනී (වත්මන් භාණ්ඩය බැහැර කර, 4කට සීමා). පැත්තෙන් පැත්ත rows: රූපය, නම, මිල, කාණ්ඩය, තොගයේ, සහ නව ටැබ් එකක භාණ්ඩ පිටුව විවෘත කරන "View" link. භාණ්ඩයකට වරක් load වේ (session එකට cache).',
+            sl: 'Ekama bhandaya modal → "⚖️ Samsanandanaya" tab ek thattu karanna. TARA /api/compare ta bhandaya nama samaga kiyayi, Kapruka wethin thodayee athi samantha bhandaya dakwa 8ak laba gani (watmana bhandaya bahira kara, 4kata seema). Paeththen paethth rows: rupaya, nama, mila, kandaya, thodayee, saha nawa tab ekak bhandaya pithuwa vivrutha karana "View" link. Bhandayakata varak load wei (session ekata cache).',
+            ta: 'அதே பொருள் modal → "⚖️ ஒப்பீடு" தாவலைத் தட்டவும். TARA /api/compare க்கு பொருள் பெயருடன் அழைக்கிறது, Kapruka-வில் கையிருப்பில் உள்ள ஒத்த 8 பொருட்கள் வரை பெறுகிறது (தற்போதைய பொருள் நீக்கப்பட்டது, 4 வரை வரையறுக்கப்பட்டது). பக்கவாட்டு வரிசைகள்: படம், பெயர், விலை, வகை, கையிருப்பு, மற்றும் புதிய தாவலில் பொருள் பக்கத்தைத் திறக்கும் "View" இணைப்பு. ஒரு பொருளுக்கு ஒரு முறை ஏற்றப்படுகிறது (அமர்வுக்கு cache).',
+            tl: 'Adhe porul modal → "⚖️ Oppidu" taavalai thattavum. TARA /api/compare-kku porul peyarudan azhaikkurathu, Kapruka-vil kaiyiruppil ulla oththa 8 porutgal varai perukirathu (tharpodhya porul neekkappaduththu, 4 varai varaiyarukkappaduththu). Pakkavaattu varisagal: padam, peyar, vilai, vakai, kaiyiruppu, matrum puthiya taavalil porul pakkaththai thirakkum "View" inaippu. Oru porulukku oru murai erappadukirathu (amarrvukku cache).'
+          },
+          examples: [
+            { lang: 'en', text: '(Click on any laptop/phone/watch product → tap ⚖️ Compare)' },
+            { lang: 'si', text: '(ඕනෑම laptop/දුරකථනය/ඔරලෝසුව ක්ලික් කරන්න → ⚖️ සංසන්දනය තට්ටු කරන්න)' },
+            { lang: 'sl', text: '(Onama laptop/durakathanaya/oralosuwaa click karanna → ⚖️ Samsanandanaya thattu karanna)' },
+            { lang: 'ta', text: '(ஏதேனும் laptop/phone/watch பொருளைக் கிளிக் செய்யவும் → ⚖️ ஒப்பீடு தட்டவும்)' },
+            { lang: 'tl', text: '(Edhanum laptop/phone/watch porulaik click seivavum → ⚖️ Oppidu thattavum)' }
           ]
         },
       ]
@@ -527,6 +634,7 @@ function UserManualPanel({ lang }: { lang: Lang }) {
 
   const renderSection = (section: typeof sections[0]) => {
     const t = section.title[lang as keyof typeof section.title] || section.title.en;
+    const isTimeline = section.id === 'timeline';
     return (
       <details key={section.id} style={{ marginBottom: 16 }}>
         <summary style={{
@@ -542,7 +650,10 @@ function UserManualPanel({ lang }: { lang: Lang }) {
           <span>{t}</span>
         </summary>
         <div style={{ padding: '12px 4px 4px' }}>
-          {section.items.map((item, i) => (
+          {section.items.map((item, i) => {
+              const tl = (item as { timeline?: TimelineRow[] }).timeline;
+              const footer = (item as { footer?: Partial<Record<Lang, string>> }).footer;
+              return (
             <details key={i} style={{ marginBottom: 12 }}>
               <summary style={{
                 display: 'flex', alignItems: 'flex-start', gap: 10,
@@ -555,12 +666,63 @@ function UserManualPanel({ lang }: { lang: Lang }) {
               }}>
                 <span style={{ fontSize: 14, flexShrink: 0 }}>{item.title[lang as keyof typeof item.title] || item.title.en}</span>
               </summary>
-              <div style={{ padding: '8px 0 0 24px', borderLeft: '2px solid rgba(189,147,249,0.25)', marginLeft: 4 }}>
-                <p style={{ fontSize: 11, color: 'var(--c-on-surface-variant)', lineHeight: 1.5, margin: '0 0 8px' }}>
+              <div style={{
+                padding: '8px 0 0 4px',
+                borderLeft: isTimeline ? 'none' : '2px solid rgba(189,147,249,0.25)',
+                marginLeft: isTimeline ? 0 : 4,
+              }}>
+                <p style={{ fontSize: 11, color: 'var(--c-on-surface-variant)', lineHeight: 1.5, margin: '0 0 10px' }}>
                   {item.desc[lang as keyof typeof item.desc] || item.desc.en}
                 </p>
+                {isTimeline && tl && (
+                  <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'auto 70px 1fr',
+                      gap: 6,
+                      fontSize: 10, fontWeight: 700, color: 'var(--c-outline)',
+                      textTransform: 'uppercase', letterSpacing: '0.06em',
+                      padding: '4px 8px',
+                    }}>
+                      <span>Step</span>
+                      <span>Time</span>
+                      <span>What happens</span>
+                    </div>
+                    {tl.map(row => (
+                      <div key={row.step} style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'auto 70px 1fr',
+                        gap: 6, alignItems: 'flex-start',
+                        background: 'var(--c-surface-container)',
+                        border: '1px solid rgba(74,68,81,0.20)',
+                        borderLeft: '3px solid var(--c-primary)',
+                        borderRadius: 8, padding: '8px 10px',
+                        fontSize: 11, color: 'var(--c-on-surface)', lineHeight: 1.45,
+                      }}>
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                          minWidth: 24, height: 24, borderRadius: '50%',
+                          background: 'var(--c-primary-container)', color: 'var(--c-on-primary-container)',
+                          fontWeight: 800, fontSize: 11, fontFamily: 'monospace',
+                        }}>{row.step}</span>
+                        <span style={{
+                          fontFamily: 'monospace', fontWeight: 700, color: 'var(--c-secondary)',
+                          fontSize: 11, lineHeight: '24px',
+                        }}>{row.time}</span>
+                        <div>
+                          {row.topic && (
+                            <div style={{ fontWeight: 700, color: 'var(--c-primary)', marginBottom: 2 }}>
+                              {row.topic[lang] || row.topic.en}
+                            </div>
+                          )}
+                          <div>{row.whatHappens[lang] || row.whatHappens.en}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {item.examples.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
                     {item.examples.map((ex, ei) => (
                       <div key={ei} style={{
                         background: 'var(--c-surface-container)',
@@ -578,9 +740,23 @@ function UserManualPanel({ lang }: { lang: Lang }) {
                     ))}
                   </div>
                 )}
+                {footer && (
+                  <div style={{
+                    marginTop: 10, padding: '8px 12px',
+                    background: 'rgba(189,147,249,0.10)',
+                    border: '1px solid rgba(189,147,249,0.30)',
+                    borderRadius: 8,
+                    fontSize: 11, fontWeight: 600,
+                    color: 'var(--c-primary)',
+                    fontStyle: 'italic',
+                  }}>
+                    {footer[lang] || footer.en}
+                  </div>
+                )}
               </div>
             </details>
-          ))}
+              );
+            })}
         </div>
       </details>
     );
@@ -588,8 +764,11 @@ function UserManualPanel({ lang }: { lang: Lang }) {
 
   return (
     <div style={{ padding: 16, maxHeight: 'calc(100vh - 100px)', overflowY: 'auto' }}>
-      <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--c-outline)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
+      <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--c-outline)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>
         {STRINGS[lang]?.manualTitle || 'User Manual'}
+      </p>
+      <p style={{ fontSize: 10, fontWeight: 500, color: 'var(--c-outline)', marginBottom: 12, fontStyle: 'italic' }}>
+        (kapruka dev team)
       </p>
       {sections.map(renderSection)}
     </div>
@@ -642,7 +821,9 @@ function HistoryPanel({ lang }: { lang: Lang }) {
         <div key={idx} style={{ marginBottom: 10, background: 'var(--c-surface-container)', borderRadius: 12, border: '1px solid rgba(74,68,81,0.25)', overflow: 'hidden' }}>
           {/* Order header — always visible, click to expand */}
           <button onClick={() => setExpanded(expanded === idx ? null : idx)}
-            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s' }}
+            onMouseOver={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+            onMouseOut={e => { e.currentTarget.style.background = 'transparent'; }}>
             <PackageIcon size={16} style={{ color: 'var(--c-primary)', flexShrink: 0 }} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--c-on-surface)', fontFamily: 'monospace', letterSpacing: '0.03em' }}>
@@ -749,6 +930,7 @@ function CatBtn({
         cursor: disabled ? 'default' : 'pointer',
         background: 'var(--c-surface-container)',
         border: '1px solid rgba(74,68,81,0.25)',
+        color: 'var(--c-on-surface-variant)',
         transition: 'all 0.15s ease', textAlign: 'left',
         opacity: disabled ? 0.5 : 1, width: '100%',
       }}
@@ -756,11 +938,13 @@ function CatBtn({
         if (!disabled) {
           e.currentTarget.style.background    = 'var(--c-surface-container-high)';
           e.currentTarget.style.borderColor   = 'rgba(215,186,255,0.30)';
+          e.currentTarget.style.color         = 'var(--c-on-surface)';
         }
       }}
       onMouseOut={e => {
         e.currentTarget.style.background  = 'var(--c-surface-container)';
         e.currentTarget.style.borderColor = 'rgba(74,68,81,0.25)';
+        e.currentTarget.style.color       = 'var(--c-on-surface-variant)';
       }}
     >
       <span style={{ fontSize: 20, flexShrink: 0 }}>{emoji}</span>
@@ -1013,15 +1197,18 @@ function BrowsePanel({ onCategorySearch, onClose }: { onCategorySearch: (q: stri
                         padding: '10px 12px', borderRadius: 10, cursor: 'pointer',
                         background: 'var(--c-surface-container)',
                         border: '1px solid rgba(74,68,81,0.25)',
+                        color: 'var(--c-on-surface-variant)',
                         transition: 'all 0.15s ease', textAlign: 'left', width: '100%',
                       }}
                       onMouseOver={e => {
                         e.currentTarget.style.background   = 'var(--c-surface-container-high)';
                         e.currentTarget.style.borderColor  = 'rgba(215,186,255,0.30)';
+                        e.currentTarget.style.color        = 'var(--c-on-surface)';
                       }}
                       onMouseOut={e => {
                         e.currentTarget.style.background  = 'var(--c-surface-container)';
                         e.currentTarget.style.borderColor = 'rgba(74,68,81,0.25)';
+                        e.currentTarget.style.color       = 'var(--c-on-surface-variant)';
                       }}
                     >
                       <span style={{ fontSize: 20, flexShrink: 0 }}>{cat.emoji}</span>
@@ -1138,6 +1325,8 @@ function SettingsPanel({ lang, onLangChange, onClearChat, onClose }: { lang: Lan
               transition: 'all 0.15s',
               fontFamily: 'var(--font-body)',
             }}
+            onMouseOver={e => { if (lang !== o.key) { e.currentTarget.style.background = 'var(--c-surface-container-high)'; e.currentTarget.style.borderColor = 'rgba(215,186,255,0.30)'; e.currentTarget.style.color = 'var(--c-on-surface)'; } }}
+            onMouseOut={e => { if (lang !== o.key) { e.currentTarget.style.background = 'var(--c-surface-container)'; e.currentTarget.style.borderColor = 'rgba(74,68,81,0.25)'; e.currentTarget.style.color = 'var(--c-on-surface-variant)'; } }}
           >
             {o.label}
             {lang === o.key && <span style={{ fontSize: 12, color: 'var(--c-primary-container)' }}>✓</span>}
@@ -1158,15 +1347,34 @@ function SettingsPanel({ lang, onLangChange, onClearChat, onClose }: { lang: Lan
           fontSize: 14, fontWeight: 500, transition: 'all 0.15s',
           fontFamily: 'var(--font-body)',
         }}
+        onMouseOver={e => { if (!cleared) { e.currentTarget.style.background = 'rgba(239,68,68,0.10)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.35)'; e.currentTarget.style.color = '#fca5a5'; } }}
+        onMouseOut={e => { if (!cleared) { e.currentTarget.style.background = 'var(--c-surface-container)'; e.currentTarget.style.borderColor = 'rgba(74,68,81,0.25)'; e.currentTarget.style.color = 'var(--c-on-surface-variant)'; } }}
       >
         <TrashIcon size={16} />
         {cleared ? 'Chat cleared!' : 'Clear chat history'}
       </button>
 
       {/* About */}
-      <div style={{ marginTop: 20, padding: '12px 14px', borderRadius: 10, background: 'var(--c-surface-container)', border: '1px solid rgba(74,68,81,0.25)' }}>
-        <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--c-on-surface)', marginBottom: 4 }}>TARA v1.0</p>
-        <p style={{ fontSize: 11, color: 'var(--c-outline)' }}>AI Retail Agent · Kapruka Agent Challenge · Built with Next.js 16 · Powered by Gemini</p>
+      <div style={{
+        marginTop: 22, paddingTop: 16,
+        borderTop: '1px solid rgba(74,68,81,0.25)',
+      }}>
+        <div style={{
+          padding: '12px 14px', borderRadius: 10,
+          background: 'rgba(189,147,249,0.08)',
+          border: '1px solid rgba(189,147,249,0.30)',
+        }}>
+          <p style={{ fontSize: 13, fontWeight: 800, color: 'var(--c-primary)', marginBottom: 4 }}>TARA v1.0</p>
+          <p style={{ fontSize: 11, color: 'var(--c-on-surface-variant)', lineHeight: 1.5, marginBottom: 6 }}>
+            AI Retail Agent · Kapruka Agent Challenge
+          </p>
+          <p style={{ fontSize: 10, color: 'var(--c-outline)', lineHeight: 1.5 }}>
+            Built with <span style={{ fontWeight: 700, color: 'var(--c-on-surface-variant)' }}>Next.js 16</span> · Powered by <span style={{ fontWeight: 700, color: 'var(--c-on-surface-variant)' }}>Gemini</span>
+          </p>
+          <p style={{ fontSize: 10, color: 'var(--c-secondary)', fontWeight: 700, lineHeight: 1.5, marginTop: 6 }}>
+            ⏱️ You can finish an order in minimum 30s.
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -1188,10 +1396,12 @@ function HelpPanel() {
               width: '100%', padding: '11px 14px', borderRadius: 10, cursor: 'pointer',
               background: open === i ? 'rgba(189,147,249,0.12)' : 'var(--c-surface-container)',
               border: `1px solid ${open === i ? 'rgba(189,147,249,0.30)' : 'rgba(74,68,81,0.25)'}`,
-              color: 'var(--c-on-surface)', fontSize: 13, fontWeight: 600,
+              color: open === i ? 'var(--c-on-surface)' : 'var(--c-on-surface-variant)', fontSize: 13, fontWeight: 600,
               textAlign: 'left', transition: 'all 0.15s',
               fontFamily: 'var(--font-body)',
             }}
+            onMouseOver={e => { if (open !== i) { e.currentTarget.style.background = 'var(--c-surface-container-high)'; e.currentTarget.style.borderColor = 'rgba(215,186,255,0.30)'; e.currentTarget.style.color = 'var(--c-on-surface)'; } }}
+            onMouseOut={e => { if (open !== i) { e.currentTarget.style.background = 'var(--c-surface-container)'; e.currentTarget.style.borderColor = 'rgba(74,68,81,0.25)'; e.currentTarget.style.color = 'var(--c-on-surface-variant)'; } }}
           >
             <span>{faq.q}</span>
             <ChevronRightIcon size={14} style={{ transform: open === i ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s', flexShrink: 0, color: 'var(--c-outline)' }} />
@@ -1222,11 +1432,11 @@ function MenuRow({ icon, label, onClick }: { icon: React.ReactNode; label: strin
         cursor: 'pointer', textAlign: 'left',
         background: 'var(--c-surface-container)',
         border: '1px solid rgba(74,68,81,0.25)',
-        color: 'var(--c-on-surface)', fontSize: 14, fontWeight: 600,
+        color: 'var(--c-on-surface-variant)', fontSize: 14, fontWeight: 600,
         transition: 'all 0.15s', fontFamily: 'var(--font-body)',
       }}
-      onMouseOver={e => { e.currentTarget.style.background = 'var(--c-surface-container-high)'; e.currentTarget.style.borderColor = 'rgba(215,186,255,0.30)'; }}
-      onMouseOut={e => { e.currentTarget.style.background = 'var(--c-surface-container)'; e.currentTarget.style.borderColor = 'rgba(74,68,81,0.25)'; }}
+      onMouseOver={e => { e.currentTarget.style.background = 'var(--c-surface-container-high)'; e.currentTarget.style.borderColor = 'rgba(215,186,255,0.30)'; e.currentTarget.style.color = 'var(--c-on-surface)'; }}
+      onMouseOut={e => { e.currentTarget.style.background = 'var(--c-surface-container)'; e.currentTarget.style.borderColor = 'rgba(74,68,81,0.25)'; e.currentTarget.style.color = 'var(--c-on-surface-variant)'; }}
     >
       <span style={{ color: 'var(--c-primary)', flexShrink: 0, display: 'flex' }}>{icon}</span>
       <span style={{ flex: 1 }}>{label}</span>
@@ -1259,7 +1469,6 @@ function MenuPanel({ onNavigate, speakerOn, onSpeakerToggle }: {
       </p>
       <MenuRow icon={<SettingsIcon size={18} />} label="Settings"   onClick={() => onNavigate('settings')} />
       <MenuRow icon={<HelpIcon     size={18} />} label="Help & FAQ" onClick={() => onNavigate('help')} />
-      <MenuRow icon={<span style={{fontSize:18}}>📖</span>} label="User Manual"       onClick={() => onNavigate('manual')} />
 
       <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid rgba(74,68,81,0.25)' }}>
         <button
@@ -1269,9 +1478,11 @@ function MenuPanel({ onNavigate, speakerOn, onSpeakerToggle }: {
             padding: '12px 14px', borderRadius: 12, cursor: 'pointer', textAlign: 'left',
             background: speakerOn ? 'rgba(189,147,249,0.12)' : 'var(--c-surface-container)',
             border: `1px solid ${speakerOn ? 'rgba(189,147,249,0.30)' : 'rgba(74,68,81,0.25)'}`,
-            color: 'var(--c-on-surface)', fontSize: 14, fontWeight: 600,
-            fontFamily: 'var(--font-body)',
+            color: speakerOn ? 'var(--c-on-surface)' : 'var(--c-on-surface-variant)', fontSize: 14, fontWeight: 600,
+            fontFamily: 'var(--font-body)', transition: 'all 0.15s',
           }}
+          onMouseOver={e => { if (!speakerOn) { e.currentTarget.style.background = 'var(--c-surface-container-high)'; e.currentTarget.style.borderColor = 'rgba(215,186,255,0.30)'; e.currentTarget.style.color = 'var(--c-on-surface)'; } }}
+          onMouseOut={e => { if (!speakerOn) { e.currentTarget.style.background = 'var(--c-surface-container)'; e.currentTarget.style.borderColor = 'rgba(74,68,81,0.25)'; e.currentTarget.style.color = 'var(--c-on-surface-variant)'; } }}
         >
           <span style={{ fontSize: 18, flexShrink: 0 }}>{speakerOn ? '🔊' : '🔇'}</span>
           <span style={{ flex: 1 }}>TARA voice replies</span>
@@ -1410,7 +1621,7 @@ const PANEL_META: Record<Exclude<PanelId,'none'>, { title: string; icon: React.R
   help:          { title: 'Help & FAQ',        icon: <HelpIcon     size={18} /> },
   notifications: { title: 'Notifications',    icon: <BellIcon     size={18} /> },
   menu:          { title: 'Menu',              icon: <MenuIcon     size={18} /> },
-  manual:        { title: 'User Manual',       icon: <span style={{fontSize:18}}>📖</span> },
+  manual:        { title: 'User Manual',       icon: <UserManualIcon size={18}/> },
 };
 import { BellIcon, MenuIcon } from './Icons';
 
@@ -1453,11 +1664,26 @@ export default function SidePanel({ panel, lang, onClose, onCategorySearch, onLa
               borderBottom: '1px solid rgba(74,68,81,0.25)',
               flexShrink: 0,
             }}>
-              <span style={{ color: 'var(--c-primary)' }}>{PANEL_META[panel].icon}</span>
+              <span style={{ color: 'var(--c-primary)', display: 'flex' }}>{PANEL_META[panel].icon}</span>
               <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--c-on-surface)', flex: 1, fontFamily: 'var(--font-headline)' }}>
                 {PANEL_META[panel].title}
               </span>
-              <button onClick={onClose} style={{ color: 'var(--c-outline)', cursor: 'pointer', background: 'none', border: 'none', padding: 4 }}>
+              <button onClick={onClose}
+                title="Close"
+                aria-label="Close panel"
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: 32, height: 32,
+                  borderRadius: 10,
+                  color: 'var(--c-on-surface-variant)',
+                  cursor: 'pointer',
+                  background: 'rgba(255,255,255,0.04)',
+                  border: '1px solid rgba(74,68,81,0.30)',
+                  transition: 'all 0.15s',
+                }}
+                onMouseOver={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.15)'; e.currentTarget.style.color = '#fca5a5'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.45)'; }}
+                onMouseOut={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.color = 'var(--c-on-surface-variant)'; e.currentTarget.style.borderColor = 'rgba(74,68,81,0.30)'; }}
+              >
                 <XIcon size={18} />
               </button>
             </div>

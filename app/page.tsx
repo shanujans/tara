@@ -17,6 +17,7 @@ import {
 PackageSearchIcon,
   SettingsIcon, HelpIcon, BellIcon, MenuIcon,
   ChatIcon, BagIcon, SparkleIcon, StoreIcon, HeadsetIcon,
+  UserManualIcon,
 } from '@/components/Icons';
 
 // Client-only: SplashScreen uses Math.random() for its star field, plus
@@ -36,7 +37,7 @@ const NAV_ITEMS: { key: NavKey; label: string; icon: React.ReactNode }[] = [
   { key:'history', label:'History', icon:<HistoryIcon size={20}/> },
   { key:'rewards', label:'Rewards', icon:<RewardsIcon size={20}/> },
   { key:'browse',  label:'Browse',  icon:<BrowseIcon  size={20}/> },
-  { key:'manual',  label:'Manual',  icon:<span style={{fontSize:18}}>📖</span> },
+  { key:'manual',  label:'Manual',  icon:<UserManualIcon size={20} /> },
 ];
 
 /* ── Sidebar with the exact spec shader as background ──────── */
@@ -140,8 +141,8 @@ function SideNavBar({ isOpen, isPinned, onTogglePinned, onHoverIn, onHoverOut, a
                 backdropFilter: activeNav===item.key ? 'blur(4px)' : 'none',
                 boxShadow: activeNav===item.key ? '0 1px 8px rgba(0,0,0,0.25)' : 'none',
               }}
-              onMouseOver={e=>{ if(activeNav!==item.key) e.currentTarget.style.background='rgba(255,255,255,0.10)'; }}
-              onMouseOut={e=>{  if(activeNav!==item.key) e.currentTarget.style.background='transparent'; }}
+              onMouseOver={e=>{ if(activeNav!==item.key) { e.currentTarget.style.background='rgba(255,255,255,0.10)'; e.currentTarget.style.color='rgba(255,255,255,0.95)'; } }}
+              onMouseOut={e=>{  if(activeNav!==item.key) { e.currentTarget.style.background='transparent'; e.currentTarget.style.color='rgba(255,255,255,0.65)'; } }}
             >
               <span style={{ opacity: activeNav===item.key ? 1 : 0.7, display:'flex' }}>{item.icon}</span>
               <span className={TEXT_COLLAPSE(isOpen)}>{item.label}</span>
@@ -155,10 +156,26 @@ function SideNavBar({ isOpen, isPinned, onTogglePinned, onHoverIn, onHoverOut, a
               width:'100%', padding:'11px 14px',
               justifyContent:'flex-start',
               borderRadius:12, marginTop:8, fontSize:14, fontWeight:500, color:'rgba(255,255,255,0.65)', background:'transparent', border:'none', cursor:'pointer', transition:'all 0.15s', fontFamily:'var(--font-body)' }}
-            onMouseOver={e=>e.currentTarget.style.background='rgba(255,255,255,0.10)'}
-            onMouseOut={e=>e.currentTarget.style.background='transparent'}
+            onMouseOver={e=>{ e.currentTarget.style.background='rgba(255,255,255,0.10)'; e.currentTarget.style.color='rgba(255,255,255,0.95)'; }}
+            onMouseOut={e=>{ e.currentTarget.style.background='transparent'; e.currentTarget.style.color='rgba(255,255,255,0.65)'; }}
           >
-            <span style={{ opacity:0.7, display:'flex' }}><CartIcon size={20}/></span>
+            <span style={{ opacity:0.7, display:'flex', position:'relative' }}>
+              <CartIcon size={20}/>
+              {totalQty > 0 && !isOpen && (
+                <span style={{
+                  position:'absolute', top:-7, right:-9,
+                  minWidth:18, height:18, borderRadius:9999,
+                  background:'var(--c-secondary)', color:'var(--c-on-secondary)',
+                  fontSize:10, fontWeight:900,
+                  display:'flex', alignItems:'center', justifyContent:'center',
+                  padding:'0 4px', border:'2px solid rgba(12,8,28,0.92)',
+                  boxShadow:'0 1px 4px rgba(0,0,0,0.35)',
+                  animation:'tara-badge-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), tara-badge-pulse 1.8s ease-out 0.35s 2',
+                }}>
+                  {totalQty > 9 ? '9+' : totalQty}
+                </span>
+              )}
+            </span>
             <span className={TEXT_COLLAPSE(isOpen)}>Cart</span>
             {totalQty > 0 && (
               <span className={TEXT_COLLAPSE(isOpen)} style={{
@@ -178,18 +195,17 @@ function SideNavBar({ isOpen, isPinned, onTogglePinned, onHoverIn, onHoverOut, a
               width:'100%', padding:'11px 14px',
               justifyContent:'flex-start',
               borderRadius:12, marginTop:4, fontSize:14, fontWeight:500, color:'rgba(255,255,255,0.65)', background:'transparent', border:'none', cursor:'pointer', transition:'all 0.15s', fontFamily:'var(--font-body)' }}
-            onMouseOver={e=>e.currentTarget.style.background='rgba(255,255,255,0.10)'}
-            onMouseOut={e=>e.currentTarget.style.background='transparent'}
+            onMouseOver={e=>{ e.currentTarget.style.background='rgba(255,255,255,0.10)'; e.currentTarget.style.color='rgba(255,255,255,0.95)'; }}
+            onMouseOut={e=>{ e.currentTarget.style.background='transparent'; e.currentTarget.style.color='rgba(255,255,255,0.65)'; }}
           >
             <span style={{ opacity:0.7, display:'flex' }}><PackageSearchIcon size={20}/></span>
             <span className={TEXT_COLLAPSE(isOpen)}>Track Order</span>
           </button>
 
-          {/* Settings + Help + Manual directly under Track Order */}
+          {/* Settings + Help directly under Track Order (Manual is in NAV_ITEMS above) */}
           <div style={{ marginTop:10 }}>
             {mutedNavRow('settings', <SettingsIcon size={18}/>, 'Settings')}
             {mutedNavRow('help',     <HelpIcon    size={18}/>, 'Help')}
-            {mutedNavRow('manual',   <span style={{fontSize:18}}>📖</span>, 'User Manual')}
           </div>
         </nav>
       </div>
@@ -206,8 +222,8 @@ function SideNavBar({ isOpen, isPinned, onTogglePinned, onHoverIn, onHoverOut, a
             transition:'all 0.15s',
             color: isPinned ? 'var(--c-primary)' : 'rgba(255,255,255,0.65)',
           }}
-          onMouseOver={e=>{ if(!isPinned) e.currentTarget.style.background='rgba(255,255,255,0.08)'; }}
-          onMouseOut={e=>{  if(!isPinned) e.currentTarget.style.background='transparent'; }}
+          onMouseOver={e=>{ if(!isPinned) { e.currentTarget.style.background='rgba(255,255,255,0.08)'; e.currentTarget.style.color='rgba(255,255,255,0.95)'; } }}
+          onMouseOut={e=>{  if(!isPinned) { e.currentTarget.style.background='transparent'; e.currentTarget.style.color='rgba(255,255,255,0.65)'; } }}
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: isPinned ? 1 : 0.7 }}>
             <rect width="18" height="18" x="3" y="3" rx="2" />
@@ -234,8 +250,8 @@ function IconBtn({ children, onClick, active=false, title }:{
       color: active?'var(--c-primary)':'var(--c-on-surface-variant)',
       transition:'all 0.15s',
     }}
-      onMouseOver={e=>e.currentTarget.style.background=active?'rgba(189,147,249,0.25)':'var(--c-surface-container-high)'}
-      onMouseOut={e=>e.currentTarget.style.background=active?'rgba(189,147,249,0.15)':'transparent'}
+      onMouseOver={e=>{ e.currentTarget.style.background=active?'rgba(189,147,249,0.25)':'var(--c-surface-container-high)'; if(!active) e.currentTarget.style.color='var(--c-on-surface)'; }}
+      onMouseOut={e=>{ e.currentTarget.style.background=active?'rgba(189,147,249,0.15)':'transparent'; if(!active) e.currentTarget.style.color='var(--c-on-surface-variant)'; }}
     >{children}</button>
   );
 }

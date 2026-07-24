@@ -17,7 +17,7 @@
     document.dispatchEvent(
       new CustomEvent('tara-extension-ready', {
         bubbles: true,
-        detail: { version: '1.0.0' },
+        detail: { version: '1.1.1' },
       })
     );
   });
