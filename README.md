@@ -14,6 +14,70 @@ TARA replaces the traditional Kapruka website UI with a warm, voice-enabled, AI-
 
 ---
 
+## 🧠 TARA v1.1.1 — Ultimate Conversational AI Shopping Agent for Kapruka.lk
+
+TARA is a production-ready, highly localized, and action-oriented AI Agent engineered specifically for the Kapruka ecosystem. By leveraging the **Kapruka Model Context Protocol (MCP)**, advanced voice/vision pipelines, and a highly optimized WebGL user experience, TARA transforms online shopping into an intuitive 2-minute conversation.
+
+### 🆕 New in v1.1.1
+
+- **Collapsible sidebar UX** — collapsible/expandable with hover preview, pinned-open mode, Ctrl+B shortcut. Font + background hover highlight across every sidebar button. Cart count badge keeps showing (with pop + pulse animation) when the sidebar is collapsed so users never miss additions.
+- **In-app User Manual** — 22-section, 5-language guide (EN · SI · SL · TA · TL) reachable from the **Manual** slot in the sidebar. Covers text chat, voice (Legacy STT+TTS + Gemini Live), vision, per-product AI Summary & AI Q&A, checkout, in-app payment, gift chains, quick chips, settings, and an Order Completion Timeline (min 30s).
+- **Lucide icon refresh** — Settings (cog), Help & FAQ (message-bubble question mark), User Manual (notebook tabs); proper X close icon in every panel header.
+- **Two-gate Gemini Live voice** — sequential TTS latch prevents turn collision between the instant confirmation and the main response. Legacy STT + TTS preserved as a fallback.
+
+---
+
+### 🛠️ Core Technical Implementation
+
+#### 1. Full-Loop MCP Integration (7/7 Tools Live)
+TARA is deeply wired into the Kapruka MCP, executing real-time operations directly through the protocol:
+
+- **Discovery:** `kapruka_search_products` & `kapruka_list_categories`
+- **Logistics:** `kapruka_list_delivery_cities` & `kapruka_check_delivery`
+- **Checkout & Tracking:** `kapruka_get_product`, `kapruka_create_order` & `kapruka_track_order`
+
+*Session optimisation:* Built-in serverless MCP session caching (5-minute TTL) completely eliminates redundant handshake bottlenecks.
+
+#### 2. Localized Multi-Language Core (5-Language Support)
+Built to cater to all Sri Lankans by communicating naturally in **English, Sinhala, Tamil, Singlish, and Tanglish**.
+
+- **Sticky Language Detection:** Client-side word-scoring (`detectLangClient`) prevents zero-signal entries (like product IDs or prices) from resetting the user's preferred language.
+- **Checkout Transliteration:** Automatically transliterates Sinhala/Tamil names and addresses to English during the natural-language checkout flow to ensure downstream API compatibility.
+
+#### 3. Agentic Transparency (The "Thinking Drawer")
+Instead of a generic loading spinner, TARA streams its raw cognitive pipeline:
+
+- **Metadata Parsing:** Extracting intent, goals, constraints, and steps via a custom server-side `<tara_thinking>` parser.
+- **Reasoning-Leak Guard:** Actively filters internal logic, upselling prompts, and system-level details out of the user's view, rendering a polished list of goals with a staggered visual checkmark animation.
+
+#### 4. Dual-Phase Voice Mode
+
+- **Legacy STT + TTS** (`lib/useVoiceMode.ts`) — Push-to-talk with server-side Speech-to-Text and Text-to-Speech; hands-free loop available with auto-restart after TTS.
+- **Gemini Live Voice** (`lib/useGeminiLiveVoice.ts`) — Real-time bidirectional Gemini `gemini-3.1-flash-live-preview` over a persistent WSS; replaces the STT→chat→TTS loop with a single real-time session.
+
+#### 5. Frictionless Checkout & Sandboxed Payments
+
+- **Natural Language Fill:** Auto-populates delivery coordinates, contact info, and custom delivery instructions straight from a single chat message.
+- **Secure In-App Payments:** Renders the Kapruka payment gateway directly in a sandboxed iframe modal to prevent breaking user immersion.
+- **Downloadable PDF Invoices:** Generates clean, downloadable PDF invoices complete with client-side QR codes and custom AI-themed gift cards (HuggingFace FLUX/SDXL).
+
+#### 6. Resilient Search & Product Heuristics
+
+- **3-Tier Smart Search:** Falling back from parameter-heavy filters to broader keywords to guarantee relevant results.
+- **AI Product Ranking:** Uses Gemini to prioritize results (Exact → Variant → Newer) and badges the top 3 with custom gold **"TARA's Pick"** borders.
+- **Specialized Quirk Workarounds:** Bypasses restrictive category filters on complex items (cakes, flowers) to ensure they are always discoverable.
+
+---
+
+### 🎨 Tech Stack
+
+- **Frontend:** Next.js 16.2.7 (App Router, Turbopack, Strict TypeScript), Tailwind CSS v4, Framer Motion / Motion
+- **Graphics:** Three.js r184 (animated splash rendering), `@paper-design/shaders-react`
+- **AI Engine:** AIML API (Claude Sonnet 4.6 + Gemini 3.1 Pro Preview), Google AI Studio (`gemini-3.1-flash-lite` fallback for Chat/Vision/STT/TTS), `gemini-3.1-flash-live-preview` for live voice
+- **TTS Providers:** Speechmatics (EN), Microsoft Azure Speech (SI, SL), Gemini TTS (TA, TL fallback)
+
+---
+
 ## Feature Overview
 
 | Feature | Details |
