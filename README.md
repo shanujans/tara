@@ -14,18 +14,6 @@ TARA replaces the traditional Kapruka website UI with a warm, voice-enabled, AI-
 
 ---
 
-## Latest Updates (this build)
-
-Brief summary of UI work landed in this build session:
-
-- **Sidebar UX** — collapsible/expandable with hover preview, pinned-open mode, Ctrl+B shortcut, click-to-toggle affordance, font + background highlight on hover across all sidebar buttons.
-- **Icon refresh** — Settings (cog), Help & FAQ (message-bubble question mark), User Manual (notebook tabs); proper X close-icon in panel headers.
-- **Cart count visibility** — cart-item badge continues to show in the collapsed sidebar (with pop + pulse animation) so users don't miss additions.
-- **User Manual panel** — full 5-language in-product guide. `manual` sector in the sidebar; in-panel heading reads "User Manual". 22 sections covering text chat, voice (Legacy STT+TTS + Gemini Live), vision, per-product AI Summary & Q&A, checkout, in-app payment, gift chains, quick chips, settings, and an Order Completion Timeline (min 30s).
-- **Settings footer** — TARA v1.0 credit block with the build stack (Next.js 16, Gemini) and the minimum-order note.
-
----
-
 ## Feature Overview
 
 | Feature | Details |
@@ -49,6 +37,8 @@ Brief summary of UI work landed in this build session:
 | 🔄 Product detail fallback | MCP search fallback when get_product fails (CATSYM/delisted) — uses search by name, matches by ID |
 | 🗂️ Order history | 20-entry localStorage log with reorder-in-one-tap |
 | 👍 / 👎 Feedback loop | Per-reply quality signals → structured `mistakes.md` log |
+| 🖱️ Sidebar & panel UX | Collapsible icon rail with hover preview + Ctrl+B shortcut; pin-to-open; font-and-background hover highlight across every button; cart count badge keeps showing (with pop + pulse animation) when sidebar is collapsed so users never miss additions; proper X close icon in every panel header |
+| 📖 In-app User Manual | 22-section, 5-language guide (EN · SI · SL · TA · TL) reachable from the **Manual** slot in the sidebar — covers text chat, voice (Legacy STT+TTS + Gemini Live), vision, per-product AI Summary & AI Q&A, checkout, in-app payment, gift chains, quick chips, settings, and an Order Completion Timeline (min 30s) |
 | 🔌 Chrome extension | Floats TARA inside Kapruka.com on product pages |
 | 🪟 Embeddable widget | `/widget` + `/embed-demo` iframe integration |
 
@@ -65,7 +55,7 @@ flowchart TD
         CP["ChatPanel\nSTT · TTS · vision · checkout-fill"]
         PP["ProductPanel\nsort · filter · skeleton"]
         CD["CartDrawer\ninvoice · QR · payment link"]
-        SP["SidePanel\nhistory · browse · settings"]
+        SP["SidePanel\nhistory · browse · settings · manual"]
         PM["ProductModal\noverview · AI summary · Ask AI · compare"]
         AV["AudioVisualizer\n12-bar canvas"]
         VM["useVoiceMode hook\nMediaRecorder · silence detection"]
@@ -789,7 +779,7 @@ tara/
 │   ├── ProductCard.tsx             # Card with skeleton shimmer (live)
 │   ├── CartDrawer.tsx              # Checkout + invoice PDF (live)
 │   ├── InvoiceTemplate.tsx         # Hidden invoice renderer (live)
-│   ├── SidePanel.tsx               # History / Browse / Settings (live)
+│   ├── SidePanel.tsx               # History / Browse / Settings / Help / User Manual (live)
 │   ├── LoginModal.tsx              # Guest + account auth (live)
 │   ├── SplashScreen.tsx            # Three.js animated sprite (live)
 │   ├── AudioVisualizer.tsx         # 12-bar canvas visualizer (live)
